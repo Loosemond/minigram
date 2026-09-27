@@ -6,7 +6,9 @@ Sets the MIME types browsers need for ES modules (on Windows, Python's guess
 for .js can come from the registry and be wrong), and makes the browser
 revalidate every file, so edits show up on reload. The online rooms
 (tools/rooms.py) are at ws://localhost:8123/ws, so one server is all
-online play needs. The port can also come from $PORT.
+online play needs. The port can also come from $PORT, and
+TELEGRAM_BOT_TOKEN and TYPESAFE_API_KEY turn on the rooms' login and name
+checks.
 """
 import functools
 import http.server
@@ -39,5 +41,5 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
 
-print("serving", folder, "on http://localhost:%d/ (rooms at /ws)" % port)
+print("serving", folder, "on http://localhost:%d/ (rooms at /ws: %s)" % (port, rooms.describe()), flush=True)
 http.server.ThreadingHTTPServer(("", port), functools.partial(Handler, directory=folder)).serve_forever()

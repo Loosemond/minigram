@@ -11,7 +11,7 @@ import config from "./config.js";
 const BG = "#4a3a30"; // the brick base of the backdrop, for Telegram's header and the page
 const PLAYER_COLOURS = ["#2f5de0", "#23a043", "#dc3030", "#e8a412"]; // 1P-4P, as on the game's badges
 const COLOUR_NAMES = ["blue", "green", "red", "yellow"];
-const COUNTDOWN = 2650; // ms from the countdown's start to GO
+const COUNTDOWN = 2650; // ms from the countdown's start to GO (online, the server says when GO is)
 const REMOTE_DELAY = 0.3; // s: other devices' players are shown this far behind, so their leans arrive in time
 const CODE = /^[A-Za-z]{4,6}$/;
 telegram.init(BG);
@@ -20,6 +20,8 @@ const $ = (s) => document.querySelector(s);
 const app = $("#app");
 const cards = [...document.querySelectorAll(".card")];
 const params = new URLSearchParams(location.search);
+// ?debug and ?server= are for testing: on this computer, or with config.debug
+const testing = config.debug || /^(localhost|127\.0\.0\.1|\[::1\])$|\.localhost$|\.test$/.test(location.hostname);
 
 // who is in each seat: people get the 1P-4P badges, CPUs "COM" in the seat's colour
 let me = 0; // this device's seat
@@ -273,7 +275,7 @@ async function startRound(s) {
   applySeats();
   layout();
   const control = s.online ? [0, 1, 2, 3].map((z) => (z === me ? "local" : seats[z].human || s.host !== me ? "remote" : "cpu")) : undefined;
-  game.reset(s.level, s.seed, { me, control, delay: REMOTE_DELAY });
+  game.reset(s.level, s.seed, { me, control, delay: REMOTE_DELAY, drops: s.drops, leans: s.leans, hits: s.hits, settled: s.settled });
   fx.clear();
   held.clear(); order = [];
   show(null);
@@ -301,7 +303,7 @@ async function finish() {
   current.finishedAt = performance.now();
   banner("FINISH!"); sfx.finish(); telegram.haptic("success");
   if (current.online) {
-    net.send("done");
+    net.send("done", { r: current.round }, true);
     await wait(1300);
     if (round === my && phase === "finish") $("#waiting").hidden = false; // the results come from the server
     return;
@@ -361,7 +363,7 @@ function updateHud() {
 let net = null, room = null, mySeat = 0, status = "", roomError = "";
 
 function serverUrl() {
-  const u = params.get("server") || config.server;
+  const u = (testing && params.get("server")) || config.server;
   return u || (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
 }
 
@@ -403,7 +405,7 @@ function goOnline(code = "", create = false) {
   renderLobby();
   show("#lobby");
   telegram.back(toTitle);
-  net.open({ room: code.toUpperCase(), id: clientId(), name: myName(), create });
+  net.open({ room: code.toUpperCase(), id: clientId(), name: myName(), create, tg: telegram.initData || undefined });
 }
 
 function toLobby() {
@@ -421,7 +423,7 @@ function connectNet() {
   net.on("welcome", (m) => {
     mySeat = m.seat;
     setUrlRoom(m.room);
-    if (phase === "finish" && current?.online) net.send("done"); // finished while offline
+    if (phase === "finish" && current?.online) net.send("done", { r: current.round }); // (in case it was lost)
   });
   net.on("room", (r) => {
     room = r; roomError = "";
@@ -436,13 +438,12 @@ function connectNet() {
   net.on("start", (m) => {
     if (current?.online && current.round === m.round) return; // already in it (a reconnect)
     if (!m.lineup.some((p) => p.seat === mySeat)) return; // joined mid-round: next one
-    startRound({ online: true, round: m.round, level: m.level, seed: m.seed, goAt: m.at + COUNTDOWN, me: mySeat,
-                 lineup: m.lineup, host: m.host, scores: m.scores });
+    const drops = m.drops.map((seat) => seat.map(([t, col, k, fall]) => ({ t, col, kind: k === "v" ? "voltorb" : "egg", fall })));
+    startRound({ online: true, round: m.round, level: m.level, seed: m.seed, goAt: m.go, me: mySeat,
+                 lineup: m.lineup, host: m.host, scores: m.scores, drops, leans: m.leans, hits: m.hits, settled: m.settled });
   });
-  net.on("lean", (m) => {
-    if (current?.online && m.r === current.round && game.control[m.s] === "remote") game.inputs[m.s].push({ g: m.g, l: m.l });
-  });
-  net.on("ev", (m) => { if (current?.online && m.r === current.round) game.told(m.s, m.n, { e: m.e }); });
+  net.on("lean", (m) => { if (current?.online && m.r === current.round) game.remoteLean(m.s, m.g, m.l); });
+  net.on("ev", (m) => { if (current?.online && m.r === current.round) game.told(m.s, m.n, { k: m.k, e: m.e }); });
   net.on("results", (m) => {
     if (!current?.online || m.round !== current.round || current.resultsIn) return;
     current.resultsIn = true;
@@ -453,6 +454,21 @@ function connectNet() {
     setTimeout(() => { if (round === my) showResults(); }, Math.max(0, current.finishedAt + 1300 - performance.now()));
   });
   net.on("error", (m) => { roomError = m.code; room = null; renderLobby(); });
+  net.on("notice", (m) => {
+    if (m.code !== "name") return;
+    try { if (localStorage.getItem("egg_name") === m.name) localStorage.removeItem("egg_name"); } catch { /* private mode */ }
+    net.hello.name = undefined; // not again on a reconnect
+    showNotice(`"${m.name}" can't be used as a name here.`);
+    if (phase === "lobby") renderLobby();
+  });
+}
+
+let notice = "", noticeTimer = 0;
+function showNotice(text) {
+  notice = text;
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => { notice = ""; renderStatus(); }, 5000);
+  renderStatus();
 }
 
 // mid-round changes: someone left (a CPU takes their seat, played by the
@@ -477,19 +493,22 @@ function renderStatus() {
     "no-room": "That room is closed. Make a new one, or check the code.",
     full: "That room is full (4 players).",
     "bad-code": "That isn't a room code.",
-  }[roomError] || (room && status === "online" ? "" : {
+    busy: "The game server is busy. Try again in a bit.",
+  }[roomError] || notice || (room && status === "online" ? "" : {
     connecting: "Connecting…",
     reconnecting: room ? "Reconnecting…" : "Can't reach the game server. Trying again…",
   }[status] || "");
   el.textContent = text;
-  el.classList.toggle("bad", !!roomError || (!room && status === "reconnecting"));
+  el.classList.toggle("bad", !!roomError || !!notice || (!room && status === "reconnecting"));
 }
 
 function renderLobby() {
   renderStatus();
   const r = room, host = !!r && r.host === mySeat, busy = r?.state === "playing";
   $("#code").textContent = r ? r.room : "····";
-  $("#invite").hidden = !r;
+  $("#invite").hidden = $("#link").hidden = !r;
+  const link = r ? inviteLink(r.room) : "";
+  if ($("#linkText").value !== link) $("#linkText").value = link;
   $("#note").textContent = !r ? "" : busy ? "A round is on. You'll play in the next one."
     : host ? "Up to 4 players. Empty spots are played by CPUs." : `Waiting for ${hostName()} to start…`;
   $("#start").hidden = r ? !host || busy : !roomError;
@@ -520,6 +539,7 @@ function renderLobby() {
         const v = n.value.trim();
         if (!v) return;
         try { localStorage.setItem("egg_name", v); } catch { /* private mode */ }
+        net.hello.name = v; // and after a reconnect
         net.send("name", { name: v });
       });
       n.addEventListener("keydown", (e) => { if (e.key === "Enter") n.blur(); });
@@ -541,20 +561,36 @@ function renderLobby() {
   }
 }
 
-async function invite() {
-  if (!room) return;
-  const code = room.room, text = `Catch eggs with me in Egg Emergency! Room ${code}`;
-  if (config.telegramApp && telegram.share(`${config.telegramApp}?startapp=${code}`, text)) return;
+function inviteLink(code) {
+  if (config.telegramApp) return `${config.telegramApp}?startapp=${code}`;
   const u = new URL(location.href);
   u.search = "?room=" + code;
-  if (telegram.share(u.href, text)) return;
+  if (testing && params.get("server")) u.searchParams.set("server", params.get("server")); // friends need it too
+  return u.href;
+}
+
+async function invite() {
+  if (!room) return;
+  const url = inviteLink(room.room), text = `Catch eggs with me in Egg Emergency! Room ${room.room}`;
+  if (telegram.share(url, text)) return;
   try {
-    if (navigator.share) return await navigator.share({ title: "Egg Emergency", text, url: u.href });
+    if (navigator.share) return await navigator.share({ title: "Egg Emergency", text, url });
   } catch (e) { if (e.name === "AbortError") return; }
-  try {
-    await navigator.clipboard.writeText(u.href);
-    $("#note").textContent = "Link copied! Send it to your friends.";
-  } catch { $("#note").textContent = "Send your friends this link: " + u.href; }
+  copyLink();
+}
+
+// the link box stays selected either way, so a failed copy can be done by hand
+async function copyLink() {
+  const box = $("#linkText"), button = $("#copy");
+  box.focus();
+  box.setSelectionRange(0, box.value.length);
+  let ok = false;
+  try { await navigator.clipboard.writeText(box.value); ok = true; } catch { // none on plain http
+    try { ok = document.execCommand("copy"); } catch { /* old browser */ }
+  }
+  button.textContent = ok ? "Copied!" : "Selected";
+  clearTimeout(copyLink.timer);
+  copyLink.timer = setTimeout(() => { button.textContent = "Copy"; }, 2000);
 }
 
 // -------------------------------------------------------------------- boot
@@ -579,9 +615,10 @@ async function boot() {
   game.on("dud", (p) => { if (mine(p)) sfx.dud(); });
   game.on("finish", finish);
   // online, what this device plays goes to the others
-  game.on("lean", (s, l, g) => { if (current?.online) net.send("lean", { s, g, l }); });
-  game.on("result", (r) => { if (current?.online) net.send("ev", r); });
-  if (params.has("debug")) { // for testing from the console
+  // (kept while offline, and sent on reconnecting, so the server's copy of the leans stays whole)
+  game.on("lean", (s, l, g) => { if (current?.online) net.send("lean", { r: current.round, s, g, l }, true); });
+  game.on("result", (r) => { if (current?.online) net.send("ev", { r: current.round, ...r }, true); });
+  if (testing && params.has("debug")) { // for testing from the console
     window.egg = { game, fx, scene, paused: false, phase: () => phase, lean: (d) => (d ? hold("debug", d) : letGo("debug")),
                    net: () => net, room: () => room, me: () => me };
   }
@@ -616,6 +653,8 @@ async function boot() {
   $("#menu").addEventListener("click", () => (current?.online ? toLobby() : toTitle()));
   $("#start").addEventListener("click", () => { sfx.tap(); if (room) net.send("start"); else goOnline(); });
   $("#invite").addEventListener("click", () => { sfx.tap(); invite(); });
+  $("#copy").addEventListener("click", () => { sfx.tap(); copyLink(); });
+  $("#linkText").addEventListener("click", (e) => e.target.setSelectionRange(0, e.target.value.length));
   $("#leave").addEventListener("click", () => { sfx.tap(); toTitle(); });
   $("#join").addEventListener("submit", (e) => {
     e.preventDefault();

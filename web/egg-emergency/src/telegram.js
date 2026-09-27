@@ -17,6 +17,8 @@ export const telegram = {
   userId: (inside && tg.initDataUnsafe?.user?.id) || null,
   // from a t.me/<bot>/<app>?startapp=... link: a room to join
   startParam: (inside && tg.initDataUnsafe?.start_param) || null,
+  // Telegram's signed login, for the rooms server to check (it has the bot's token)
+  initData: (inside && tg.initData) || "",
 
   init(color) {
     if (!inside) return;

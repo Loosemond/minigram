@@ -152,7 +152,10 @@ kbd { display: inline-block; min-width: 1.4em; padding: 0 0.3em; border-radius: 
 /* the lobby */
 .art.short { height: 84px; background-position: center 30%; padding-bottom: 10px; }
 .art.short .logo { width: 220px; }
-#code { letter-spacing: 0.12em; color: var(--ink); }
+#code { letter-spacing: 0.12em; color: var(--ink); -webkit-user-select: text; user-select: text; }
+#link { display: flex; align-items: center; gap: 4px; margin: 12px 20px 0; padding: 2px 2px 2px 12px; border-radius: 12px; background: #f6f3f8; }
+#linkText { flex: 1; min-width: 0; padding: 6px 0; font: inherit; font-size: 14px; color: var(--ink); border: 0; background: none; outline: none; text-overflow: ellipsis; }
+#link .small { flex: none; color: var(--pink-dark); }
 .hint { margin: 2px 20px 6px; font-size: 14px; color: var(--muted); line-height: 1.35; }
 .hint:empty { display: none; }
 #status.bad { color: var(--p2); font-weight: 700; }

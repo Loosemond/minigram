@@ -13,7 +13,8 @@ tools/blender/ps2_import.py     Blender add-on: asset browser, face/flipbook ani
                                 clip browser, live arena materials
 tools/make_previews.py          thumbnails of every model + labelled sheets (needs Blender + Pillow)
 tools/web_assets.py, serve_web.py   copy assets into the browser minigames, and serve them (with
-                                rooms.py: the online rooms)
+                                rooms.py: the online rooms, egg_rules.py: their scoring, and
+                                test_rooms.py)
 web/                            minigames remade in three.js for the browser / Telegram (web/README.md)
 docs/                           game and ROM notes: formats, tables, what's where, open questions
 out/                            extracted assets (not in git: re-create with the commands below)

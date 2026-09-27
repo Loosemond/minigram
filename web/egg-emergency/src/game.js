@@ -22,6 +22,7 @@ export const VIEW_BOTTOM = WATER_Y - 0.3; // and a strip of the water under the 
 export const SPAWN_Y = VIEW_TOP + 0.35; // drops come from above the roofs
 export const TOTAL_EGGS = 100;
 export const VOLTORB_LOSS = 5;
+export const STUN = 0.8; // s after a shock with no catching: long enough to miss the next egg, as in the game
 const VOLTORB_SIZE = 0.5; // 24 px sprite, about 22 px of the picture
 const MOVE_TIME = 0.23; // the lean clips
 
@@ -33,11 +34,15 @@ const CATCH = { "-1": CLIP.catchL, 0: CLIP.catchC, 1: CLIP.catchR };
 const MOVE = { "0>1": 4, "1>0": 5, "0>-1": 6, "-1>0": 7, "-1>1": 8, "1>-1": 9 };
 
 // Each CPU gets its own personality around the level's skill (see Brain).
-// Simulated (6 rounds each, eggs caught per CPU): easy ~55-85, normal ~75-90,
-// hard ~85-96; a flawless player with a 0.3 s reaction gets ~94-98.
+// Simulated (72 rounds each, eggs per CPU, 10th-90th percentile): easy ~30-55,
+// normal ~49-69, hard ~90-97. To win a solo round you beat the best of three:
+// on average about 50 on easy, 66 on normal, 96 on hard. A flawless player
+// with a 0.3 s reaction gets ~94-98. The easy ones mostly ignore eggs and
+// drift off; their reaction stays well under the fastest fall (0.8 s), or they
+// couldn't see the late Voltorbs coming and their scores would collapse.
 export const LEVELS = {
-  easy: { reaction: 0.5, fumble: 0.28, dodgeFail: 0.45, lapse: 0.15 },
-  normal: { reaction: 0.37, fumble: 0.16, dodgeFail: 0.3, lapse: 0.1 },
+  easy: { reaction: 0.55, fumble: 0.66, dodgeFail: 0.25, lapse: 0.7 },
+  normal: { reaction: 0.42, fumble: 0.45, dodgeFail: 0.2, lapse: 0.3 },
   hard: { reaction: 0.23, fumble: 0.05, dodgeFail: 0.1, lapse: 0.03 },
 };
 
@@ -141,7 +146,7 @@ class Player {
     const lost = Math.min(this.eggs, VOLTORB_LOSS);
     this.eggs -= lost;
     this.anim = "hurt";
-    this.stun = 0.8; // long enough to miss the next egg, as in the game
+    this.stun = STUN;
     this.ch.play(CLIP.hurt, { loop: false, fade: 0.03, restart: true });
     return lost;
   }
@@ -162,10 +167,10 @@ function personality(level, rnd) {
   return {
     reaction: L.reaction * f(0.8, 1.25), jitter: f(0.1, 0.35),
     lead: f(0.08, 0.5),
-    fumble: L.fumble * f(0.6, 1.4), dodgeFail: L.dodgeFail * f(0.6, 1.4),
+    fumble: L.fumble * f(0.85, 1.15), dodgeFail: L.dodgeFail * f(0.7, 1.3),
     home: rnd() < 0.5,
     fidget: f(0, 0.7),
-    lapse: L.lapse * f(0.5, 1.5),
+    lapse: L.lapse * f(0.6, 1.4),
   };
 }
 
@@ -212,12 +217,14 @@ class Brain {
 }
 
 // Who plays each seat: "local" (this device's player), "cpu", or "remote"
-// (someone on another device, online). A remote seat runs a little behind the
-// others (setup.delay), so the leans that device sends arrive before they're
-// due, and it doesn't decide its own catches: the device that plays it says
-// what happened (told()), with its egg count, which is the one that counts.
-// The seats this device plays emit "lean" when the lean changes and "result"
-// on every catch and Voltorb hit, for sending on.
+// (someone on another device, online). The seats this device plays emit
+// "lean" when the lean changes and "result" on every catch and Voltorb hit,
+// for sending on. A drop lands (takes()) if its seat leans its way at the
+// moment it reaches the hands, going by the leans sent, which is exactly how
+// the rooms server judges it (tools/egg_rules.py), so the two agree. A remote
+// seat runs a little behind the others (setup.delay), so the leans its device
+// sends arrive before they're due, and it isn't judged here: the server says
+// what happened (told()), with the egg count, which is the one that counts.
 export class Game {
   constructor(scene, assets, fx) {
     this.scene = scene; this.assets = assets; this.fx = fx;
@@ -234,12 +241,16 @@ export class Game {
   on(name, fn) { (this.listeners[name] ||= []).push(fn); }
   emit(name, ...args) { for (const fn of this.listeners[name] || []) fn(...args); }
 
-  // setup: { me: this device's seat, control: per seat, delay: s }
+  // setup: { me: this device's seat, control: per seat, delay: s } and, online,
+  // the server's round: { drops, and to rejoin it midway, each seat's leans
+  // (its last so far, [g, l]), hits (its last shock) and settled (how many of
+  // its drops are judged, in the order they arrive) }
   reset(level, seed = (Math.random() * 2 ** 31) | 0, setup = {}) {
     for (const o of this.objects) this.release(o);
     this.objects = [];
     this.level = level;
-    this.drops = makeSchedules(seed);
+    this.drops = setup.drops || makeSchedules(seed);
+    this.arrive = this.drops.map((list) => list.map((d) => d.t + d.fall)); // when each reaches the hands
     this.next = [0, 0, 0, 0];
     this.time = 0;
     this.state = "ready";
@@ -247,12 +258,18 @@ export class Game {
     this.control = setup.control || [0, 1, 2, 3].map((z) => (z === this.me ? "local" : "cpu"));
     this.delay = this.control.map((c) => (c === "remote" ? setup.delay ?? 0.3 : 0));
     this.inputs = [[], [], [], []]; // remote leans, due at their seat's time: {g, l}
-    this.known = [0, 1, 2, 3].map(() => new Map()); // remote results: drop number -> {e}
-    this.settled = [0, 1, 2, 3].map(() => new Set()); // drops already caught or hit
-    this.sent = [0, 0, 0, 0];
+    this.leans = [0, 1, 2, 3].map((z) => (setup.leans?.[z] ? [{ g: setup.leans[z][0], l: setup.leans[z][1] }] : [])); // all of them
+    this.hitAt = [0, 1, 2, 3].map((z) => setup.hits?.[z] ?? -Infinity); // when the last shock was
+    this.known = [0, 1, 2, 3].map(() => new Map()); // told results: drop number -> {k, e}
+    this.settled = this.arrive.map((a, z) => { // drops already judged here (or, rejoining, by the server)
+      const order = a.map((_, n) => n).sort((i, j) => a[i] - a[j] || i - j);
+      return new Set(order.slice(0, setup.settled?.[z] || 0));
+    });
     this.rnd = mulberry32(seed ^ 0x5bd1e995);
     this.brains = this.control.map((c) => (c === "cpu" ? new Brain(level, this.rnd) : null));
     for (const p of this.players) p.reset();
+    this.sent = this.leans.map((log) => log.at(-1)?.l ?? 0); // the last lean sent (or the server's)
+    this.players.forEach((p, z) => { p.want = this.sent[z]; });
   }
   start() {
     this.state = "play";
@@ -266,12 +283,37 @@ export class Game {
   // a seat changes hands mid-round, e.g. a CPU takes over from someone who left
   setControl(z, c) {
     if (this.control[z] === c) return;
+    const q = this.inputs[z];
+    if (q.length && c !== "remote") this.players[z].want = q[q.length - 1].l; // its leans still due
     this.control[z] = c;
     this.brains[z] = c === "cpu" ? new Brain(this.level, this.rnd) : null;
     this.inputs[z] = [];
     this.sent[z] = this.players[z].want;
   }
   zoneTime(z) { return this.time - this.delay[z]; }
+  // seat z leans l from time g. Leans are kept in order (a device's clock
+  // never runs back, and the server keeps them the same way); returns the time
+  logLean(z, g, l) {
+    const log = this.leans[z];
+    g = Math.max(g, log.length ? log[log.length - 1].g : 0);
+    log.push({ g, l });
+    return g;
+  }
+  remoteLean(z, g, l) { // from another device, through the server
+    if (this.control[z] !== "remote") return;
+    this.inputs[z].push({ g: this.logLean(z, g, l), l });
+  }
+  leanAt(z, t) {
+    const log = this.leans[z];
+    for (let k = log.length - 1; k >= 0; k--) if (log[k].g <= t) return log[k].l;
+    return 0;
+  }
+  // drop n of seat z lands (caught, or a Voltorb's shock) if the seat leans its
+  // way when it reaches the hands, and it isn't still stunned from a shock
+  takes(z, n) {
+    const a = this.arrive[z][n], h = this.hitAt[z];
+    return this.leanAt(z, a) === this.drops[z][n].col && !(h < a && a <= h + STUN);
+  }
   get eggsLeft() { // the player's own
     let n = 0;
     const d = this.drops?.[this.me] || [];
@@ -295,7 +337,7 @@ export class Game {
     const o = this.get(d.kind);
     const catchY = this.players[zone].catchY(this), t = this.zoneTime(zone);
     Object.assign(o, {
-      kind: d.kind, col: d.col, zone, n, state: "fall", passed: false, pending: false, spawnT: t, arrive: t + d.fall,
+      kind: d.kind, col: d.col, zone, n, state: "fall", passed: false, spawnT: t, arrive: t + d.fall,
       speed: (SPAWN_Y - catchY) / d.fall, spin: Math.random() * 6.28,
     });
     setLayer(o.mesh, zone + 1);
@@ -312,7 +354,10 @@ export class Game {
         while (q.length && q[0].g <= t) p.want = q.shift().l;
         while (this.next[z] < list.length && list[this.next[z]].t <= t) this.spawn(list[this.next[z]], this.next[z]++, z);
         this.brains[z]?.think(p, this.objects, t, dt);
-        if (this.control[z] !== "remote" && p.want !== this.sent[z]) { this.sent[z] = p.want; this.emit("lean", z, p.want, t); }
+        if (this.control[z] !== "remote" && p.want !== this.sent[z]) {
+          this.sent[z] = p.want;
+          this.emit("lean", z, p.want, this.logLean(z, t, p.want));
+        }
       }
       this.updateObjects(dt);
       if (this.next.every((n, z) => n >= this.drops[z].length) && !this.objects.length) {
@@ -334,11 +379,10 @@ export class Game {
       else m.material.map = m.userData.frames[Math.floor(this.time * 12 + o.spin) % 6];
       if (!o.passed && y0 > catchY && m.position.y <= catchY) {
         o.passed = true;
-        if (this.control[o.zone] === "remote") {
-          const told = this.known[o.zone].get(o.n);
-          if (told) this.resolve(o.zone, o.n, told);
-          else o.pending = true; // its player's device hasn't said yet: see told()
-        } else if (p.col === o.col && p.anim !== "hurt") this.resolve(o.zone, o.n);
+        const told = this.known[o.zone].get(o.n);
+        if (told) this.resolve(o.zone, o.n, told);
+        else if (this.control[o.zone] !== "remote" && this.takes(o.zone, o.n)) this.resolve(o.zone, o.n);
+        // (a remote seat's waits for the server's word: see told())
       }
       if (o.state === "fall" && m.position.y <= WATER_Y) { // missed: past the bridge into the water
         o.state = "gone";
@@ -351,7 +395,7 @@ export class Game {
   }
 
   // drop n of seat z reached its player's hands: caught (an egg) or a shock (a
-  // Voltorb). told: what the device that plays the seat reported
+  // Voltorb). told: what the server said
   resolve(z, n, told) {
     if (this.settled[z].has(n)) return;
     this.settled[z].add(n);
@@ -369,6 +413,7 @@ export class Game {
       this.fx.popup(1, at, z);
       this.emit("catch", p);
     } else {
+      this.hitAt[z] = this.arrive[z][n];
       p.hit();
       if (told) p.eggs = told.e;
       const lost = Math.max(0, before - p.eggs);
@@ -381,14 +426,17 @@ export class Game {
     if (!told) this.emit("result", { s: z, n, k: this.drops[z][n].kind === "egg" ? "c" : "h", e: p.eggs, g: this.zoneTime(z) });
   }
 
-  // a remote seat's device reports drop n: {e: its egg count after it}. Usually
-  // it comes before the drop gets here; if late, it's shown when it arrives
+  // the server says what seat z's drop n came to: {k: "c" (caught), "h" (a
+  // shock) or "m" (nothing), e: the egg count after}. For a remote seat it
+  // usually comes before the drop gets here (the seat runs behind); if late,
+  // it's shown when it arrives. For a drop already judged here, or "m", it
+  // just sets the count (the server's is the one that counts)
   told(z, n, r) {
-    if (this.state !== "play" || this.control[z] !== "remote" || !this.drops[z][n] || !Number.isFinite(r.e)) return;
-    if (this.settled[z].has(n)) { this.players[z].eggs = r.e; return; }
+    if (this.state !== "play" || !this.drops[z]?.[n] || !Number.isFinite(r.e)) return;
+    if (this.settled[z].has(n) || r.k === "m") { this.players[z].eggs = r.e; return; }
     this.known[z].set(n, r);
     const o = this.objects.find((x) => x.zone === z && x.n === n && x.state === "fall");
-    if (o ? o.pending : n < this.next[z]) this.resolve(z, n, r);
+    if (o ? o.passed : n < this.next[z]) this.resolve(z, n, r);
   }
 
   results() {

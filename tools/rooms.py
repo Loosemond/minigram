@@ -1,40 +1,59 @@
-"""Online rooms for the web minigames: a small WebSocket relay, standard
+"""Online rooms for the web minigames: a small WebSocket server, standard
 library only. tools/serve_web.py serves it at /ws, next to the pages.
 
 Up to four people share a room, found by a four-letter code. Whoever has been
 in the room longest is its host: they pick the level and start the rounds. A
-round is the same for everyone: the server deals one seed and a start time on
-its own clock (the clients sync to it with ping/pong). Then each device plays
-its own player and decides its own catches, and sends its leans and results,
-which the server passes on to the others. The host's device also plays the
-CPUs. The server keeps each seat's egg count from those results and announces
-the ranking once every player has finished. A dropped connection keeps its
-seat for a few seconds, so a reload or a network blip rejoins the same seat
-(and the same round, with its eggs).
+round is the same for everyone: the server deals the drops and a start time on
+its own clock (the clients sync to it with ping/pong). Each device plays its
+own player, and the host's device also plays the CPUs; they send their leans,
+which the server passes on to the others. The server keeps the score itself
+from those leans (tools/egg_rules.py), so a device can't claim catches its
+player didn't make, and announces the ranking at the end. A dropped connection
+keeps its seat for a few seconds, so a reload or a network blip rejoins the
+same seat (and the same round, with its eggs).
+
+Set TELEGRAM_BOT_TOKEN to check Telegram logins (then no one can pose as a
+Telegram player), and TYPESAFE_API_KEY to check names before others see them.
 
 Messages are JSON objects with their type in "t"; web/README.md lists them.
 """
 import base64
+import concurrent.futures
 import hashlib
+import hmac
 import json
 import math
+import os
 import queue
 import random
 import socket
 import struct
 import threading
 import time
+import urllib.parse
+import urllib.request
 
-SEATS = 4
+import egg_rules
+
+SEATS = egg_rules.SEATS
 LETTERS = "BCDFGHJKLMNPQRSTVWXZ"  # no vowels, so no code spells a word
 LEVELS = ("easy", "normal", "hard")
-EGGS = 100
 GRACE = 8  # s a dropped connection keeps its seat
-FINISH_WAIT = 10  # s to wait for the rest after the first player finishes (a device in the background)
+LEAD = 800  # ms from "start" to the countdown, so it reaches everyone before
+GO_DELAY = 2650  # ms of countdown before GO (COUNTDOWN in the game's main.js)
+SETTLE_LAG = 3  # s after a drop reaches the hands, it's judged even if its device hasn't reported it
+SLACK = 2  # s a device's clock may be off from the server's
+END_WAIT = 5  # s after the last drop: the round ends even if a device hasn't finished (one in the background)
 ROUND_MAX = 300  # s: no round lasts longer (they take about two minutes)
 IDLE = 45  # s without a message: the connection is dead (clients ping every 8 s)
-LEAD = 800  # ms from "start" to the countdown, so it reaches everyone before
-MAX_MESSAGE = 4096
+MAX_MESSAGE = 8192
+RATE, BURST = 60, 400  # messages a second a connection may send, and in one go
+CHANGE_GAP = 0.5  # s between renames or level changes
+MAX_ROOMS = 500
+AUTH_MAX_AGE = 86400  # s a Telegram login stays good
+BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TYPESAFE_KEY = os.environ.get("TYPESAFE_API_KEY", "")
+NAME_OK = 0.5  # the name check's probability that a name is fine, at least
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"  # RFC 6455
 
 lock = threading.RLock()  # guards rooms and everything in them
@@ -44,6 +63,12 @@ rooms = {}
 def clock():
     """The server's clock in ms, the one the clients sync to."""
     return time.monotonic() * 1000
+
+
+def describe():
+    return "Telegram logins %s, names %s" % (
+        "checked" if BOT_TOKEN else "not checked (no TELEGRAM_BOT_TOKEN)",
+        "checked with TypeSafe" if TYPESAFE_KEY else "not checked (no TYPESAFE_API_KEY)")
 
 
 class WebSocket:
@@ -115,11 +140,14 @@ class WebSocket:
 
 
 class Member:
-    def __init__(self, cid, name, seat, ws):
+    def __init__(self, cid, name, seat, ws, verified):
         self.id, self.name, self.seat, self.ws = cid, name, seat, ws
+        self.verified = verified  # a checked Telegram login: its name is the Telegram one
         self.since = time.monotonic()
         self.away = None  # when the connection dropped
         self.done = False  # finished the round
+        self.changed = 0  # the last rename or level change
+        self.asked = None  # a name waiting for the name check
 
     def send(self, msg):
         if self.ws:
@@ -133,15 +161,19 @@ class Room:
         self.state = "lobby"  # or "playing"
         self.round = 0
         self.level = "normal"
-        self.seed = self.at = 0
+        self.seed = self.at = self.go = 0
         self.lineup = {}  # seat -> {id, name}: who plays this round; the other seats are CPUs
-        self.scores = [0] * SEATS
-        self.started = self.first_done = None
+        self.game = None  # the round's drops, leans and scores (egg_rules.Round)
+        self.started = None
 
     def broadcast(self, msg, skip=None):
         for m in self.members.values():
             if m is not skip:
                 m.send(msg)
+
+    def now(self):
+        """The round's time in s (from GO)."""
+        return (clock() - self.go) / 1000
 
     def playing(self, seat):
         """The seat is played by the person it was dealt to this round (not a CPU)."""
@@ -154,6 +186,10 @@ class Room:
             ms = [m for m in ms if self.playing(m.seat)] or ms
         return min(ms, key=lambda m: m.since).seat if ms else None
 
+    def player(self, seat):
+        """Whose device plays the seat now: its person's, or the host's for a CPU."""
+        return self.members.get(seat if self.playing(seat) else self.host())
+
     def lineup_info(self):
         return [dict(seat=s, name=p["name"], here=self.playing(s)) for s, p in sorted(self.lineup.items())]
 
@@ -163,12 +199,16 @@ class Room:
                     lineup=self.lineup_info() if self.state == "playing" else None)
 
     def start_msg(self):
-        return dict(t="start", round=self.round, seed=self.seed, level=self.level, at=self.at, host=self.host(),
-                    lineup=self.lineup_info(), scores=self.scores)
+        """The round, as a device needs it to play (also to rejoin it midway)."""
+        g = self.game
+        return dict(t="start", round=self.round, seed=self.seed, level=self.level, at=self.at, go=self.go,
+                    host=self.host(), lineup=self.lineup_info(), drops=g.wire(), scores=g.scores,
+                    leans=[g.last_lean(s) for s in range(SEATS)], settled=g.next,
+                    hits=[h if h > -math.inf else None for h in g.hit])
 
 
 def _number(v):
-    return v if isinstance(v, (int, float)) and math.isfinite(v) else 0
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) else 0
 
 
 def _name(v):
@@ -179,38 +219,142 @@ def _error(ws, code):
     ws.send(json.dumps(dict(t="error", code=code)))
 
 
+# ------------------------------------------------------------ who's who
+
+def telegram_user(init_data):
+    """The Telegram user in a Mini App's initData, if Telegram signed it for this
+    bot (TELEGRAM_BOT_TOKEN) not too long ago; else None.
+    https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app"""
+    if not BOT_TOKEN or not isinstance(init_data, str) or not init_data or len(init_data) > 4096:
+        return None
+    fields = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
+    got = fields.pop("hash", "")
+    secret = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+
+    def sign(f):
+        return hmac.new(secret, "\n".join("%s=%s" % kv for kv in sorted(f.items())).encode(), hashlib.sha256).hexdigest()
+
+    # the newer "signature" field is in the signed data on some clients, left out on others
+    without = {k: v for k, v in fields.items() if k != "signature"}
+    if not (hmac.compare_digest(sign(fields), got) or hmac.compare_digest(sign(without), got)):
+        return None
+    try:
+        user = json.loads(fields.get("user", ""))
+        age = time.time() - int(fields.get("auth_date", "0"))
+    except ValueError:
+        return None
+    if not isinstance(user, dict) or not isinstance(user.get("id"), int) or not -60 < age < AUTH_MAX_AGE:
+        return None
+    return user
+
+
+checker = concurrent.futures.ThreadPoolExecutor(4) if TYPESAFE_KEY else None
+name_checks = {}  # casefolded name -> fine or not
+
+
+def name_check(name):
+    """Jev's (TypeSafe's) probability that a name is fine to show to others."""
+    body = dict(model="jev-latest", state=dict(name=name), questions=dict(fine=dict(
+        type="noul",
+        instructions="Is `name` fine to show to other players as a player name in a family-friendly game?",
+        criteria={"true": "An ordinary first name, nickname, or harmless word or phrase, in any language",
+                  "false": "Rude, sexual, hateful or harassing, or a slur, including disguised with misspellings, "
+                           "spacing or symbols"})))
+    req = urllib.request.Request("https://api.typesafe.ai/v1/systemone", data=json.dumps(body).encode(), method="POST",
+                                 headers={"Authorization": "Bearer " + TYPESAFE_KEY, "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=6) as r:
+        return float(json.load(r)["answers"]["fine"]["noul"])
+
+
+def ask_typesafe(name):
+    """Is the name fine to show: (fine, sure). If Jev can't be asked, the name
+    goes through, unsure (so it's asked again next time)."""
+    try:
+        return name_check(name) >= NAME_OK, True
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        print("name check failed (%s): letting it through" % e)
+        return True, False
+
+
+def rename(room, m, name, quiet=False):
+    """Give m this name, once the name check says it's fine. With the lock held;
+    quiet: the caller sends the room's news itself."""
+    name = _name(name)
+    if not name or name == m.name:
+        return
+    fine = True if not checker else name_checks.get(name.casefold())
+    if fine is None:
+        m.asked = name
+        checker.submit(_checked, room, m, name)
+    else:
+        _named(room, m, name, fine, quiet)
+
+
+def _checked(room, m, name):
+    fine, sure = ask_typesafe(name)
+    with lock:
+        if sure:
+            if len(name_checks) > 10000:
+                name_checks.clear()
+            name_checks[name.casefold()] = fine
+        if room.members.get(m.seat) is m and m.asked == name:
+            m.asked = None
+            _named(room, m, name, fine)
+
+
+def _named(room, m, name, fine, quiet=False):
+    if not fine:
+        m.send(dict(t="notice", code="name", name=name))
+        return
+    m.name = name
+    p = room.lineup.get(m.seat)
+    if p and p["id"] == m.id:
+        p["name"] = name
+    if not quiet:
+        room.broadcast(room.snapshot())
+
+
+# ------------------------------------------------------------ rooms
+
 def join(ws, msg):
     """"hello": join the room msg["room"] (or a new one). Returns (room, member), or None."""
     cid = str(msg.get("id") or "")[:64] or "%016x" % random.getrandbits(64)
-    name = _name(msg.get("name"))
+    name = msg.get("name")
+    user = telegram_user(msg.get("tg"))
+    if user:
+        cid, name = "tg%d" % user["id"], user.get("first_name")
+    elif BOT_TOKEN and cid.startswith("tg"):
+        cid = "web-" + cid  # only a signed Telegram login gets a Telegram player's seat
     code = str(msg.get("room") or "").strip().upper()
     with lock:
         if code:
             if not (4 <= len(code) <= 6 and all(c in LETTERS for c in code)):
                 return _error(ws, "bad-code")
             room = rooms.get(code)
-            if room is None:
-                if not msg.get("create"):
-                    return _error(ws, "no-room")
-                room = rooms[code] = Room(code)
+            if room is None and not msg.get("create"):
+                return _error(ws, "no-room")
         else:
             code = "".join(random.choice(LETTERS) for _ in range(4))
             while code in rooms:
                 code = "".join(random.choice(LETTERS) for _ in range(4))
+            room = None
+        if room is None:
+            if len(rooms) >= MAX_ROOMS:
+                return _error(ws, "busy")
             room = rooms[code] = Room(code)
         m = next((m for m in room.members.values() if m.id == cid), None)
         if m:  # the same player again (a reload, a new connection): same seat
             if m.ws and m.ws is not ws:
                 m.ws.close()
             m.ws, m.away = ws, None
-            m.name = name or m.name
         else:
             free = [s for s in range(SEATS) if s not in room.members]
             if not free:
                 if not room.members:
                     rooms.pop(room.code, None)
                 return _error(ws, "full")
-            m = room.members[free[0]] = Member(cid, name or "Player %d" % (free[0] + 1), free[0], ws)
+            m = room.members[free[0]] = Member(cid, "Player %d" % (free[0] + 1), free[0], ws, bool(user))
+        rename(room, m, name, quiet=True)
         m.send(dict(t="welcome", room=room.code, seat=m.seat, now=clock()))
         if room.state == "playing" and room.playing(m.seat):
             m.send(room.start_msg())  # carry on with the round
@@ -223,42 +367,69 @@ def start(room):
     room.state = "playing"
     room.seed = random.getrandbits(31)
     room.at = clock() + LEAD
+    room.go = room.at + GO_DELAY
+    room.game = egg_rules.Round(room.seed)
     room.lineup = {s: dict(id=m.id, name=m.name) for s, m in room.members.items() if m.away is None}
-    room.scores = [0] * SEATS
-    room.started, room.first_done = time.monotonic(), None
+    room.started = time.monotonic()
     for m in room.members.values():
         m.done = False
     room.broadcast(room.start_msg())
     room.broadcast(room.snapshot())
 
 
+def judge(room, s, upto, claim=None):
+    """Judge seat s's drops that reached the hands by round time upto, and pass
+    on the catches and shocks. claim: (member, n, k, e), what a device reported
+    for its drop n; it only hears back what's different."""
+    g = room.game
+    judged = set()
+    for n, k, e, a in g.settle(s, upto):
+        judged.add(n)
+        same = claim is not None and claim[1:] == (n, k, e)
+        room.broadcast(dict(t="ev", r=room.round, s=s, n=n, k=k, e=e, g=a), skip=claim[0] if same else None)
+    if claim:
+        m, n, k, e = claim
+        res = g.results[s].get(n)
+        if g.settled(s, n) and (res is None or res[0] != k or n not in judged and res[1] != e):
+            # not what it counted: its player didn't catch that (or the count's off)
+            m.send(dict(t="ev", r=room.round, s=s, n=n, k=res[0] if res else "m", e=g.scores[s], g=g.arrive[s][n]))
+
+
 def relay(room, m, t, msg):
-    """A lean or a result for seat s, from the device that plays it: pass it on."""
+    """A lean or a result for seat s, from the device that plays it."""
     s = msg.get("s")
-    if room.state != "playing" or not isinstance(s, int) or not 0 <= s < SEATS or not room.playing(m.seat):
+    if room.state != "playing" or msg.get("r") != room.round or type(s) is not int or not 0 <= s < SEATS \
+            or not room.playing(m.seat):
         return
     if room.playing(s) and s != m.seat:
         return  # someone else's player
     if not room.playing(s) and m.seat != room.host():
         return  # the CPUs are the host's
-    out = dict(t=t, r=room.round, s=s, g=_number(msg.get("g")))
+    g = room.game
     if t == "lean":
-        out["l"] = max(-1, min(1, int(_number(msg.get("l")))))
-    else:
-        e = max(0, min(EGGS, int(_number(msg.get("e")))))
-        out.update(n=int(_number(msg.get("n"))), k="h" if msg.get("k") == "h" else "c", e=e)
-        room.scores[s] = e
-    room.broadcast(out, skip=m)
+        l = max(-1, min(1, int(_number(msg.get("l")))))
+        at = g.lean(s, float(_number(msg.get("g"))), l)
+        room.broadcast(dict(t="lean", r=room.round, s=s, g=at, l=l), skip=m)
+    else:  # "ev": its device says drop n was caught or a shock; the server judges it now
+        n = msg.get("n")
+        if type(n) is not int or not 0 <= n < len(g.drops[s]) or g.arrive[s][n] > room.now() + SLACK:
+            return
+        judge(room, s, g.arrive[s][n], (m, n, msg.get("k"), msg.get("e")))
 
 
-def check_end(room, force=False):
-    """End the round once everyone in it has finished (or left)."""
+def check_end(room):
+    """End the round once everyone in it has finished (or left), or it's long over."""
     if room.state != "playing":
         return
-    if not force and any(room.playing(m.seat) and not m.done for m in room.members.values()):
+    g, now = room.game, room.now()
+    players = [m for m in room.members.values() if room.playing(m.seat)]
+    finished = all(m.done for m in players) and now >= g.end - SLACK  # a "done" before the end doesn't count yet
+    if players and not finished and now < g.end + END_WAIT and time.monotonic() - room.started < ROUND_MAX:
         return
-    results = dict(t="results", round=room.round, scores=room.scores, lineup=room.lineup_info())
-    room.state, room.lineup, room.first_done = "lobby", {}, None
+    for s in range(SEATS):
+        judge(room, s, math.inf)
+    results = dict(t="results", round=room.round, scores=g.scores, lineup=room.lineup_info())
+    room.state, room.lineup = "lobby", {}
     room.broadcast(results)
     room.broadcast(room.snapshot())
 
@@ -286,15 +457,16 @@ def handle(room, m, msg):
     elif t in ("lean", "ev"):
         relay(room, m, t, msg)
     elif t == "done":
-        if room.state == "playing" and room.playing(m.seat):
+        if room.state == "playing" and msg.get("r") == room.round and room.playing(m.seat):
             m.done = True
-            room.first_done = room.first_done or time.monotonic()
             check_end(room)
-    elif t == "name":
-        m.name = _name(msg.get("name")) or m.name
-        room.broadcast(room.snapshot())
-    elif t == "level":
-        if room.state == "lobby" and m.seat == room.host() and msg.get("level") in LEVELS:
+    elif t in ("name", "level"):
+        if time.monotonic() - m.changed < CHANGE_GAP:
+            return True
+        m.changed = time.monotonic()
+        if t == "name" and not m.verified:
+            rename(room, m, msg.get("name"))
+        elif t == "level" and room.state == "lobby" and m.seat == room.host() and msg.get("level") in LEVELS:
             room.level = msg["level"]
             room.broadcast(room.snapshot())
     elif t == "start":
@@ -315,9 +487,13 @@ def _reap():
                 for m in list(room.members.values()):
                     if m.away is not None and now - m.away > GRACE:
                         remove(room, m)
-                if room.state == "playing" and (room.first_done and now - room.first_done > FINISH_WAIT
-                                                or now - room.started > ROUND_MAX):
-                    check_end(room, force=True)
+                if room.state == "playing":
+                    # the drops no one reported: missed, unless the leans say otherwise
+                    for s in range(SEATS):
+                        p = room.player(s)
+                        if p and p.ws:  # (not while its device is reconnecting)
+                            judge(room, s, room.now() - SETTLE_LAG)
+                    check_end(room)
 
 
 _reaper = None
@@ -343,11 +519,19 @@ def serve(handler):
     handler.connection.settimeout(IDLE)
     ws = WebSocket(handler)
     room = m = None
+    tokens, last = BURST, time.monotonic()
     try:
         while True:
             text = ws.recv()
             if text is None:
                 break
+            now = time.monotonic()
+            tokens = min(BURST, tokens + (now - last) * RATE) - 1
+            last = now
+            if tokens < 0:  # too many: ignored, and a flood closes the connection
+                if tokens < -BURST:
+                    break
+                continue
             try:
                 msg = json.loads(text)
             except ValueError:

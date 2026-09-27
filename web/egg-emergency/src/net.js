@@ -10,6 +10,7 @@ export class Net {
     this.offset = 0; // server clock - performance.now(), in ms
     this.retry = 0;
     this.wanted = false;
+    this.outbox = []; // a round's messages sent while offline, for when it's back
   }
   on(t, fn) { (this.handlers[t] ||= []).push(fn); }
   emit(t, m) { for (const fn of this.handlers[t] || []) fn(m); }
@@ -19,6 +20,7 @@ export class Net {
   // join a room: hello = {room, id, name, create}; no room makes a new one
   open(hello) {
     this.close();
+    this.outbox = [];
     this.hello = { ...hello };
     this.wanted = true;
     this.retry = 0;
@@ -26,6 +28,7 @@ export class Net {
   }
   connect() {
     const ws = (this.ws = new WebSocket(this.url));
+    this.welcomed = false;
     this.emit("status", this.retry ? "reconnecting" : "connecting");
     ws.onopen = () => {
       this.samples = [];
@@ -41,6 +44,8 @@ export class Net {
         this.hello.room = m.room; // reconnect to this room from now on
         this.hello.create = false;
         if (!this.samples.length) this.offset = m.now - performance.now(); // until the first pong
+        this.welcomed = true;
+        for (const text of this.outbox.splice(0)) ws.send(text);
         this.emit("status", "online");
       }
       if (m.t === "error") this.wanted = false; // no room, full: don't retry
@@ -55,7 +60,13 @@ export class Net {
       this.timer = setTimeout(() => this.connect(), Math.min(8000, 500 * 2 ** this.retry++));
     };
   }
-  send(t, data = {}) { if (this.connected) this.ws.send(JSON.stringify({ t, ...data })); }
+  // keep: the round's leans and results; offline (or not yet back in the
+  // room), they wait and go out once it's back
+  send(t, data = {}, keep = false) {
+    const text = JSON.stringify({ t, ...data });
+    if (this.connected && (this.welcomed || !keep)) this.ws.send(text);
+    else if (keep && this.wanted && this.outbox.length < 2000) this.outbox.push(text);
+  }
   close() {
     this.wanted = false;
     clearTimeout(this.timer);

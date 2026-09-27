@@ -23,7 +23,8 @@ connections open, since the game loads ~60 small files. It also runs the
 online rooms (`tools/rooms.py`) at `/ws`. Both are standard library only.
 
 Add `?debug` to the URL to get `window.egg` in the console (`egg.game`,
-`egg.paused = true`, `egg.lean(-1 | 0 | 1)`, `egg.net()`, `egg.room()`).
+`egg.paused = true`, `egg.lean(-1 | 0 | 1)`, `egg.net()`, `egg.room()`). It
+works on localhost only, unless `debug` is true in `src/config.js`.
 `clips.html` plays every Chansey clip side by side (`?t=0.3` freezes them at a
 time). `party.html` runs several online players in one tab
 ([below](#online-play)).
@@ -106,6 +107,7 @@ code. **Invite friends** sends a link: in Telegram it opens the share picker
 (with `telegramApp` set in `src/config.js`, the link opens the game straight
 in Telegram, `t.me/<bot>/<app>?startapp=CODE`; without it, it's this page with
 `?room=CODE`); in a browser it uses the system share sheet or copies the link.
+The link is also shown under the button, with a Copy button.
 The code can also be typed into the lobby. Up to four people join; the empty
 spots are CPUs. Everyone gets the next free seat and its colour (1P blue, 2P
 green, 3P red, 4P yellow). The host (whoever has been in the room longest)
@@ -114,58 +116,106 @@ whichever seat you have, and names show over the cards.
 
 How it works:
 
-- **Each device plays its own Chansey**, with no network delay, and decides
-  its own catches; the host's device also plays the CPUs. Players never
-  touch each other's eggs, so there's nothing to reconcile: each device sends
-  its leans and its results (a catch or a shock, with its egg count), and the
-  server passes them on. The server keeps the counts and sends the ranking at
-  the end, so everyone sees the same result.
-- **Same round, same moment.** The server deals the seed (everyone gets the
-  same drops) and a GO time on its own clock. Clients sync to it with
-  ping/pong (the lowest-delay round trip of the last 12) and run the round
-  on that clock, catching up in small steps after a hiccup.
+- **Each device plays its own Chansey**, with no network delay; the host's
+  device also plays the CPUs. Devices send their players' leans (which
+  column, from which moment of the round), and the server passes them on
+  and **keeps the score itself** from them (`tools/egg_rules.py`): a drop
+  counts if the player leans its way when it reaches the hands, and isn't
+  still stunned from a shock. The game judges its own players the same way
+  from the same leans (`Game.takes()`), so it shows a catch at once and the
+  server agrees. Devices also report their catches and shocks as they
+  happen, so the others see them straight away; the server checks each one
+  and passes on its own verdict, with the egg count.
+- **Same round, same moment.** The server deals the drops (the game's own
+  schedule, from a seed; `egg_rules.py` has a copy of `makeSchedules()` that
+  matches it bit for bit) and a GO time on its own clock. Clients sync to it
+  with ping/pong (the lowest-delay round trip of the last 12) and run the
+  round on that clock, catching up in small steps after a hiccup.
 - **Other players are shown 0.3 s behind**, so their leans arrive before
-  they're due. Their catches come from their own device, not from what this
-  device sees; if a result is late, the egg falls on and the catch shows when
-  it arrives.
+  they're due. Their catches come from the server, not from what this device
+  sees; if one is late, the egg falls on and the catch shows when it arrives.
 - **Dropping out.** A dropped connection keeps its seat for 8 s: a reload or a
-  network blip rejoins the same seat and round, with its eggs. After that the
-  seat becomes a CPU, played by the host; if the host goes, the next player
-  takes over. Someone who joins mid-round waits in the lobby for the next
-  one. After the first player finishes, the server waits up to 10 s for the
-  rest (a phone in the background), then sends the ranking.
+  network blip rejoins the same seat and round, with its eggs, and the leans
+  made while offline go out once it's back. After that the seat becomes a
+  CPU, played by the host; if the host goes, the next player takes over.
+  Someone who joins mid-round waits in the lobby for the next one. Once the
+  last drop has fallen, the server waits for every device to finish, up to
+  5 s (a phone in the background), then sends the ranking.
+
+**Cheating.** What the server does about it:
+
+- **The score is the server's.** A device can't count a catch its player
+  didn't make, give itself eggs, or skip a Voltorb's shock: the server works
+  it all out from the leans, and a device that says otherwise is corrected.
+  That goes for the CPUs too, whose leans come from the host's device.
+- **Each device plays only its own seat** (the host also the CPUs), only in
+  the current round; only the host picks the level and starts.
+- **"Done" counts only once the last drop has fallen**, so no one can cut a
+  round short.
+- **Limits:** 60 messages a second per connection (400 at once, for catching
+  up after a hiccup); a flood closes the connection. Two renames or level
+  changes a second, and 500 rooms at most.
+- **Telegram logins** are checked when the server has the bot's token
+  (`TELEGRAM_BOT_TOKEN`): Telegram signs the Mini App's `initData` with it,
+  so the server knows the player is who Telegram says (and that the login is
+  less than a day old). Their id and name then come from Telegram, and no one
+  else can get a Telegram player's id, so no one can take their seat.
+  Browser players get a random id per tab, which the server never shows
+  anyone.
+- **Names** are checked when the server has a TypeSafe key
+  (`TYPESAFE_API_KEY`): each new name goes to TypeSafe's Jev model ("fine to
+  show in a family-friendly game?") before anyone sees it, and one it's less
+  than 50% sure of is turned down (the player stays "Player 2"). In a test,
+  ordinary names scored 0.9 or more and rude words, slurs and "Hitler" 0.03
+  or less; mild ones like "Poop" (and the real name "Dick") were near 0.1, so
+  they're turned down too. Answers are remembered; if TypeSafe can't be
+  reached, the name goes through.
+- `?debug` and `?server=` work on localhost only.
+
+What it can't stop: a script that plays perfectly by the rules (it can know
+the drops), which looks just like a flawless player; a modified host making
+the CPUs play badly (it can't make them score, though); and best scores,
+which are kept on each device.
 
 **Testing.** `party.html?n=2` (up to 4) opens that many players in one tab,
 each in a frame, all in one room (`&room=CODE` picks it). The first frame is
 the host. The frames stack on a tall window and sit side by side on a wide one.
+`python3 tools/test_rooms.py` tests the server: the protocol, the scoring and
+the cheats it stops, rejoining, Telegram logins, names and limits (about half
+a minute, no network).
 
-The server trusts what players send: it only checks that each device sends
-for its own seat, and the host for the CPUs. That's fine among friends. It
-doesn't check Telegram's signed `initData`, which would need the bot's token
-on the server.
+Give the server `TELEGRAM_BOT_TOKEN` (from @BotFather) and `TYPESAFE_API_KEY`
+as environment variables to turn on the login and name checks; it says at
+start which are on. Neither goes to the pages.
 
 Messages are JSON objects with their type in `t`. From the client:
 
 | `t` | Fields | |
 |---|---|---|
-| `hello` | `room`, `id`, `name`, `create` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back |
+| `hello` | `room`, `id`, `name`, `create`, `tg` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData` |
 | `ping` | `c` | the client's clock; answered with `pong` |
 | `name` | `name` | rename |
 | `level` | `level` | host, in the lobby: `easy`, `normal` or `hard` |
 | `start` | | host, in the lobby |
-| `lean` | `s`, `g`, `l` | seat `s` leans `l` (−1, 0, 1) at round time `g` (s) |
-| `ev` | `s`, `g`, `n`, `k`, `e` | seat `s` caught its drop `n` (`k: "c"`) or was shocked by it (`"h"`); `e` is its egg count after |
-| `done` | | this device's round is over |
+| `lean` | `r`, `s`, `g`, `l` | in round `r`, seat `s` leans `l` (−1, 0, 1) from round time `g` (s) |
+| `ev` | `r`, `s`, `g`, `n`, `k`, `e` | seat `s` caught its drop `n` (`k: "c"`) or was shocked by it (`"h"`), as this device judged it; `e` is its egg count after. The server answers only if it disagrees |
+| `done` | `r` | this device's round is over |
 | `leave` | | |
 
 From the server: `welcome` (`room`, `seat`, `now`); `room`, the room's
 state (`state` lobby or playing, `round`, `level`, `host`, `players` with
 `away`, and during a round the `lineup`, with `here` for who's still in it);
-`start` (`round`, `seed`, `level`, `at` on the server's clock, `host`,
-`lineup`, `scores`: the countdown starts at `at`, GO is 2.65 s later);
-`pong` (`c`, `s`); `lean` and `ev` as above, plus the round `r`; `left`
-(`seat`); `results` (`round`, `scores`, `lineup`); and `error` (`no-room`,
-`full`, `bad-code`).
+`start` (`round`, `seed`, `level`, `host`, `lineup`; `at` and `go` on the
+server's clock: the countdown starts at `at`, GO is at `go`; `drops`, each
+seat's `[t, col, "e" or "v", fall]`; and, to rejoin midway, `scores`, each
+seat's last lean `leans` `[g, l]`, last shock `hits` and how many of its
+drops are judged, `settled`, in the order they arrive); `pong` (`c`, `s`);
+`lean` as above (with the time the server kept: never before the seat's last
+lean); `ev` (`r`, `s`, `n`, `k`, `e`, `g`), the server's verdict on a drop:
+`c` caught, `h` a shock, or `m`, not a catch after all, with the egg count
+`e`; `left` (`seat`); `results` (`round`, `scores`, `lineup`); `notice`
+(`code: "name"`, `name`: a name turned down); and `error` (`no-room`, `full`,
+`bad-code`, `busy`).
 
 ## Telegram
 
@@ -181,7 +231,8 @@ opens it (and nothing in a normal browser):
   setting, so they follow the player across devices; localStorage is the
   fallback. Reads time out after 1.5 s, so a slow answer can't block loading.
 - The player's Telegram first name on their score card and in rooms, and
-  their Telegram id as their player id (another device rejoins the same seat).
+  their Telegram id as their player id (another device rejoins the same
+  seat), checked by the server when it has the bot's token.
 - **Invites** through Telegram's share picker, and `startapp` links that open
   the game in a room ([Online play](#online-play)).
 - Safe areas (notches, full-screen mode) through Telegram's
@@ -199,6 +250,8 @@ To put it in Telegram:
    Bot Settings ▸ Menu Button.
 3. Put that `t.me/<bot>/<app name>` link in `telegramApp` in
    `src/config.js`, so invites open the game in Telegram.
+4. Start the server with the bot's token in `TELEGRAM_BOT_TOKEN`, so it
+   checks logins ([Cheating](#online-play)).
 
 The models are the game's own (Nintendo / Game Freak), which is why `out/` and
 `assets/` stay out of git. Anything you host publicly gives them away too.
@@ -207,8 +260,10 @@ Tested in Chromium (1280×720 and a 375×812 phone view): full rounds, the CPU
 levels (simulated), touch with several fingers, keyboard, and a simulated
 Telegram launch (hash parameters, version 8.0) that sent all the calls above.
 Online: full rounds with two players (both devices showed the same ranking),
-a reload mid-round (it rejoined with its eggs), the host closing mid-round
-(the other player took over the CPUs and the host's seat), joining mid-round
-from a simulated `startapp` launch, and a closed room's code. The server's
-protocol has a scripted test of its own (12 checks). It hasn't been tried
-inside the real Telegram apps or over a mobile network yet.
+a reload mid-round (it rejoined with its eggs, and the ranking still
+matched), the host closing mid-round (the other player took over the CPUs
+and the host's seat), joining mid-round from a simulated `startapp` launch,
+a closed room's code, and a device claiming an egg its player missed (the
+server corrected it within half a second, and no one else saw it).
+`tools/test_rooms.py` passes its 10 checks. It hasn't been tried inside the
+real Telegram apps or over a mobile network yet.
