@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Pokemon Stadium 2 models",
     "author": "ps2tool",
-    "version": (1, 5, 0),
+    "version": (1, 6, 0),
     "blender": (4, 2, 0),
     "location": "File > Import > Pokemon Stadium 2 (.glb), View3D > Sidebar > PS2",
     "description": "Import models exported by ps2extract.py with animated eyes/mouths "
@@ -30,7 +30,12 @@ animation clip. This add-on additionally
   * a Browser panel (N panel > PS2): every exported model by name, with
     thumbnails, in a scrollable list filtered by category, group (one
     minigame, one effect module) and search; Import brings it in with all of
-    the above. Point it at the extractor's output folder (catalog.json);
+    the above.
+  * animated shader values (face textures, texture scroll, colour tracks)
+    are read at draw time from Attribute nodes (the scene frame, the rig's
+    face properties), never written into node sockets: on macOS a new
+    socket value compiles a new shader. Scenes made by older versions are
+    converted when opened. Point it at the extractor's output folder (catalog.json);
     it finds it by itself after the first import from that folder;
   * keeps each model in one piece when it is moved: selecting a model's mesh
     also selects its armature, so G/R/S transform the armature and the mesh
@@ -44,6 +49,7 @@ Headless: blender -b --python ps2_import.py -- model.glb [more.glb ...]
 
 import json
 import os
+import re
 import sys
 
 import bpy
@@ -89,7 +95,7 @@ def _clip_actions(arm):
     return out
 
 
-def setup_face_material(mat, face, arm, base_dir):
+def setup_face_material(mat, face, arm, base_dir, obj):
     nt = mat.node_tree
     src = next((n for n in nt.nodes if n.type == "TEX_IMAGE"), None)
     if src is None:
@@ -101,6 +107,7 @@ def setup_face_material(mat, face, arm, base_dir):
     vec = src.inputs["Vector"].links[0].from_socket if src.inputs["Vector"].is_linked else None
     col, alp = src.outputs["Color"], src.outputs["Alpha"]
     x, y = src.location
+    sel = _face_value(nt, obj, arm, prop, (x, y + 200))
     row = 0
     for key, rel in sorted(face["files"].items(), key=lambda kv: int(kv[0])):
         t = int(key)
@@ -119,6 +126,7 @@ def setup_face_material(mat, face, arm, base_dir):
         n["ps2_rel"] = rel
         if vec is not None:
             nt.links.new(vec, n.inputs["Vector"])
+        shown = _math_node(nt, "COMPARE", sel, float(t), (x + 300 + 180 * row, y + 200), c=0.5)
         for kind, prev, out_name in (("RGBA", col, "Color"), ("FLOAT", alp, "Alpha")):
             mx = nt.nodes.new("ShaderNodeMix")
             mx.data_type = kind
@@ -126,15 +134,7 @@ def setup_face_material(mat, face, arm, base_dir):
             suffix = "Color" if kind == "RGBA" else "Float"
             nt.links.new(prev, _sock(mx.inputs, "A_" + suffix))
             nt.links.new(n.outputs[out_name], _sock(mx.inputs, "B_" + suffix))
-            fac = _sock(mx.inputs, "Factor_Float")
-            drv = fac.driver_add("default_value").driver
-            drv.type = "SCRIPTED"
-            var = drv.variables.new()
-            var.name, var.type = "v", "SINGLE_PROP"
-            var.targets[0].id_type = "OBJECT"
-            var.targets[0].id = arm
-            var.targets[0].data_path = '["%s"]' % prop
-            drv.expression = "v == %d" % t
+            nt.links.new(shown, _sock(mx.inputs, "Factor_Float"))
             if kind == "RGBA":
                 col = _sock(mx.outputs, "Result_Color")
             else:
@@ -233,14 +233,34 @@ class _Nodes:
         self.link(b, n.inputs[1])
         return n.outputs["Vector"]
 
-    def math(self, op, a, b, clamp=False):
+    def math(self, op, a, b, clamp=False, c=None):
         n = self.new("ShaderNodeMath", operation=op, use_clamp=clamp)
-        for i, v in enumerate((a, b)):
+        for i, v in enumerate((a, b, c)):
             if isinstance(v, (int, float)):
                 n.inputs[i].default_value = v
-            else:
+            elif v is not None:
                 self.link(v, n.inputs[i])
         return n.outputs[0]
+
+    def frame(self):
+        """The scene frame, read at draw time (see _frame_socket)."""
+        if "frame" not in self.cache:
+            self.cache["frame"] = self.new("ShaderNodeAttribute", attribute_type="VIEW_LAYER",
+                                           attribute_name="frame_current").outputs["Fac"]
+        return self.cache["frame"]
+
+    def ramp(self, keys, t0, t1):
+        """Colour ramp stepping through cyclic keys [(frame, rgba)] that repeat
+        every t1 - t0 frames (a keyframed track, without keyframes)."""
+        key = ("phase", t0, t1)
+        if key not in self.cache:
+            span = float(t1 - t0)
+            self.cache[key] = self.math("DIVIDE", self.math("FLOORED_MODULO", self.math(
+                "SUBTRACT", self.frame(), float(t0)), span), span)
+        r = self.new("ShaderNodeValToRGB")
+        _fill_ramp(r.color_ramp, keys, t0, t1)
+        self.link(self.cache[key], r.inputs["Fac"])
+        return r
 
 
 def _fcurves(idblock):
@@ -261,6 +281,93 @@ def _fcurves(idblock):
 
 def _raw(c):
     return [x / 255.0 for x in c]
+
+
+# --------------------------------------------------------------------------
+# Values that change while an animation plays (face textures, texture scroll,
+# colour tracks) are read by the shader at draw time from Attribute nodes: the
+# scene frame, or the rig's face properties. Writing them into node sockets
+# instead (drivers, keyframes) makes EEVEE compile a new shader for every new
+# value, at least on macOS (Metal): playback stalls, and memory grows by
+# megabytes per frame until the system runs out.
+
+def _node(nt, kind, loc, **props):
+    n = nt.nodes.new(kind)
+    n.location, n.hide = loc, True
+    for k, v in props.items():
+        setattr(n, k, v)
+    return n
+
+
+def _math_node(nt, op, a, b, loc, c=None):
+    n = _node(nt, "ShaderNodeMath", loc, operation=op)
+    for i, v in enumerate((a, b, c)):
+        if isinstance(v, (int, float)):
+            n.inputs[i].default_value = v
+        elif v is not None:
+            nt.links.new(v, n.inputs[i])
+    return n.outputs[0]
+
+
+def _frame_socket(nt, loc):
+    """The scene frame, as the shader reads it."""
+    for n in nt.nodes:
+        if n.type == "ATTRIBUTE" and n.attribute_type == "VIEW_LAYER" and n.attribute_name == "frame_current":
+            return n.outputs["Fac"]
+    return _node(nt, "ShaderNodeAttribute", loc, attribute_type="VIEW_LAYER",
+                 attribute_name="frame_current").outputs["Fac"]
+
+
+def _fill_ramp(ramp, keys, t0, t1):
+    """Linear colour ramp through keys [(frame, rgba)] placed over t0..t1."""
+    ramp.interpolation = "LINEAR"
+    els = ramp.elements
+    els[0].position, els[0].color = 0.0, keys[0][1]
+    els[-1].position, els[-1].color = 1.0, keys[-1][1]
+    for fr, c in keys[1:-1]:
+        els.new((fr - t0) / float(t1 - t0)).color = c
+
+
+def _cycle_ramp(nt, keys, t0, t1, loc):
+    """A cyclic keyframed track as a colour ramp: keys [(frame, rgba)] that
+    repeat every t1 - t0 frames (Color and Alpha outputs)."""
+    x, y = loc
+    span = float(t1 - t0)
+    fr = _math_node(nt, "SUBTRACT", _frame_socket(nt, (x - 600, y)), float(t0), (x - 450, y))
+    phase = _math_node(nt, "DIVIDE", _math_node(nt, "FLOORED_MODULO", fr, span, (x - 300, y)), span, (x - 150, y))
+    r = _node(nt, "ShaderNodeValToRGB", loc)
+    _fill_ramp(r.color_ramp, keys, t0, t1)
+    nt.links.new(phase, r.inputs["Fac"])
+    return r
+
+
+def _prop_path(obj, arm, prop):
+    """Path from obj to a custom property of its ancestor arm, for an Object
+    Attribute node (None when obj isn't under arm)."""
+    hops, o = [], obj
+    while o is not None and o != arm:
+        hops.append("parent")
+        o = o.parent
+    return None if o is None else ".".join(hops) + '["%s"]' % prop
+
+
+def _face_value(nt, obj, arm, prop, loc):
+    """Socket with the rig's face property `prop`, read at draw time."""
+    path = _prop_path(obj, arm, prop)
+    if path is None:  # not parented to the rig: mirror the property on the object
+        if prop not in obj:
+            obj[prop] = arm.get(prop, 0)
+        drv = obj.driver_add('["%s"]' % prop).driver
+        drv.type = "AVERAGE"
+        var = drv.variables.new()
+        var.type = "SINGLE_PROP"
+        var.targets[0].id_type, var.targets[0].id = "OBJECT", arm
+        var.targets[0].data_path = '["%s"]' % prop
+        path = '["%s"]' % prop
+    for n in nt.nodes:
+        if n.type == "ATTRIBUTE" and n.attribute_type == "OBJECT" and n.attribute_name == path:
+            return n.outputs["Fac"]
+    return _node(nt, "ShaderNodeAttribute", loc, attribute_type="OBJECT", attribute_name=path).outputs["Fac"]
 
 
 def build_live_material(mat, spec, base_dir, uv_name, color_attr):
@@ -291,11 +398,14 @@ def build_live_material(mat, spec, base_dir, uv_name, color_attr):
         mp.inputs["Scale"].default_value = (sx, sy, 1.0)
         mp.inputs["Location"].default_value = (0.0, 1.0 - sy, 0.0)
         ds, dt = t.get("scroll", (0.0, 0.0))
-        for axis, expr in ((0, "%.8g*frame" % (-ds / w) if ds else None),
-                           (1, "%.8g+%.8g*frame" % (1.0 - sy, dt / h) if dt else None)):
-            if expr:
-                drv = mp.inputs["Location"].driver_add("default_value", axis).driver
-                drv.type, drv.expression = "SCRIPTED", expr
+        if ds or dt:  # the offset grows with the frame
+            loc = B.new("ShaderNodeCombineXYZ")
+            loc.inputs[1].default_value = 1.0 - sy
+            if ds:
+                B.link(B.math("MULTIPLY", B.frame(), -ds / w), loc.inputs[0])
+            if dt:
+                B.link(B.math("ADD", B.math("MULTIPLY", B.frame(), dt / h), 1.0 - sy), loc.inputs[1])
+            B.link(loc.outputs[0], mp.inputs["Location"])
         vec = mp.outputs["Vector"]
         modes = t.get("wrap", [0, 0])
         if any(m_ & 3 for m_ in modes):  # per-axis clamp / mirror (repeat stays native)
@@ -313,66 +423,70 @@ def build_live_material(mat, spec, base_dir, uv_name, color_attr):
                     v = n.outputs[0]
                 B.link(v, comb.inputs[axis])
             vec = comb.outputs[0]
-        frames = t.get("frames")
-        path = os.path.join(base_dir, frames[0] if frames else t["file"])
-        if not os.path.exists(path):
+        paths = [os.path.join(base_dir, f) for f in (t.get("frames") or [t["file"]])]
+        if not all(os.path.exists(p_) for p_ in paths):
             return False
-        img = bpy.data.images.load(path, check_existing=True)
-        img.colorspace_settings.name = "Non-Color"
-        img.alpha_mode = "STRAIGHT"
-        tn = B.new("ShaderNodeTexImage", interpolation="Linear", extension="REPEAT")
-        tn.image = img
-        if frames:
-            img.source = "SEQUENCE"
-            iu = tn.image_user
-            iu.frame_duration, iu.frame_start, iu.use_cyclic, iu.use_auto_refresh = len(frames), 1, True, True
+        outs = []
+        for p_ in paths:
+            img = bpy.data.images.load(p_, check_existing=True)
+            img.colorspace_settings.name = "Non-Color"
+            img.alpha_mode = "STRAIGHT"
+            tn = B.new("ShaderNodeTexImage", interpolation="Linear", extension="REPEAT")
+            tn.image = img
+            B.link(vec, tn.inputs["Vector"])
+            outs.append((tn.outputs["Color"], tn.outputs["Alpha"]))
+        c_out, a_out = outs[0]
+        if len(outs) > 1:  # flipbook: image floor(frame / frame time) mod count
             ft = max(1, int(t.get("frame_time", 1)))
-            if ft > 1:
-                drv = iu.driver_add("frame_offset").driver
-                drv.type, drv.expression = "SCRIPTED", "floor(frame/%d)-frame" % ft
-        B.link(vec, tn.inputs["Vector"])
-        texc.append(tn.outputs["Color"])
-        texa.append(tn.outputs["Alpha"])
+            idx = B.math("FLOORED_MODULO", B.math("FLOOR", B.math("DIVIDE", B.frame(), float(ft)), 0.0),
+                         float(len(outs)))
+            for k, (c_, a_) in enumerate(outs[1:], 1):
+                shown = B.math("COMPARE", idx, float(k), c=0.5)
+                mc = B.new("ShaderNodeMix", data_type="RGBA")
+                ma = B.new("ShaderNodeMix", data_type="FLOAT")
+                for mx, prev, new, suffix in ((mc, c_out, c_, "Color"), (ma, a_out, a_, "Float")):
+                    B.link(shown, _sock(mx.inputs, "Factor_Float"))
+                    B.link(prev, _sock(mx.inputs, "A_" + suffix))
+                    B.link(new, _sock(mx.inputs, "B_" + suffix))
+                c_out, a_out = _sock(mc.outputs, "Result_Color"), _sock(ma.outputs, "Result_Float")
+        texc.append(c_out)
+        texa.append(a_out)
     if texc[1] is None:  # TEXEL1 without its own tile reads the same texture
         texc[1], texa[1] = texc[0], texa[0]
 
-    # ---- colours (keyframed when the game animates them)
-    prim = B.new("ShaderNodeRGB")
-    prim.outputs[0].default_value = _raw(spec["prim"][:3]) + [1.0]
-    pa = B.new("ShaderNodeValue")
-    pa.outputs[0].default_value = spec["prim"][3] / 255.0
-    plod = B.new("ShaderNodeValue")
-    plod.outputs[0].default_value = spec.get("lod", 255) / 255.0
-    env = B.new("ShaderNodeRGB")
-    env.outputs[0].default_value = _raw(spec["env"][:3]) + [1.0]
-    ea = B.new("ShaderNodeValue")
-    ea.outputs[0].default_value = spec["env"][3] / 255.0
-    track = spec.get("track")
-    if track:
-        period = max(1, int(track.get("period", 1)))
-        times = list(track["times"])
-        pk, ek = track.get("prim"), track.get("env")
-        keys = list(zip(times, pk or [None] * len(times), ek or [None] * len(times)))
-        if keys[-1][0] < period:
-            keys.append((period,) + keys[0][1:])
-        for fr, pv, ev in keys:
-            if pv:
-                prim.outputs[0].default_value = _raw(pv[:3]) + [1.0]
-                prim.outputs[0].keyframe_insert("default_value", frame=fr)
-                pa.outputs[0].default_value = pv[3] / 255.0
-                pa.outputs[0].keyframe_insert("default_value", frame=fr)
-                plod.outputs[0].default_value = pv[4] / 255.0
-                plod.outputs[0].keyframe_insert("default_value", frame=fr)
-            if ev:
-                env.outputs[0].default_value = _raw(ev[:3]) + [1.0]
-                env.outputs[0].keyframe_insert("default_value", frame=fr)
-                ea.outputs[0].default_value = ev[3] / 255.0
-                ea.outputs[0].keyframe_insert("default_value", frame=fr)
-        for fc in _fcurves(nt):
-            for kp in fc.keyframe_points:
-                kp.interpolation = "LINEAR"
-            if not any(m_.type == "CYCLES" for m_ in fc.modifiers):
-                fc.modifiers.new("CYCLES")
+    # ---- colours (colour ramps over the frame when the game animates them)
+    def rgb(c):
+        n = B.new("ShaderNodeRGB")
+        n.outputs[0].default_value = _raw(c[:3]) + [1.0]
+        return n.outputs[0]
+
+    def value(v):
+        n = B.new("ShaderNodeValue")
+        n.outputs[0].default_value = v
+        return n.outputs[0]
+
+    track = spec.get("track") or {}
+    times = list(track.get("times", []))
+    pk, ek = track.get("prim"), track.get("env")
+    keys = list(zip(times, pk or [None] * len(times), ek or [None] * len(times)))
+    if keys and keys[-1][0] < max(1, int(track.get("period", 1))):
+        keys.append((max(1, int(track.get("period", 1))),) + keys[0][1:])
+    animated = len(keys) >= 2 and len(keys) <= 32 and keys[-1][0] > keys[0][0]
+    t0, t1 = (keys[0][0], keys[-1][0]) if keys else (0, 1)
+    if animated and pk:
+        r = B.ramp([(fr, _raw(pv[:3]) + [pv[3] / 255.0]) for fr, pv, _ in keys], t0, t1)
+        prim_c, prim_a = r.outputs["Color"], r.outputs["Alpha"]
+        prim_lod = B.ramp([(fr, [0.0, 0.0, 0.0, pv[4] / 255.0]) for fr, pv, _ in keys], t0, t1).outputs["Alpha"]
+    else:
+        pv = pk[0] if pk else spec["prim"]
+        prim_c, prim_a = rgb(pv), value(pv[3] / 255.0)
+        prim_lod = value((pv[4] if pk else spec.get("lod", 255)) / 255.0)
+    if animated and ek:
+        r = B.ramp([(fr, _raw(ev[:3]) + [ev[3] / 255.0]) for fr, _, ev in keys], t0, t1)
+        env_c, env_a = r.outputs["Color"], r.outputs["Alpha"]
+    else:
+        ev = ek[0] if ek else spec["env"]
+        env_c, env_a = rgb(ev), value(ev[3] / 255.0)
 
     # ---- shade: the vertex colour (scene lighting on lit surfaces)
     if spec.get("lit"):
@@ -391,7 +505,7 @@ def build_live_material(mat, spec, base_dir, uv_name, color_attr):
     comb_c, comb_a = zero_v, zero
 
     def col(sel, role):
-        base = {0: comb_c, 1: texc[0], 2: texc[1], 3: prim.outputs[0], 4: shade_c, 5: env.outputs[0]}
+        base = {0: comb_c, 1: texc[0], 2: texc[1], 3: prim_c, 4: shade_c, 5: env_c}
         if sel in base:
             return base[sel]
         if role == "a":
@@ -399,16 +513,16 @@ def build_live_material(mat, spec, base_dir, uv_name, color_attr):
         if role == "b":
             return half_v if sel == 6 else zero_v
         if role == "c":
-            sc = {6: one, 7: comb_a, 8: texa[0], 9: texa[1], 10: pa.outputs[0], 11: shade_a,
-                  12: ea.outputs[0], 13: zero, 14: plod.outputs[0]}.get(sel)
+            sc = {6: one, 7: comb_a, 8: texa[0], 9: texa[1], 10: prim_a, 11: shade_a,
+                  12: env_a, 13: zero, 14: prim_lod}.get(sel)
             return B.vec(sc) if sc is not None else zero_v
         return one_v if sel == 6 else zero_v
 
     def alp(sel, role):
         if role == "c":
-            return {0: zero, 1: texa[0], 2: texa[1], 3: pa.outputs[0], 4: shade_a, 5: ea.outputs[0],
-                    6: plod.outputs[0]}.get(sel, zero)
-        return {0: comb_a, 1: texa[0], 2: texa[1], 3: pa.outputs[0], 4: shade_a, 5: ea.outputs[0],
+            return {0: zero, 1: texa[0], 2: texa[1], 3: prim_a, 4: shade_a, 5: env_a,
+                    6: prim_lod}.get(sel, zero)
+        return {0: comb_a, 1: texa[0], 2: texa[1], 3: prim_a, 4: shade_a, 5: env_a,
                 6: one}.get(sel, zero)
 
     ncy = _mux_cycles(mux)
@@ -470,6 +584,119 @@ def setup_live_materials(objs, base_dir):
             if build_live_material(mat, spec, base_dir, uv_name, color_attr):
                 n += 1
     return n
+
+
+_OLD_FACE = re.compile(r"^v == (\d+)$")
+_OLD_SCROLL = re.compile(r"^(?:([-+0-9.eE]+)\+)?([-+0-9.eE]+)\*frame$")
+_OLD_TRACK = re.compile(r'^nodes\["(.+)"\]\.outputs\[0\]\.default_value$')
+
+
+def _remove_fcurve(idblock, fc):
+    act = idblock.animation_data.action
+    try:
+        act.fcurves.remove(fc)
+        return
+    except (AttributeError, RuntimeError, ReferenceError):
+        pass
+    for layer in act.layers:  # layered actions only
+        for strip in layer.strips:
+            for bag in strip.channelbags:
+                if fc in bag.fcurves[:]:
+                    bag.fcurves.remove(fc)
+                    return
+
+
+def upgrade_materials():
+    """Materials from add-on versions before 1.6 animate shader values with
+    drivers and keyframes (face switches, texture scroll, colour tracks),
+    which recompiles shaders during playback. Rebuild those inputs on
+    Attribute nodes. Returns the number of materials changed."""
+    changed = 0
+    for mat in bpy.data.materials:
+        nt = mat.node_tree
+        ad = nt.animation_data if nt is not None else None
+        if ad is None or not ("ps2_face" in mat or "ps2_live" in mat):
+            continue
+        done = False
+        scroll = {}
+        for fc in list(ad.drivers):
+            drv, path = fc.driver, fc.data_path
+            if not path.endswith(".default_value"):
+                continue
+            try:
+                sock = nt.path_resolve(path[:-len(".default_value")])
+            except ValueError:
+                continue
+            x, y = sock.node.location
+            face = _OLD_FACE.match(drv.expression.strip())
+            if face and len(drv.variables) == 1 and drv.variables[0].targets[0].id is not None:
+                tgt = drv.variables[0].targets[0]
+                arm, prop = tgt.id, tgt.data_path[2:-2]
+                users = [o for o in bpy.data.objects if o.type == "MESH"
+                         and any(s.material == mat for s in o.material_slots)]
+                obj = next((o for o in users if _prop_path(o, arm, prop)), users[0] if users else None)
+                if obj is None:
+                    continue
+                shown = _math_node(nt, "COMPARE", _face_value(nt, obj, arm, prop, (x - 360, y + 120)),
+                                   float(face.group(1)), (x - 180, y + 120), c=0.5)
+                ad.drivers.remove(fc)
+                nt.links.new(shown, sock)
+                done = True
+                continue
+            sc = _OLD_SCROLL.match(drv.expression.replace(" ", ""))
+            if sc and sock.node.type == "MAPPING":
+                entry = scroll.setdefault(sock.as_pointer(), [sock, list(sock.default_value), {}])
+                entry[2][fc.array_index] = (float(sc.group(1) or 0.0), float(sc.group(2)))
+                ad.drivers.remove(fc)
+                done = True
+        for sock, base, axes in scroll.values():
+            x, y = sock.node.location
+            comb = _node(nt, "ShaderNodeCombineXYZ", (x - 180, y - 60))
+            fr = _frame_socket(nt, (x - 540, y - 60))
+            for axis in range(3):
+                if axis in axes:
+                    off, speed = axes[axis]
+                    v = _math_node(nt, "MULTIPLY", fr, speed, (x - 360, y - 60 - 40 * axis))
+                    nt.links.new(_math_node(nt, "ADD", v, off, (x - 270, y - 60 - 40 * axis)), comb.inputs[axis])
+                else:
+                    comb.inputs[axis].default_value = base[axis]
+            nt.links.new(comb.outputs[0], sock)
+        tracks = {}
+        for fc in _fcurves(nt):
+            m_ = _OLD_TRACK.match(fc.data_path)
+            if m_:
+                tracks.setdefault(m_.group(1), []).append(fc)
+        for name, fcs in tracks.items():
+            node = nt.nodes.get(name)
+            frames = sorted({kp.co.x for fc in fcs for kp in fc.keyframe_points})
+            if node is None or node.type not in ("RGB", "VALUE") or not 2 <= len(frames) <= 32:
+                continue
+            ch = {fc.array_index: fc for fc in fcs}
+            keys = []
+            for f in frames:
+                if node.type == "RGB":
+                    keys.append((f, [ch[i].evaluate(f) if i in ch else node.outputs[0].default_value[i]
+                                     for i in range(3)] + [1.0]))
+                else:
+                    v = ch[0].evaluate(f) if 0 in ch else node.outputs[0].default_value
+                    keys.append((f, [v, v, v, v]))
+            r = _cycle_ramp(nt, keys, frames[0], frames[-1], (node.location.x, node.location.y - 40))
+            out = r.outputs["Color" if node.type == "RGB" else "Alpha"]
+            for link in list(node.outputs[0].links):
+                nt.links.new(out, link.to_socket)
+            for fc in fcs:
+                _remove_fcurve(nt, fc)
+            done = True
+        changed += done
+    return changed
+
+
+@persistent
+def _upgrade_on_load(*_):
+    n = upgrade_materials()
+    if n:
+        print("ps2_import: %d materials now read animated values at draw time" % n)
+    return None
 
 
 def set_world_color(scene, rgb):
@@ -662,7 +889,7 @@ def import_model(context, path, live=True, world=False, backdrop=True):
             if mat is None or mat.name in done or "ps2_face" not in mat:
                 continue
             done.add(mat.name)
-            r = setup_face_material(mat, _idprop_to_py(mat["ps2_face"]), arm, base_dir)
+            r = setup_face_material(mat, _idprop_to_py(mat["ps2_face"]), arm, base_dir, o)
             if r:
                 defaults.setdefault(r[0], r[1])
     for ch, d in defaults.items():
@@ -795,7 +1022,7 @@ class PS2_OT_import(Operator, ImportHelper):
 class PS2_OT_play(Operator):
     bl_idname = "ps2.play_clip"
     bl_label = "Play clip"
-    bl_options = {"REGISTER", "UNDO"}
+    bl_options = {"REGISTER"}  # an undo step per click would copy the whole scene each time
     clip: StringProperty()
 
     def execute(self, context):
@@ -1175,6 +1402,8 @@ def register():
                     "moves the whole model instead of pulling the mesh off its bones")
     bpy.app.handlers.depsgraph_update_post.append(_select_rig_with_mesh)
     bpy.app.handlers.depsgraph_update_post.append(_backdrops_follow_arena)
+    bpy.app.handlers.load_post.append(_upgrade_on_load)
+    bpy.app.timers.register(_upgrade_on_load, first_interval=0.1)  # the file already open
 
 
 def unregister():
@@ -1188,6 +1417,8 @@ def unregister():
     for h in (_select_rig_with_mesh, _backdrops_follow_arena):
         if h in bpy.app.handlers.depsgraph_update_post:
             bpy.app.handlers.depsgraph_update_post.remove(h)
+    if _upgrade_on_load in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(_upgrade_on_load)
     del bpy.types.Scene.ps2_move_as_one
     bpy.types.TOPBAR_MT_file_import.remove(_menu)
     for c in reversed(CLASSES):

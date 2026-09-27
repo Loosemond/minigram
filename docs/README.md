@@ -37,7 +37,10 @@ rediscover it.
 - [gen1recomp-mod-stadium2-importer](https://github.com/Deftones565/gen1recomp-mod-stadium2-importer)
   (Deftones565): FRAGMENT format, the animation dispatch table, the battle
   effect engine, shiny palettes, arena order.
-- The pret `pokestadium` decompilation (Stadium 1): shared engine conventions.
+- [pret/pokestadiumgs](https://github.com/pret/pokestadiumgs) and
+  [pret/pokestadium](https://github.com/pret/pokestadium) (Stadium 1, old ROM
+  map): shared engine conventions.
+- [PokemonStadium2Unity](https://github.com/Manurocker95/PokemonStadium2Unity).
 - Our own reading of the ROM: minigame modules and the object loader, arena
   background colours and materials, render callbacks, text tables, the
   archive scan.

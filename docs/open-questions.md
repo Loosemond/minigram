@@ -9,8 +9,11 @@ What isn't known yet, roughly by how useful it would be.
   programs' bytecode in code module #79 ([effects.md](effects.md)); only the
   particle-emitting opcodes are read.
 - **Undecoded archives:** `0x047D690` (598 small records), `0x0493410` (4
-  empty), `0x1708000` (72), `0x1E40000` (234, all starting `000F0100`),
-  `0x266B000` (279, mostly empty) ([rom-map.md](rom-map.md)).
+  empty), `0x1708000` (72), `0x266B000` (279, mostly empty); and, known but
+  not converted, the UI layouts (`0x1E40000`) and fonts (`0x437AD0`)
+  ([rom-map.md](rom-map.md)).
+- **Audio** (`0x49B780`–`0x1606000`, N64 ADPCM sample banks and sequences)
+  isn't extracted.
 - **Arenas 23–25:** which stadium each is ("Stadium A/B/C" are placeholders).
 - **Battle contexts 255–267, 269, 270** of the battle motion table
   ([animation.md](animation.md)).

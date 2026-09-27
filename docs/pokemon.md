@@ -48,3 +48,12 @@ bytes +4…+7 describe the shiny ("rare") colours.
   texture the model uses, concatenated in texture-index order.
 
 Unown B–Z (records 254–278) use Unown's (201) entry.
+
+## Effects drawn by code (not reproduced)
+
+Some looks come from code at run time and are exported as a still frame:
+Gastly's gas, Grimer's and Muk's scrolling slime, Ponyta's and Rapidash's
+flickering mane, pulsing glows such as Chinchou's lures (exported at their
+brightest key). Environment-mapped (metal) surfaces are approximated with
+sphere mapping. The fire cards are camera-facing billboards in game; the
+exporter draws them as two crossed quads.

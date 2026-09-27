@@ -23,8 +23,10 @@ three byte orders; `ps2tool/rom.py` normalises them to big-endian:
 | `0x000000`–`0x001000` | N64 header and boot code |
 | `0x001000`–`0x0A8BE0` | main program (runs at `0x80000000`), including the object loader `0x8004DED4` |
 | `0x0A8BE0`–`0x437990` | 88 code modules (FRAGMENT overlays), see below |
-| `0x449840` | region-map archive (first asset archive) |
-| `0x47D690`… `0x3FD5000` | asset archives, table below |
+| `0x437AD0` | fonts (not converted) |
+| `0x449840`, `0x47D690`, `0x493410` | first asset archives (table below) |
+| `0x49B780`–`0x1606000` | audio, ~17 MB: N64 ADPCM sample banks and sequences (not extracted) |
+| `0x1638000`–`0x3FD5000` | the other asset archives (table below) |
 | `0x3FED000` | species metadata: 16 bytes per species (not an archive) |
 
 ## Asset archives
@@ -42,7 +44,7 @@ means the extractor reads it.
 | `0x1718000` | 279 | battle motion dispatch, one per species ([animation.md](animation.md)) | `clips.py` |
 | `0x1898000` | 456 | image banks: menus, HUD, minigame sprites | `images.py` |
 | `0x1D70000` | 331 | string tables ([images-and-text.md](images-and-text.md)) | `text.py` |
-| `0x1E40000` | 234 | records all starting `000F0100` | *unknown* |
+| `0x1E40000` | 234 | UI layouts (records all start `000F0100`) | not converted |
 | `0x1E70000` | 48 | `PRESJPEG` background pictures | `images.py` |
 | `0x2000000` | 227 | FRAGMENT: general 3D objects ([objects.md](objects.md)) | `objects.py` |
 | `0x2230000` | 59 | `PRESJPEG` Pokémon Academy screens | `images.py` |

@@ -138,8 +138,11 @@ from Disk…* ▸ `tools/blender/ps2_import.py`, enable it. Then:
 - File ▸ Import ▸ **Pokemon Stadium 2 (.glb)** — multi-select works; models line up side by side.
 - 3D View sidebar (N) ▸ **PS2** tab — click a clip to play it, toggle **Shiny**.
 - Eyes, mouths, cheek sparks, fire tails and effect flipbooks animate with each
-  clip. This runs on drivers reading `ps2_face_*` properties on the armature,
-  keyed in every clip.
+  clip. The clips key `ps2_face_*` properties on the armature, and the materials
+  read them (and the frame, for scrolling arena textures) through Attribute
+  nodes. Values are never written into shader nodes, because on macOS every new
+  value would compile another shader and playback would stall and eat memory.
+  Scenes made with add-on versions before 1.6 are converted when opened.
 - The scene switches to 30 fps (the game's rate) and real-time playback (Blender skips
   frames rather than slowing the animation down when the viewport can't keep up);
   untick *Game speed* in the import options if you don't want that.
