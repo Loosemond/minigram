@@ -4,7 +4,9 @@ import glob
 import json
 import os
 
-CATEGORIES = ["Pokémon", "Objects", "Arenas", "Maps", "Effects"]
+from .names import MINIGAMES, minigames_of
+
+CATEGORIES = ["Pokémon", "Minigames", "Objects", "Arenas", "Maps", "Effects"]
 
 
 def thumb_path(rel):
@@ -42,11 +44,20 @@ def build(out):
         name = info.get("display") or os.path.basename(os.path.dirname(glb))
         items.append(_entry(out, glb, "Pokémon", name, info.get("tags", ["Pokémon"]),
                             clips=len(info.get("clips", []))))
+    minigame_items, object_items = [], []
     for glb in sorted(glob.glob(os.path.join(out, "objects", "*", "*.glb"))):
         info = _json(os.path.splitext(glb)[0] + ".json")
         name = info.get("display") or os.path.splitext(os.path.basename(glb))[0]
-        items.append(_entry(out, glb, "Objects", name, info.get("tags", []),
-                            clips=len(info.get("clips", [])), record=info.get("record")))
+        games = minigames_of(info.get("record"))
+        for game in games:  # listed under every minigame that uses it
+            minigame_items.append(_entry(out, glb, "Minigames", name, info.get("tags", []), game,
+                                         clips=len(info.get("clips", [])), record=info.get("record")))
+        if not games:
+            object_items.append(_entry(out, glb, "Objects", name, info.get("tags", []),
+                                       clips=len(info.get("clips", [])), record=info.get("record")))
+    order = list(MINIGAMES)  # game order, each game's characters first
+    minigame_items.sort(key=lambda e: (order.index(e["group"]), MINIGAMES[e["group"]].index(e["record"])))
+    items += minigame_items + object_items
     for glb in sorted(glob.glob(os.path.join(out, "stages", "*.glb"))):
         info = _json(os.path.splitext(glb)[0] + ".json")
         items.append(_entry(out, glb, "Arenas", info.get("display") or os.path.basename(glb)[:-4],

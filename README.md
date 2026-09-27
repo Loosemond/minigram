@@ -12,6 +12,7 @@ tools/ps2tool/                  format code (ROM/archives/Yay0, FRAGMENT models,
 tools/blender/ps2_import.py     Blender add-on: asset browser, face/flipbook animation, shiny toggle,
                                 clip browser, live arena materials
 tools/make_previews.py          thumbnails of every model + labelled sheets (needs Blender + Pillow)
+docs/                           game and ROM notes: formats, tables, what's where, open questions
 out/                            extracted assets (not in git: re-create with the commands below)
 out/catalog.json                every model with its name, category and tags
 out/thumbs/                     one thumbnail per model (used by the add-on's browser)
@@ -63,28 +64,37 @@ them with category and tags. Where the names come from:
 
 ### Minigames
 
-The minigames share the general objects table (`objects/`), so their content
-is not in per-minigame folders. Identified by appearance (not by code
-analysis), so treat this as a guide (the tag `Minigame: …` in the catalog):
+The minigames share the general objects table (`objects/`), so their files are
+not in per-minigame folders; the catalog (and the add-on's browser) lists them
+in their own **Minigames** category, one group per minigame. Which object
+belongs to which minigame comes from the game code: each minigame's code
+overlay loads its objects through one loader (`0x8004DED4`) with the object
+number as a constant, and picks the player's character model the same way.
+Names are the game's own (text table 57). Details and method:
+[docs/minigames.md](docs/minigames.md).
 
 | Minigame | Objects |
 |---|---|
-| Delibird's Delivery | Delibird `127` (18 clips), gift boxes `088`–`099` |
-| Eager Eevee | Eevee `143` (15 clips), fruit `208`–`216`, Aipom on a rope `150`, lid box `152` |
-| Egg Emergency | Chansey `144` (16 clips) |
-| Clear Cut Challenge | Scyther `122` |
-| Furret Frolic | Furret `142`, grass/hill course pieces `121`, `131`–`140` |
-| Barrier Ball | Mr. Mime `129`, `218` |
-| Topsy-Turvy | Hitmontop `115`, `123` |
-| Pichu's Power Plant | Pichu `107` (16 clips) |
-| Tumbling Togepi | Togepi `109`; logs/rocks/flowers `062`–`067` |
-| Rampage Rolling | Donphan `108` (walking and rolling) |
-| shared | player signposts 1P/2P/3P/4P/COM `083`–`087`, trophies `073`–`075`, Poké Balls `153`–`154` |
+| Gutsy Golbat | Golbat `053`, Jynx `110` |
+| Topsy-Turvy | Hitmontop `115` (and `052`, `123`) |
+| Clear Cut Challenge | Scyther `122`, Pinsir `055`, Scizor `179`, signpost `059`, log slices `081`/`111`, `112` (the cut line), effects `130`/`131`, wall pieces `190` |
+| Furret's Frolic | Furret `142`, Girafarig `223`, Poké Balls `153`, leaves/shards/chips `155`, bush `183` |
+| Barrier Ball | Mr. Mime `129`/`218`, court pieces `120`, mesh panels `141`, `146`, Poké Balls `154` |
+| Pichu's Power Plant | Pichu `107`, Pikachu `201`, window `056`, red orb lamp `057`, wall pieces `190` |
+| Rampage Rollout | Donphan `108` (walking and rolling), track `113` |
+| Streaming Stampede | Cleffa `114`, Igglybuff `119`/`205`, Hoppip `186`, Game Paks `080`/`100`–`102`, ramp `116`, circus backdrop `117`, books `118` |
+| Tumbling Togepi | Togepi `109`, Omanyte `206`, course pieces `060`, `062`–`070`, `132`–`140`, ice block `188`, water `202` |
+| Delibird's Delivery | Delibird `127`, Swinub `082`/`103`, gift boxes `092`/`096`, factory `147`/`148`, the gifts (`169`, `170`, `174`–`177`, `180`, `181`, `184`) |
+| Egg Emergency | Chansey `144`, egg `145`, `185` |
+| Eager Eevee | Eevee `143`, field `149`, Aipom `150`, Pineco `151`, `203`/`204`/`207`, fruit `208`–`216` (not `214`) |
 
-Other characters in the table: Jynx `110`, Cleffa `114`, Igglybuff `119`/`205`,
-Pikachu `201`, Scizor `179`, Snorlax `181`. Room decorations (dolls, beds,
-posters, plants, consoles, carpets) are `000`–`058`, and TV screens showing
-N64/NES games are `156`–`165` and `224`–`226`.
+The other two Hitmontop models and four of the fruit are grouped by
+appearance: no minigame code loads them by number. The other Pokémon of the
+minigames (Magnemite, Voltorb, Electrode, Spinarak, Diglett, …) are the
+normal battle models in `pokemon/`. Numbers without a name draw effects
+(sparkles, smoke, glows). Room decorations (dolls, beds, posters, plants,
+consoles, carpets) are `000`–`058`, and TV screens showing N64/NES games are
+`156`–`165` and `224`–`226`.
 
 Minigame 2D graphics (e.g. "GO!", "BLOCKED!", "FACE OFF", "DRAW", "Mini-game
 Champion") are in `images/banks/`; `previews/image_banks_*.png` shows every bank.
@@ -118,9 +128,11 @@ and all clips (Action Editor / NLA), but eyes, mouths and flipbooks don't change
 from Disk…* ▸ `tools/blender/ps2_import.py`, enable it. Then:
 
 - 3D View sidebar (N) ▸ **PS2** tab ▸ **Browser**: every model by name with
-  thumbnails. Pick a category (Pokémon, Objects, Arenas, Maps, Effects), type to
-  search (names, moves and tags, e.g. "doll", "flamethrower", "Eager Eevee"),
-  then click the big thumbnail to choose from a grid, and **Import**. Set the
+  thumbnails, in a list that scrolls with the mouse wheel (drag its bottom
+  edge to make it taller). Pick a category (Pokémon, Minigames, Objects,
+  Arenas, Maps, Effects) and, for Minigames and Effects, one minigame or
+  effect module; type to search (names, moves and tags, e.g. "doll",
+  "flamethrower"); click a row to see it large, then **Import**. Set the
   library folder (the `out/` folder) with the folder button once; it is also
   found by itself after you import any file from `out/`.
 - File ▸ Import ▸ **Pokemon Stadium 2 (.glb)** — multi-select works; models line up side by side.

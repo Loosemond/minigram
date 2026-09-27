@@ -6,7 +6,7 @@ Sources, most reliable first:
   * arena order from the gen1recomp Stadium 2 importer research (gym
     leaders, Elite Four, ...); arenas 23-25 are unconfirmed;
   * appearance, for everything the ROM has no name for (minigame props,
-    TV screens, ...).
+    TV screens, ...), checked against which minigame loads each object.
 """
 import re
 
@@ -37,23 +37,23 @@ _TV = "TV Screen"
 OBJECTS = {
     0: "White Boards", 2: "Wooden Pole", 3: "Room Wall", 12: "Potted Plant (bushy)",
     13: "Purple Crystal", 24: "Potted Plant (berries)", 26: "Purple Crystal", 36: "Stand",
-    45: "Stand", 51: "Room Wall", 52: "Hitmontop", 53: "Zubat", 54: "Room (miniature)",
+    45: "Stand", 51: "Room Wall", 52: "Hitmontop", 53: "Golbat", 54: "Room (miniature)",
     55: "Pinsir", 56: "Window", 57: "Red Orb on Stand", 58: "Round Face on a Stick",
     59: "Signpost", 60: "Platform", 62: "Flower Patch", 63: "Blue Rock", 64: "Blue Rock",
     65: "Log", 66: "Log", 67: "Log", 68: "Pillar", 69: "Pillar", 70: "Pillar", 71: "Bird",
     72: "Trophy (egg)", 73: "Trophy (N)", 74: "Trophy (laurel)", 75: "Trophy (small)",
     76: "Round Face", 77: "Checkered Bowl", 78: "Green Field", 79: "Shadow Disc",
-    80: "Game Paks (blue)", 81: "Wooden Ring", 82: "Striped Shell", 83: "Signpost 4P",
+    80: "Game Paks (blue)", 81: "Wooden Ring", 82: "Swinub", 83: "Signpost 4P",
     84: "Signpost 3P", 85: "Signpost 1P", 86: "Signpost 2P", 87: "Signpost COM",
     98: "TV Room (miniature)", 100: "Game Paks (green)", 101: "Game Paks (purple)",
-    102: "Game Paks (yellow)", 103: "Striped Shell", 104: "Dark Obelisk", 107: "Pichu",
+    102: "Game Paks (yellow)", 103: "Swinub", 104: "Dark Obelisk", 107: "Pichu",
     109: "Togepi", 110: "Jynx", 111: "Wooden Ring", 114: "Cleffa", 115: "Hitmontop", 116: "Ramp",
     117: "Circus Backdrop", 118: "Books", 119: "Igglybuff", 121: "Green Arrows", 122: "Scyther",
     123: "Hitmontop", 125: "Rope Ring", 126: "Grass Arc", 128: "Floor Marks", 129: "Mr. Mime",
     132: "Rainbow Arc", 133: "Small Plants", 134: "Grass Arc", 135: "Cacti", 136: "Thin Arc",
     137: "Grass Ring", 138: "Grass Ring", 139: "Grass Pieces", 140: "Grass Arc",
-    141: "Mesh Panels", 142: "Furret", 143: "Eevee", 144: "Chansey", 147: "Course Corner",
-    148: "Course Stage", 149: "Grass Field Ring", 150: "Aipom on a Rope", 151: "Green Spiky Head",
+    141: "Mesh Panels", 142: "Furret", 143: "Eevee", 144: "Chansey", 145: "Egg",
+    147: "Course Corner", 148: "Course Stage", 149: "Grass Field Ring", 150: "Aipom on a Rope", 151: "Pineco",
     152: "Lid Box", 155: "Debris", 156: _TV + " (Wave Race 64)", 157: _TV + " (Super Mario 64)",
     158: _TV + " (castle)", 159: _TV + " (Super Mario Bros.)", 160: _TV + " (maze)",
     161: _TV + " (Donkey Kong)", 162: _TV + " (flowers)", 163: _TV + " (race track)",
@@ -82,16 +82,38 @@ LAYOUTS = {
 }
 for _k in range(3, 7):
     LAYOUTS[(120, _k)] = "Triangle Piece"
-# minigame each object belongs to (identified by appearance; a guide)
+# The minigames, in the game's order and with its names (text table 57), and
+# the objects each one uses. Read from the code: every minigame's overlay
+# (code modules #47-#61, run at 0x86000000-0x86B00000; docs/minigames.md)
+# loads its objects through one loader (0x8004DED4) with the object number
+# as a constant, and picks the player's character model with constants too
+# (Scyther/Pinsir/Scizor, Pichu/Pikachu, ...).
+# Added by appearance: the other Hitmontop and fruit models, which no code
+# loads by constant.
 MINIGAMES = {
-    "Delibird's Delivery": [127] + list(range(88, 98)) + [99],
-    "Eager Eevee": [143, 150, 152] + list(range(208, 217)),
-    "Egg Emergency": [144], "Clear Cut Challenge": [122], "Barrier Ball": [129, 218],
-    "Furret Frolic": [142, 121] + list(range(131, 141)), "Topsy-Turvy": [115, 123],
-    "Pichu's Power Plant": [107], "Tumbling Togepi": [109] + list(range(62, 68)),
-    "Rampage Rolling": [108],
+    "Gutsy Golbat": [53, 110],
+    "Topsy-Turvy": [115, 52, 123],
+    "Clear Cut Challenge": [122, 55, 179, 59, 81, 111, 112, 130, 131, 190],
+    "Furret's Frolic": [142, 223, 153, 155, 183],
+    "Barrier Ball": [129, 218, 120, 141, 146, 154],
+    "Pichu's Power Plant": [107, 201, 56, 57, 190],
+    "Rampage Rollout": [108, 113],
+    "Streaming Stampede": [114, 119, 205, 186, 80, 100, 101, 102, 116, 117, 118],
+    "Tumbling Togepi": [109, 206, 60] + list(range(62, 71)) + list(range(132, 141))
+                       + [188, 202],
+    "Delibird's Delivery": [127, 82, 103, 92, 96, 147, 148, 169, 170, 174, 175, 176, 177, 180, 181, 184],
+    "Egg Emergency": [144, 145, 185],
+    "Eager Eevee": [143, 149, 150, 151, 203, 204, 207] + list(range(208, 214)) + [215, 216],
 }
-_MINIGAME_OF = {i: g for g, ids in MINIGAMES.items() for i in ids}
+_MINIGAMES_OF = {}
+for _g, _ids in MINIGAMES.items():
+    for _i in _ids:
+        _MINIGAMES_OF.setdefault(_i, []).append(_g)
+
+
+def minigames_of(i):
+    """Minigames (in game order) that use objects-table record i."""
+    return _MINIGAMES_OF.get(i, [])
 
 
 def slug(text):
@@ -128,8 +150,7 @@ def object_name(i, layout=0, layouts=1, rom_texts=None):
             name += " %d" % (layout + 1)
     if i in DECORATIONS:
         tags.append("Room decoration")
-    if i in _MINIGAME_OF:
-        tags.append("Minigame: " + _MINIGAME_OF[i])
+    tags += ["Minigame: " + g for g in minigames_of(i)]
     if i not in OBJECTS and i not in DECORATIONS and (i, layout) not in LAYOUTS:
         tags.append("unnamed")
     return name, tags

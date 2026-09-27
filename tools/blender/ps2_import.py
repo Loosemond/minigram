@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Pokemon Stadium 2 models",
     "author": "ps2tool",
-    "version": (1, 4, 0),
+    "version": (1, 5, 0),
     "blender": (4, 2, 0),
     "location": "File > Import > Pokemon Stadium 2 (.glb), View3D > Sidebar > PS2",
     "description": "Import models exported by ps2extract.py with animated eyes/mouths "
@@ -28,7 +28,8 @@ animation clip. This add-on additionally
     from inside, by the camera only, so the scene's world and the lighting
     of other models are left alone ("Background" button in the panel);
   * a Browser panel (N panel > PS2): every exported model by name, with
-    thumbnails, category filter and search; Import brings it in with all of
+    thumbnails, in a scrollable list filtered by category, group (one
+    minigame, one effect module) and search; Import brings it in with all of
     the above. Point it at the extractor's output folder (catalog.json);
     it finds it by itself after the first import from that folder;
   * keeps each model in one piece when it is moved: selecting a model's mesh
@@ -48,8 +49,8 @@ import sys
 import bpy
 import bpy.utils.previews
 from bpy.app.handlers import persistent
-from bpy.props import BoolProperty, CollectionProperty, EnumProperty, StringProperty
-from bpy.types import AddonPreferences, Operator, OperatorFileListElement, Panel
+from bpy.props import BoolProperty, CollectionProperty, EnumProperty, IntProperty, StringProperty
+from bpy.types import AddonPreferences, Operator, OperatorFileListElement, Panel, PropertyGroup, UIList
 from bpy_extras.io_utils import ImportHelper
 from mathutils import Vector
 
@@ -885,7 +886,8 @@ class PS2_PT_clips(Panel):
 # Asset browser: every exported model, by name, with thumbnails
 # (out/catalog.json + out/thumbs/, written by ps2extract.py / make_previews.py)
 
-_browser = {"dir": None, "items": [], "categories": [], "enum": [], "previews": None}
+_browser = {"dir": None, "items": [], "categories": [], "groups": [], "visible": (None, set()),
+            "sync": False, "previews": None}
 
 
 def _find_library(start):
@@ -918,7 +920,7 @@ def _set_library_dir(context, d):
 def _catalog(context):
     d = _library_dir(context)
     if d != _browser["dir"]:
-        _browser.update(dir=d, items=[], categories=[])
+        _browser.update(dir=d, items=[], categories=[], visible=(None, set()))
         path = os.path.join(d, "catalog.json") if d else ""
         if path and os.path.exists(path):
             with open(path, encoding="utf-8") as fh:
@@ -940,46 +942,123 @@ def _preview(rel):
     return pc[rel].icon_id
 
 
-def _filtered(context):
+def _visible(context):
+    """Indices of the catalog items that pass the category, group and search filters."""
     wm = context.window_manager
-    cat, words = wm.ps2_category, wm.ps2_search.lower().split()
-    out = []
-    for it in _catalog(context):
-        if cat != "ALL" and it["category"] != cat:
-            continue
-        hay = (it["name"] + " " + " ".join(it.get("tags", [])) + " " + it["path"]).lower()
-        if all(w in hay for w in words):
-            out.append(it)
-    return out
+    items = _catalog(context)
+    key = (_browser["dir"], wm.ps2_category, wm.ps2_group, wm.ps2_search)
+    if _browser["visible"][0] != key:
+        cat, group, words = wm.ps2_category, wm.ps2_group, wm.ps2_search.lower().split()
+        keep = set()
+        for i, it in enumerate(items):
+            if cat != "ALL" and it["category"] != cat:
+                continue
+            if cat != "ALL" and group != "ALL" and it.get("group") != group:
+                continue
+            hay = (it["name"] + " " + " ".join(it.get("tags", [])) + " " + it["path"]).lower()
+            if all(w in hay for w in words):
+                keep.add(i)
+        _browser["visible"] = (key, keep)
+    return _browser["visible"][1]
+
+
+def _current(context):
+    """The catalog item picked in the list (None if it is filtered out)."""
+    items, i = _catalog(context), context.window_manager.ps2_index
+    return items[i] if 0 <= i < len(items) and i in _visible(context) else None
 
 
 def _category_items(self, context):
-    cats = _browser["categories"] or ["Pokémon", "Objects", "Arenas", "Maps", "Effects"]
+    cats = _browser["categories"] or ["Pokémon", "Minigames", "Objects", "Arenas", "Maps", "Effects"]
     return [("ALL", "All", "Everything")] + [(c, c, "") for c in cats]
 
 
-def _asset_items(self, context):
-    items = []
-    for i, it in enumerate(_filtered(context)):
-        items.append((it["path"], it["name"], "%s: %s" % (it["category"], ", ".join(it.get("tags", [])[:6])),
-                      _preview(it["thumb"]) or 0, i))
-    if not items:
-        items = [("NONE", "No matches", "", 0, 0)]
-    _browser["enum"] = items  # Blender needs these strings kept alive
+def _group_names(category):
+    """The category's groups (minigames, effect modules), in catalog order."""
+    seen = []
+    for it in _browser["items"]:
+        g = it.get("group")
+        if g and it["category"] == category and g not in seen:
+            seen.append(g)
+    return seen
+
+
+def _group_items(self, context):
+    cat = context.window_manager.ps2_category
+    items = [("ALL", "All " + cat.lower() if cat != "ALL" else "All", "No group filter")]
+    items += [(g, g, "") for g in _group_names(cat)]
+    _browser["groups"] = items  # Blender needs these strings kept alive
     return items
 
 
+def _sync_rows():
+    """Give the list one row per catalog item (the rows only carry the index)."""
+    _browser["sync"] = False
+    wm = bpy.context.window_manager
+    rows = wm.ps2_assets
+    n = len(_browser["items"])
+    if len(rows) != n:
+        rows.clear()
+        for _ in range(n):
+            rows.add()
+    _filters_changed(None, bpy.context)
+    for win in wm.windows:
+        for area in win.screen.areas:
+            if area.type == "VIEW_3D":
+                area.tag_redraw()
+    return None
+
+
 def _filters_changed(self, context):
-    items = _asset_items(self, context)
-    try:
-        context.window_manager.ps2_asset = items[0][0]
-    except TypeError:
-        pass
+    keep = _visible(context)
+    if context.window_manager.ps2_index not in keep and keep:
+        context.window_manager.ps2_index = min(keep)
+
+
+def _category_changed(self, context):
+    context.window_manager.ps2_group = "ALL"
+    _filters_changed(self, context)
 
 
 def _library_changed(self, context):
     _browser["dir"] = None
+    _catalog(context)
+    _sync_rows()
     _filters_changed(self, context)
+
+
+class PS2_AssetRow(PropertyGroup):
+    """A row of the browser list: row N shows catalog item N."""
+
+
+class PS2_UL_assets(UIList):
+    """The browser's model list: filtered by the panel's category, group and
+    search fields; scroll with the mouse wheel, drag its bottom edge to resize."""
+
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        items = _browser["items"]
+        if index >= len(items):
+            return
+        it, wm = items[index], context.window_manager
+        if wm.ps2_category == "ALL":
+            note = it["category"]
+        elif wm.ps2_group == "ALL" and it.get("group"):
+            note = it["group"]
+        else:
+            note = "%d clip%s" % (it["clips"], "s"[it["clips"] == 1:]) if it.get("clips") else ""
+        split = layout.split(factor=0.58)
+        split.label(text=it["name"], icon_value=_preview(it["thumb"]))
+        sub = split.row()
+        sub.enabled = False
+        sub.label(text=note)
+
+    def draw_filter(self, context, layout):
+        pass  # the panel's own category / group / search fields do the filtering
+
+    def filter_items(self, context, data, propname):
+        keep = _visible(context)
+        n = len(getattr(data, propname))
+        return [self.bitflag_filter_item if i in keep else 0 for i in range(n)], []
 
 
 class PS2_OT_browser_import(Operator):
@@ -989,9 +1068,9 @@ class PS2_OT_browser_import(Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        rel = context.window_manager.ps2_asset
-        path = os.path.join(_library_dir(context), rel)
-        if rel == "NONE" or not os.path.exists(path):
+        it = _current(context)
+        path = os.path.join(_library_dir(context), it["path"]) if it else ""
+        if not path or not os.path.exists(path):
             self.report({"WARNING"}, "nothing to import")
             return {"CANCELLED"}
         return bpy.ops.import_scene.ps2_glb(directory=os.path.dirname(path) + os.sep,
@@ -1032,22 +1111,30 @@ class PS2_PT_browser(Panel):
         if not items:
             layout.label(text="Pick the extractor's out folder", icon="INFO")
             return
+        if len(wm.ps2_assets) != len(items) and not _browser["sync"]:
+            _browser["sync"] = True  # can't add rows while drawing
+            bpy.app.timers.register(_sync_rows)
         row = layout.row(align=True)
         row.prop(wm, "ps2_category", text="")
         row.prop(wm, "ps2_search", text="", icon="VIEWZOOM")
-        found = _filtered(context)
-        layout.template_icon_view(wm, "ps2_asset", show_labels=True, scale=9.0, scale_popup=5.0)
-        it = next((x for x in found if x["path"] == wm.ps2_asset), None)
-        if it:
-            col = layout.column(align=True)
-            col.label(text=it["name"])
-            tags = [t for t in it.get("tags", []) if t not in ("Pokémon", "Effect")]
-            if it.get("clips"):
-                tags.insert(0, "%d clips" % it["clips"])
-            if tags:
-                col.label(text=", ".join(tags[:4]))
-            col.operator(PS2_OT_browser_import.bl_idname, icon="IMPORT")
-        layout.label(text="%d of %d models" % (len(found), len(items)))
+        if wm.ps2_category != "ALL" and _group_names(wm.ps2_category):
+            layout.prop(wm, "ps2_group", text="", icon="OUTLINER_COLLECTION")
+        layout.template_list("PS2_UL_assets", "", wm, "ps2_assets", wm, "ps2_index", rows=10)
+        shown = {items[i]["path"] for i in _visible(context)}  # a shared prop is listed per minigame
+        layout.label(text="%d of %d models" % (len(shown), len({it["path"] for it in items})))
+        it = _current(context)
+        if not it:
+            return
+        box = layout.box()
+        box.template_icon(icon_value=_preview(it["thumb"]), scale=7.0)
+        col = box.column(align=True)
+        col.label(text=it["name"])
+        tags = [t for t in it.get("tags", []) if t not in ("Pokémon", "Effect")]
+        if it.get("clips"):
+            tags.insert(0, "%d clip%s" % (it["clips"], "s"[it["clips"] == 1:]))
+        if tags:
+            col.label(text=", ".join(tags[:4]))
+        box.operator(PS2_OT_browser_import.bl_idname, icon="IMPORT")
 
 
 class PS2_Preferences(AddonPreferences):
@@ -1064,8 +1151,8 @@ def _menu(self, context):
     self.layout.operator(PS2_OT_import.bl_idname, text="Pokemon Stadium 2 (.glb)")
 
 
-CLASSES = (PS2_OT_import, PS2_OT_play, PS2_OT_shiny, PS2_OT_backdrop, PS2_OT_browser_import,
-           PS2_OT_browser_library, PS2_PT_clips, PS2_PT_browser, PS2_Preferences)
+CLASSES = (PS2_OT_import, PS2_OT_play, PS2_OT_shiny, PS2_OT_backdrop, PS2_AssetRow, PS2_UL_assets,
+           PS2_OT_browser_import, PS2_OT_browser_library, PS2_PT_clips, PS2_PT_browser, PS2_Preferences)
 
 
 def register():
@@ -1074,10 +1161,13 @@ def register():
     _browser["previews"] = bpy.utils.previews.new()
     wm = bpy.types.WindowManager
     wm.ps2_library = StringProperty(subtype="DIR_PATH", update=_library_changed)
-    wm.ps2_category = EnumProperty(name="Category", items=_category_items, update=_filters_changed)
+    wm.ps2_category = EnumProperty(name="Category", items=_category_items, update=_category_changed)
+    wm.ps2_group = EnumProperty(name="Group", description="Show one minigame / effect module",
+                                items=_group_items, update=_filters_changed)
     wm.ps2_search = StringProperty(name="Search", description="Filter by name, move or tag",
                                    update=_filters_changed, options={"TEXTEDIT_UPDATE"})
-    wm.ps2_asset = EnumProperty(name="Model", items=_asset_items)
+    wm.ps2_assets = CollectionProperty(type=PS2_AssetRow)
+    wm.ps2_index = IntProperty(name="Model", default=-1)
     bpy.types.TOPBAR_MT_file_import.append(_menu)
     bpy.types.Scene.ps2_move_as_one = BoolProperty(
         name="Move model as one piece", default=True,
@@ -1088,7 +1178,7 @@ def register():
 
 
 def unregister():
-    for prop in ("ps2_library", "ps2_category", "ps2_search", "ps2_asset"):
+    for prop in ("ps2_library", "ps2_category", "ps2_group", "ps2_search", "ps2_assets", "ps2_index"):
         if hasattr(bpy.types.WindowManager, prop):
             delattr(bpy.types.WindowManager, prop)
     if _browser["previews"] is not None:
