@@ -1,0 +1,7 @@
+# extracted assets: re-create with tools/ps2extract.py + tools/make_previews.py
+/out/
+
+__pycache__/
+*.pyc
+.DS_Store
+*.blend1

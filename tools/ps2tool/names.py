@@ -1,0 +1,145 @@
+"""Human-readable names for exported assets.
+
+Sources, most reliable first:
+  * the ROM's own text: Pokemon species (table 0), moves (table 6) and the
+    room decoration names (table 60), matched to objects by appearance;
+  * arena order from the gen1recomp Stadium 2 importer research (gym
+    leaders, Elite Four, ...); arenas 23-25 are unconfirmed;
+  * appearance, for everything the ROM has no name for (minigame props,
+    TV screens, ...).
+"""
+import re
+
+# ------------------------------------------------------------------ arenas
+STAGES = {
+    0: "Falkner (Violet Gym)", 1: "Bugsy (Azalea Gym)", 2: "Whitney (Goldenrod Gym)",
+    3: "Morty (Ecruteak Gym)", 4: "Jasmine (Olivine Gym)", 5: "Chuck (Cianwood Gym)",
+    6: "Pryce (Mahogany Gym)", 7: "Clair (Blackthorn Gym)", 8: "Team Rocket",
+    9: "Will (Elite Four)", 10: "Koga (Elite Four)", 11: "Bruno (Elite Four)",
+    12: "Karen (Elite Four)", 13: "Champion Lance", 14: "Brock (Pewter Gym)",
+    15: "Misty (Cerulean Gym)", 16: "Lt. Surge (Vermilion Gym)", 17: "Erika (Celadon Gym)",
+    18: "Janine (Fuchsia Gym)", 19: "Sabrina (Saffron Gym)", 20: "Blaine (Cinnabar Gym)",
+    21: "Blue (Viridian Gym)", 22: "Red (Mt. Silver)", 23: "Stadium A", 24: "Stadium B",
+    25: "Stadium C", 26: "Battle Tower", 27: "Indoor (Academy)", 28: "Free Battle Park",
+    29: "Rival",
+}
+SCENES = {0: "Johto Map", 1: "Johto Map (Mt. Silver)", 2: "Kanto Map"}
+
+# ------------------------------------------------------------------ objects
+# object record -> text table 60 entry (room decorations, by appearance)
+DECORATIONS = {
+    4: 41, 5: 25, 6: 54, 7: 52, 8: 21, 9: 24, 10: 48, 11: 23, 14: 38, 15: 37, 16: 35, 17: 17,
+    18: 18, 19: 19, 20: 20, 21: 42, 22: 46, 23: 36, 25: 33, 27: 59, 28: 55, 29: 28, 30: 29,
+    31: 31, 32: 15, 33: 16, 34: 40, 35: 45, 37: 30, 38: 60, 39: 44, 40: 53, 41: 58, 42: 22,
+    43: 14, 44: 47, 46: 39, 47: 43, 48: 49, 49: 51, 50: 50,
+}
+_TV = "TV Screen"
+OBJECTS = {
+    0: "White Boards", 2: "Wooden Pole", 3: "Room Wall", 12: "Potted Plant (bushy)",
+    13: "Purple Crystal", 24: "Potted Plant (berries)", 26: "Purple Crystal", 36: "Stand",
+    45: "Stand", 51: "Room Wall", 52: "Hitmontop", 53: "Zubat", 54: "Room (miniature)",
+    55: "Pinsir", 56: "Window", 57: "Red Orb on Stand", 58: "Round Face on a Stick",
+    59: "Signpost", 60: "Platform", 62: "Flower Patch", 63: "Blue Rock", 64: "Blue Rock",
+    65: "Log", 66: "Log", 67: "Log", 68: "Pillar", 69: "Pillar", 70: "Pillar", 71: "Bird",
+    72: "Trophy (egg)", 73: "Trophy (N)", 74: "Trophy (laurel)", 75: "Trophy (small)",
+    76: "Round Face", 77: "Checkered Bowl", 78: "Green Field", 79: "Shadow Disc",
+    80: "Game Paks (blue)", 81: "Wooden Ring", 82: "Striped Shell", 83: "Signpost 4P",
+    84: "Signpost 3P", 85: "Signpost 1P", 86: "Signpost 2P", 87: "Signpost COM",
+    98: "TV Room (miniature)", 100: "Game Paks (green)", 101: "Game Paks (purple)",
+    102: "Game Paks (yellow)", 103: "Striped Shell", 104: "Dark Obelisk", 107: "Pichu",
+    109: "Togepi", 110: "Jynx", 111: "Wooden Ring", 114: "Cleffa", 115: "Hitmontop", 116: "Ramp",
+    117: "Circus Backdrop", 118: "Books", 119: "Igglybuff", 121: "Green Arrows", 122: "Scyther",
+    123: "Hitmontop", 125: "Rope Ring", 126: "Grass Arc", 128: "Floor Marks", 129: "Mr. Mime",
+    132: "Rainbow Arc", 133: "Small Plants", 134: "Grass Arc", 135: "Cacti", 136: "Thin Arc",
+    137: "Grass Ring", 138: "Grass Ring", 139: "Grass Pieces", 140: "Grass Arc",
+    141: "Mesh Panels", 142: "Furret", 143: "Eevee", 144: "Chansey", 147: "Course Corner",
+    148: "Course Stage", 149: "Grass Field Ring", 150: "Aipom on a Rope", 151: "Green Spiky Head",
+    152: "Lid Box", 155: "Debris", 156: _TV + " (Wave Race 64)", 157: _TV + " (Super Mario 64)",
+    158: _TV + " (castle)", 159: _TV + " (Super Mario Bros.)", 160: _TV + " (maze)",
+    161: _TV + " (Donkey Kong)", 162: _TV + " (flowers)", 163: _TV + " (race track)",
+    164: _TV + " (sky)", 165: _TV + " (off)", 167: "White Ring", 169: "Pikachu Nintendo 64",
+    170: "GameCube", 171: "Baseball Bat and Glove", 172: "Christmas Tree", 173: "Computer",
+    174: "Christmas Stocking", 175: "Diamond Ring", 176: "Grand Piano", 177: "Game Boy Advance",
+    178: "Bag of Chips", 179: "Scizor", 180: "Game Boy", 181: "Snorlax", 182: "Trainer Doll",
+    183: "Bush", 184: "Candy", 186: "Hoppip", 187: "Pole", 188: "Ice Block", 189: "Lab Room",
+    190: "Wall Pieces", 195: "White Ring", 196: "White Ring", 197: "White Ring", 198: "White Ring",
+    201: "Pikachu", 202: "Water Plane", 205: "Igglybuff", 206: "Omanyte", 208: "Orange",
+    209: "Melon", 210: "Bananas", 211: "Strawberry", 212: "Apple", 213: "Grapes", 214: "Lab Room",
+    215: "Peach", 216: "Strawberries", 217: "Green Glow Panel", 218: "Mr. Mime", 219: "Grey Panel",
+    221: "Rainbow Ring", 222: "Dark Disc", 223: "Girafarig", 224: _TV + " (space)",
+    225: _TV + " (house)", 226: _TV + " (pink)",
+}
+OBJECT_NAME_FIXES = {37: "Yellow Carpet"}  # the ROM text has no space
+for _i in range(88, 100):
+    OBJECTS.setdefault(_i, "Gift Box")
+LAYOUTS = {
+    (108, 0): "Donphan", (108, 1): "Donphan (rolling)", (113, 0): "Green Field", (113, 1): "Red Frame",
+    (120, 0): "Cross Piece", (120, 1): "Cross Lines", (120, 2): "Hole", (127, 0): "Delibird",
+    (127, 1): "Delibird Prop", (142, 0): "Furret", (142, 1): "Furret", (153, 0): "Poké Ball",
+    (153, 1): "Great Ball", (153, 2): "Ultra Ball", (153, 3): "Master Ball", (154, 0): "Poké Ball",
+    (154, 1): "Ultra Ball", (154, 2): "Master Ball", (154, 3): "Great Ball", (155, 0): "Leaf Pile",
+    (155, 1): "Shards", (155, 2): "Chips",
+}
+for _k in range(3, 7):
+    LAYOUTS[(120, _k)] = "Triangle Piece"
+# minigame each object belongs to (identified by appearance; a guide)
+MINIGAMES = {
+    "Delibird's Delivery": [127] + list(range(88, 98)) + [99],
+    "Eager Eevee": [143, 150, 152] + list(range(208, 217)),
+    "Egg Emergency": [144], "Clear Cut Challenge": [122], "Barrier Ball": [129, 218],
+    "Furret Frolic": [142, 121] + list(range(131, 141)), "Topsy-Turvy": [115, 123],
+    "Pichu's Power Plant": [107], "Tumbling Togepi": [109] + list(range(62, 68)),
+    "Rampage Rolling": [108],
+}
+_MINIGAME_OF = {i: g for g, ids in MINIGAMES.items() for i in ids}
+
+
+def slug(text):
+    t = text.lower().replace("é", "e").replace("'", "").replace(".", "")
+    return re.sub(r"[^a-z0-9]+", "_", t).strip("_")
+
+
+def title(rom_text):
+    """'SURF PIKACHU DOLL' -> 'Surf Pikachu Doll' (keeps 'Poké')."""
+    words = [w.capitalize() for w in rom_text.replace("POKé", "Poké").split()]
+    return " ".join(w if not w.lower().startswith("poké") else "Poké" + w[4:] for w in words)
+
+
+def stage_name(i):
+    return STAGES.get(i, "Arena %d" % i)
+
+
+def scene_name(i):
+    return SCENES.get(i, "Map %d" % i)
+
+
+def object_name(i, layout=0, layouts=1, rom_texts=None):
+    """(display name, tags) of an objects-table record / layout."""
+    tags = []
+    if (i, layout) in LAYOUTS:
+        name = LAYOUTS[(i, layout)]
+    elif i in OBJECT_NAME_FIXES:
+        name = OBJECT_NAME_FIXES[i]
+    elif i in DECORATIONS and rom_texts and len(rom_texts) > 60:
+        name = title(rom_texts[60][DECORATIONS[i]])
+    else:
+        name = OBJECTS.get(i, "Object %03d" % i)
+        if layouts > 1:
+            name += " %d" % (layout + 1)
+    if i in DECORATIONS:
+        tags.append("Room decoration")
+    if i in _MINIGAME_OF:
+        tags.append("Minigame: " + _MINIGAME_OF[i])
+    if i not in OBJECTS and i not in DECORATIONS and (i, layout) not in LAYOUTS:
+        tags.append("unnamed")
+    return name, tags
+
+
+def effect_name(users, effects_map):
+    """Up to three moves most specific to a module (moves that load the
+    fewest modules first)."""
+    moves = [u for u in users if not u.startswith("(")]
+    if not moves:
+        return "Common" if users else "Unused"
+    ranked = sorted(moves, key=lambda m: (len(effects_map.get(m, ())), moves.index(m)))
+    return " / ".join(title(m) for m in ranked[:3])
