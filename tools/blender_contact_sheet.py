@@ -51,19 +51,39 @@ for i, glb in enumerate(files):
     hi = Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))
     center, size = (lo + hi) / 2, max((hi - lo).length, 1e-3)
     if os.environ.get("EEVEE"):
-        scene.render.engine = "BLENDER_EEVEE_NEXT"
+        engines = scene.render.bl_rna.properties["engine"].enum_items.keys()
+        scene.render.engine = "BLENDER_EEVEE_NEXT" if "BLENDER_EEVEE_NEXT" in engines else "BLENDER_EEVEE"  # 4.2-4.x / 5.x
         scene.eevee.taa_render_samples = 8
     else:
         scene.render.engine = "BLENDER_WORKBENCH"
+    scene.view_settings.view_transform = "Standard"  # the textures' own colours (AgX fades them)
+    scene.view_settings.look = "None"
+    for o in meshes:  # the N64 has no specular highlight
+        for mat in (m for m in o.data.materials if m and m.node_tree):
+            for n in mat.node_tree.nodes:
+                if n.type == "BSDF_PRINCIPLED" and "Specular IOR Level" in n.inputs:
+                    n.inputs["Specular IOR Level"].default_value = 0.0
     scene.display.shading.light = "STUDIO"
     scene.display.shading.color_type = "TEXTURE"
     scene.render.resolution_x = scene.render.resolution_y = cell
     scene.world = bpy.data.worlds.new("w")
     scene.world.color = (0.18, 0.2, 0.24)
     scene.world.use_nodes = True
-    bgn = next(n for n in scene.world.node_tree.nodes if n.type == "BACKGROUND")
+    wnt = scene.world.node_tree
+    bgn = next(n for n in wnt.nodes if n.type == "BACKGROUND")
     bgn.inputs[0].default_value = (0.3, 0.33, 0.4, 1)
     bgn.inputs[1].default_value = 1.2
+    # the camera sees the grey-blue background; the model is lit by neutral white,
+    # so it shows its texture colours (a tinted world would tint the model)
+    lit = wnt.nodes.new("ShaderNodeBackground")
+    lit.inputs[0].default_value = (1, 1, 1, 1)
+    lit.inputs[1].default_value = 1.0
+    lp, mix = wnt.nodes.new("ShaderNodeLightPath"), wnt.nodes.new("ShaderNodeMixShader")
+    wnt.links.new(lp.outputs["Is Camera Ray"], mix.inputs[0])
+    wnt.links.new(lit.outputs[0], mix.inputs[1])
+    wnt.links.new(bgn.outputs[0], mix.inputs[2])
+    wout = next(n for n in wnt.nodes if n.type == "OUTPUT_WORLD")
+    wnt.links.new(mix.outputs[0], wout.inputs["Surface"])
     cd = bpy.data.cameras.new("cam")
     cd.type = "ORTHO"
     cd.ortho_scale = size * 0.95
@@ -97,6 +117,6 @@ out_img.pixels = sheet
 out_img.filepath_raw = out
 out_img.file_format = "PNG"
 out_img.save()
-with open(os.path.splitext(out)[0] + ".txt", "w") as fh:
+with open(os.path.splitext(out)[0] + ".txt", "w", encoding="utf-8") as fh:
     fh.write("\n".join("%s\t%s" % (cell, name) for cell, name in cells))  # cell png <TAB> glb
 print("SHEET", out, cols, rows)

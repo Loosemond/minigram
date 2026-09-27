@@ -202,7 +202,7 @@ def export_pokemon(rom, index, outdir, names, moves, scale, textures_png=True, s
                                  channels={str(c): v for c, v in tracks[i].items()})
                             for i, a in enumerate(aux)],
                 attachments=model.attachments, warnings=model.warnings)
-    with open(os.path.join(d, base + ".json"), "w") as fh:
+    with open(os.path.join(d, base + ".json"), "w", encoding="utf-8") as fh:
         json.dump(info, fh, indent=1)
     return base, info
 
@@ -233,7 +233,7 @@ def export_stage(rom, index, outdir, scale, table=STADIUM_MODEL_TABLE, prefix="s
                 tags=["Region map"] if prefix == "scene" else ["Arena"] + (
                     ["unconfirmed name"] if prefix == "stage" and 23 <= index <= 25 else []),
                 clear_color=list(model.clear) if model.clear else None, clips=[], warnings=model.warnings)
-    with open(os.path.join(d, base + ".json"), "w") as fh:
+    with open(os.path.join(d, base + ".json"), "w", encoding="utf-8") as fh:
         json.dump(info, fh, indent=1)
     return base, info
 
@@ -257,7 +257,7 @@ def cmd_text(rom, outdir):
             lines.append("[%d.%d] %s" % (i, k, s.replace("\n", "\\n")))
     with open(os.path.join(d, "all_text.txt"), "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
-    with open(os.path.join(d, "index.json"), "w") as fh:
+    with open(os.path.join(d, "index.json"), "w", encoding="utf-8") as fh:
         json.dump(index, fh, indent=1)
     print("text: %d tables, %d strings -> %s" % (len(tables), sum(len(t or []) for t in tables), d))
 
@@ -307,7 +307,7 @@ def main():
             except Exception as e:  # noqa: BLE001
                 print("  record %d FAILED: %s" % (i, e))
         os.makedirs(os.path.join(args.out, "pokemon"), exist_ok=True)
-        with open(os.path.join(args.out, "pokemon", "index.json"), "w") as fh:
+        with open(os.path.join(args.out, "pokemon", "index.json"), "w", encoding="utf-8") as fh:
             json.dump(summary, fh, indent=1)
         print("pokemon: %d exported in %.1fs" % (len(summary), time.time() - t0))
     if args.what in ("objects", "all"):

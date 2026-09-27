@@ -104,3 +104,6 @@ module) and take the Nth hit. Its size is the u32 at +0x18.
 |---|---|
 | `0x8004DED4` | load an object from the objects table; `a0` = object number |
 | `0x8004DFF8` | used on the same objects right after it; `a1` = object number (*purpose unknown*) |
+| `0x8004D770` | show background picture `a0` from `0x1E70000`. Eager Eevee passes 44 (its round rainbow field) and Egg Emergency 19 (its building) |
+| `0x8004CA70` | load image bank `a0` from `0x1898000` (`a1` = image, *by usage*); every minigame passes its HUD banks, e.g. 434 (player badges) |
+| `0x8004C9A0` | called with the same banks as `0x8004CA70`, presumably to free them (*unverified*) |

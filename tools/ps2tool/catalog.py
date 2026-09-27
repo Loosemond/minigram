@@ -16,7 +16,7 @@ def thumb_path(rel):
 
 def _json(path):
     try:
-        with open(path) as fh:
+        with open(path, encoding="utf-8") as fh:
             return json.load(fh)
     except (OSError, ValueError):
         return {}
@@ -82,6 +82,6 @@ def build(out):
 
 def write_catalog(out):
     items = build(out)
-    with open(os.path.join(out, "catalog.json"), "w") as fh:
+    with open(os.path.join(out, "catalog.json"), "w", encoding="utf-8") as fh:
         json.dump(dict(version=1, categories=CATEGORIES, items=items), fh, indent=1, ensure_ascii=False)
     return len(items)

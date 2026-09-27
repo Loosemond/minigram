@@ -17,6 +17,7 @@ rediscover it.
 | [objects.md](objects.md) | The general objects table: room decorations, props, TV screens, who loads what |
 | [minigames.md](minigames.md) | The 12 minigames: code modules, objects, text, and how they were identified |
 | [images-and-text.md](images-and-text.md) | 2D graphics archives, text format, markup and the notable string tables |
+| [colours.md](colours.md) | Why models looked washed out in Blender, the *Game colours* fix, and what's left (the game's lighting) |
 | [open-questions.md](open-questions.md) | What isn't known yet |
 
 ## Conventions

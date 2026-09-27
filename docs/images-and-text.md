@@ -15,6 +15,15 @@ Code: `ps2tool/images.py`, `ps2tool/text.py`.
 
 Texture formats are the N64 ones listed in [fragments.md](fragments.md).
 
+**Bank and face images are stored row-swapped**, the way TMEM holds a texture
+after a `LoadBlock`: in every odd row the 32-bit words are swapped in pairs
+(64-bit words for 32-bit texels). Read plainly, they show a striped, combed
+pattern. `images.py` undoes the swap (`_unswap`). How this was found: the
+Egg Emergency HUD digits (banks 404 and 429) came out combed. Undoing the swap
+made rows smoother in all 1,742 bank images and 158 faces where it makes any
+difference (76 bank images look the same either way; none looked better
+unswapped). The 40×40 icons are stored plainly and are left alone.
+
 ## Text
 
 **Archive** `0x1D70000`: 331 records, each a string table (21,610 strings):

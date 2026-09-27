@@ -183,7 +183,7 @@ def export_module(rom, index, outdir, users, scale=0.01, tints=None, display=Non
                 summary["raw"].append(dict(symbol=sym, bytes=size, file=rel))
         except Exception as err:  # noqa: BLE001
             summary.setdefault("errors", []).append("kind %d symbol %d: %s" % (kind, sym, err))
-    with open(os.path.join(d, "fx_%03d.json" % index), "w") as fh:
+    with open(os.path.join(d, "fx_%03d.json" % index), "w", encoding="utf-8") as fh:
         json.dump(summary, fh, indent=1)
     return summary
 
@@ -238,7 +238,7 @@ def export_all(rom, outdir, move_names=None, ids=None, scale=0.01):
                  for s in out],
         effects={effect_label(e, move_names): r for e, r in sorted(table.items())})
     os.makedirs(os.path.join(outdir, "effects"), exist_ok=True)
-    with open(os.path.join(outdir, "effects", "index.json"), "w") as fh:
+    with open(os.path.join(outdir, "effects", "index.json"), "w", encoding="utf-8") as fh:
         json.dump(index, fh, indent=1)
     return out
 

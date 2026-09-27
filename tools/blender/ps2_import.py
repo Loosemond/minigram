@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Pokemon Stadium 2 models",
     "author": "ps2tool",
-    "version": (1, 6, 0),
+    "version": (1, 7, 0),
     "blender": (4, 2, 0),
     "location": "File > Import > Pokemon Stadium 2 (.glb), View3D > Sidebar > PS2",
     "description": "Import models exported by ps2extract.py with animated eyes/mouths "
@@ -848,10 +848,15 @@ def _backdrops_follow_arena(scene, depsgraph):
         bpy.app.timers.register(lambda: _remove_objects(orphans), first_interval=0.0)
 
 
-def import_model(context, path, live=True, world=False, backdrop=True):
+def import_model(context, path, live=True, world=False, backdrop=True, matte=True):
     before = set(bpy.data.objects)
     bpy.ops.import_scene.gltf(filepath=path)
     new = [o for o in bpy.data.objects if o not in before]
+    if matte:  # the N64 has no specular highlight
+        for mat in {m for o in new if o.type == "MESH" for m in o.data.materials if m and m.node_tree}:
+            for n in mat.node_tree.nodes:
+                if n.type == "BSDF_PRINCIPLED" and "Specular IOR Level" in n.inputs:
+                    n.inputs["Specular IOR Level"].default_value = 0.0
     arm = next((o for o in new if o.type == "ARMATURE"), None)
     for o in new:  # bone display shape created by the importer
         if o.type == "MESH" and o.parent is None and arm is not None:
@@ -862,7 +867,7 @@ def import_model(context, path, live=True, world=False, backdrop=True):
     side = os.path.splitext(path)[0] + ".json"
     info = {}
     if os.path.exists(side):
-        with open(side) as fh:
+        with open(side, encoding="utf-8") as fh:
             info = json.load(fh)
     if live:
         setup_live_materials(new, os.path.dirname(path))
@@ -991,6 +996,10 @@ class PS2_OT_import(Operator, ImportHelper):
                            description="Set the scene to 30 fps so every game frame is a Blender frame, "
                                        "and play in real time (skip frames instead of slowing down "
                                        "when the viewport can't keep up)")
+    game_colours: BoolProperty(name="Game colours (Standard view, no shine)", default=True,
+                               description="Show the textures' own colours: set the scene's view transform "
+                                           "to Standard (AgX fades saturated colours) and turn off the "
+                                           "specular highlight the N64 doesn't have")
     live: BoolProperty(name="Live arena materials", default=True,
                        description="Rebuild arena materials as N64 colour-combiner shader nodes: "
                                    "scrolling water, animated colours, exact vertex shading")
@@ -1007,9 +1016,12 @@ class PS2_OT_import(Operator, ImportHelper):
         if self.game_fps:
             context.scene.render.fps, context.scene.render.fps_base = 30, 1.0
             context.scene.sync_mode = "FRAME_DROP"
+        if self.game_colours:
+            context.scene.view_settings.view_transform = "Standard"
+            context.scene.view_settings.look = "None"
         for p in paths:
             others = [c for o in context.scene.objects if "ps2_model" in o for c in o.children]
-            arm = import_model(context, p, self.live, self.world, self.backdrop)
+            arm = import_model(context, p, self.live, self.world, self.backdrop, matte=self.game_colours)
             if arm is not None and self.line_up and others:
                 context.view_layer.update()
                 right = _world_x_range(others)[1]

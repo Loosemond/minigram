@@ -19,7 +19,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ps2tool.catalog import thumb_path  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-out = next((a for a in sys.argv[1:] if not a.startswith("--")), "out")
+# absolute: Blender on Windows resolves relative render paths against the drive root
+out = os.path.abspath(next((a for a in sys.argv[1:] if not a.startswith("--")), "out"))
 blender = "/Applications/Blender.app/Contents/MacOS/Blender"
 if "--blender" in sys.argv:
     blender = sys.argv[sys.argv.index("--blender") + 1]
@@ -49,7 +50,7 @@ for cat, (pattern, pitch, flt) in CATS.items():
         subprocess.run([blender, "-b", "--python", os.path.join(HERE, "blender_contact_sheet.py"), "--",
                         tmp, str(THUMB)] + chunk, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         cells_dir = os.path.splitext(tmp)[0] + "_cells"
-        rowsl = [ln.split("\t") for ln in open(os.path.splitext(tmp)[0] + ".txt").read().split("\n") if ln]
+        rowsl = [ln.split("\t") for ln in open(os.path.splitext(tmp)[0] + ".txt", encoding="utf-8").read().split("\n") if ln]
         cellfiles = [r[0] for r in rowsl]
         names = []
         for pth in [r[1] for r in rowsl]:

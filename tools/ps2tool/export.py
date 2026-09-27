@@ -91,6 +91,6 @@ def write_model(model, base, d, clips=(), face_sets=None, scale=0.01, shiny=None
                     fh.write(encode_rgba(w, h, rgba))
     info.update(extra_info or {})
     info["warnings"] = model.warnings
-    with open(os.path.join(d, base + ".json"), "w") as fh:
+    with open(os.path.join(d, base + ".json"), "w", encoding="utf-8") as fh:
         json.dump(info, fh, indent=1)
     return info
