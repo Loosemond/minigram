@@ -12,7 +12,8 @@ tools/ps2tool/                  format code (ROM/archives/Yay0, FRAGMENT models,
 tools/blender/ps2_import.py     Blender add-on: asset browser, face/flipbook animation, shiny toggle,
                                 clip browser, live arena materials
 tools/make_previews.py          thumbnails of every model + labelled sheets (needs Blender + Pillow)
-tools/web_assets.py, serve_web.py   copy assets into the browser minigames, and serve them locally
+tools/web_assets.py, serve_web.py   copy assets into the browser minigames, and serve them (with
+                                rooms.py: the online rooms)
 web/                            minigames remade in three.js for the browser / Telegram (web/README.md)
 docs/                           game and ROM notes: formats, tables, what's where, open questions
 out/                            extracted assets (not in git: re-create with the commands below)
@@ -125,8 +126,10 @@ all here, but not the timeline.
 
 `web/egg-emergency/` is Egg Emergency remade in three.js with the game's own
 models, backdrop, sprites and HUD graphics. It adapts to phones (portrait) and
-PCs (landscape) and runs as a Telegram Mini App.
-[web/README.md](web/README.md) covers running and what's from the ROM.
+PCs (landscape), runs as a Telegram Mini App, and plays online: up to four
+people in a room, invited with a link, with CPUs in the empty spots.
+[web/README.md](web/README.md) covers running, online play and
+what's from the ROM.
 
 ```sh
 python3 tools/web_assets.py && python3 tools/serve_web.py   # http://localhost:8123/egg-emergency/

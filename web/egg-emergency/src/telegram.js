@@ -14,6 +14,9 @@ export const telegram = {
   inside,
   platform: inside ? tg.platform : "web",
   userName: (inside && tg.initDataUnsafe?.user?.first_name) || null,
+  userId: (inside && tg.initDataUnsafe?.user?.id) || null,
+  // from a t.me/<bot>/<app>?startapp=... link: a room to join
+  startParam: (inside && tg.initDataUnsafe?.start_param) || null,
 
   init(color) {
     if (!inside) return;
@@ -41,6 +44,13 @@ export const telegram = {
     if (backHandler) tg.BackButton.offClick(backHandler);
     backHandler = fn;
     if (fn) { tg.BackButton.onClick(fn); tg.BackButton.show(); } else tg.BackButton.hide();
+  },
+
+  // Telegram's "share to a chat" picker; false outside Telegram
+  share(url, text) {
+    if (!atLeast("6.1")) return false;
+    tg.openTelegramLink("https://t.me/share/url?url=" + encodeURIComponent(url) + "&text=" + encodeURIComponent(text));
+    return true;
   },
 
   // the player's data follows them across devices in Telegram (CloudStorage),

@@ -5,16 +5,44 @@ import { buildStage } from "./stage.js";
 import { Effects } from "./fx.js";
 import { sfx, unlock, setMuted, isMuted } from "./audio.js";
 import { telegram } from "./telegram.js";
+import { Net } from "./net.js";
+import config from "./config.js";
 
 const BG = "#4a3a30"; // the brick base of the backdrop, for Telegram's header and the page
 const PLAYER_COLOURS = ["#2f5de0", "#23a043", "#dc3030", "#e8a412"]; // 1P-4P, as on the game's badges
-const BADGES = ["1p", "com_green", "com_red", "com_yellow"];
+const COLOUR_NAMES = ["blue", "green", "red", "yellow"];
+const COUNTDOWN = 2650; // ms from the countdown's start to GO
+const REMOTE_DELAY = 0.3; // s: other devices' players are shown this far behind, so their leans arrive in time
+const CODE = /^[A-Za-z]{4,6}$/;
 telegram.init(BG);
 
 const $ = (s) => document.querySelector(s);
 const app = $("#app");
 const cards = [...document.querySelectorAll(".card")];
-const names = [telegram.userName || "You", "COM", "COM", "COM"];
+const params = new URLSearchParams(location.search);
+
+// who is in each seat: people get the 1P-4P badges, CPUs "COM" in the seat's colour
+let me = 0; // this device's seat
+let seats = [];
+function soloSeats() { seats = [0, 1, 2, 3].map((i) => (i ? { human: false, name: "COM" } : { human: true, name: telegram.userName || "You" })); }
+function roundSeats(lineup) {
+  seats = [0, 1, 2, 3].map((i) => {
+    const p = lineup.find((x) => x.seat === i && x.here);
+    return p ? { human: true, name: p.name } : { human: false, name: "COM" };
+  });
+}
+const badge = (i) => (seats[i].human ? i + 1 + "p" : "com_" + COLOUR_NAMES[i]);
+function applySeats() {
+  cards.forEach((c, i) => {
+    c.style.setProperty("--c", PLAYER_COLOURS[i]);
+    const b = c.querySelector(".badge");
+    b.src = `assets/ui/badge_${badge(i)}.png`;
+    b.alt = seats[i].human ? i + 1 + "P" : "COM";
+    c.querySelector(".who").textContent = current?.online && seats[i].human ? seats[i].name : "";
+    c.classList.toggle("me", !!current?.online && i === me);
+  });
+}
+soloSeats();
 
 // ---------------------------------------------------------------- renderer
 
@@ -27,7 +55,7 @@ try {
 }
 renderer.outputColorSpace = THREE.LinearSRGBColorSpace; // the colours as they are (see assets.js)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setClearColor("#17110e"); // behind the CPU boxes
+renderer.setClearColor("#17110e"); // behind the small boxes
 renderer.autoClear = false;
 
 const scene = new THREE.Scene();
@@ -40,8 +68,8 @@ scene.add(sun);
 
 // ------------------------------------------------------------------ layout
 // Landscape: one camera on all four players, like the game. Portrait: your
-// Chansey fills the screen and the three CPUs get small boxed views along the
-// top, each framed on its own bay.
+// Chansey fills the screen and the other three get small boxed views along
+// the top, each framed on its own bay.
 
 let views = [];
 const frames = $("#frames");
@@ -82,10 +110,11 @@ function layout() {
       const p = new THREE.Vector3(zoneX(i), 0, 0).project(cam);
       // on the bridge's front, under each Chansey (the roofs are where the eggs come from)
       place(cards[i], { left: ((p.x + 1) / 2) * W + "px", bottom: H - safe.bottom + 8 + "px", transform: "translateX(-50%)" });
+      cards[i].classList.remove("mini");
     }
     place(left, { right: W - safe.right + 10 + "px", top: safe.top + 10 + "px" });
   } else {
-    // each CPU box shows exactly its own bay, pole to pole, from the bridge's
+    // each small box shows exactly its own bay, pole to pole, from the bridge's
     // front up to where the eggs are a moment from the hands; the boxes keep
     // that shape and sit apart, so each player's area reads on its own
     const MINI = { width: ZONE_W + 0.1, bottom: -0.5, top: 1.95 };
@@ -96,23 +125,24 @@ function layout() {
     const strip = safe.top + miniH + 2 * pad;
     const x0 = Math.round((W - 3 * miniW - 2 * gap) / 2);
     const cams = views.length === 4 ? views.map((v) => v.cam) : [0, 1, 2, 3].map(() => new THREE.PerspectiveCamera(22, 1, 0.1, 200));
-    views = [{ cam: cams[0], zone: 0, x: 0, y: strip, w: W, h: H - strip, width: ZONE_W }];
-    for (let i = 1; i < 4; i++) {
-      views.push({ cam: cams[i], zone: i, x: x0 + (i - 1) * (miniW + gap), y: safe.top + pad, w: miniW, h: miniH, ...MINI });
-    }
+    const others = [0, 1, 2, 3].filter((i) => i !== me);
+    views = [{ cam: cams[0], zone: me, x: 0, y: strip, w: W, h: H - strip, width: ZONE_W }];
+    others.forEach((z, k) => {
+      views.push({ cam: cams[k + 1], zone: z, mini: true, x: x0 + k * (miniW + gap), y: safe.top + pad, w: miniW, h: miniH, ...MINI });
+    });
     for (const v of views) {
       frameCamera(v);
-      if (v.zone) {
-        place(cards[v.zone], { left: v.x + v.w / 2 + "px", top: v.y + v.h - 3 + "px", transform: "translate(-50%, -100%)" });
-        const f = frames.appendChild(document.createElement("div"));
-        f.className = "frame";
-        Object.assign(f.style, {
-          left: v.x - border + "px", top: v.y - border + "px", width: v.w + 2 * border + "px", height: v.h + 2 * border + "px",
-          borderWidth: border + "px", borderColor: PLAYER_COLOURS[v.zone],
-        });
-      }
+      cards[v.zone].classList.toggle("mini", !!v.mini);
+      if (!v.mini) continue;
+      place(cards[v.zone], { left: v.x + v.w / 2 + "px", top: v.y + v.h - 3 + "px", transform: "translate(-50%, -100%)" });
+      const f = frames.appendChild(document.createElement("div"));
+      f.className = "frame";
+      Object.assign(f.style, {
+        left: v.x - border + "px", top: v.y - border + "px", width: v.w + 2 * border + "px", height: v.h + 2 * border + "px",
+        borderWidth: border + "px", borderColor: PLAYER_COLOURS[v.zone],
+      });
     }
-    place(cards[0], { left: safe.left + 8 + "px", top: strip + 8 + "px" });
+    place(cards[me], { left: safe.left + 8 + "px", top: strip + 8 + "px" });
     place(left, { right: W - safe.right + 8 + "px", top: strip + 12 + "px" });
   }
 }
@@ -120,14 +150,14 @@ function layout() {
 function render() {
   const H = app.clientHeight;
   renderer.setScissorTest(false);
-  renderer.clear(); // the whole canvas: the strip behind the CPU boxes
+  renderer.clear(); // the whole canvas: the strip behind the small boxes
   renderer.setScissorTest(true);
   for (const v of views) {
     const y = H - v.y - v.h;
     renderer.setViewport(v.x, y, v.w, v.h);
     renderer.setScissor(v.x, y, v.w, v.h);
     v.cam.position.copy(v.base);
-    if (game.shake && (v.zone === 0 || v.zone === undefined)) {
+    if (game.shake && !v.mini) {
       v.cam.position.x += (Math.random() - 0.5) * game.shake * 0.25;
       v.cam.position.y += (Math.random() - 0.5) * game.shake * 0.25;
     }
@@ -162,20 +192,28 @@ app.addEventListener("contextmenu", (e) => e.preventDefault());
 const KEYS = { ArrowLeft: -1, KeyA: -1, KeyQ: -1, KeyL: -1, ArrowRight: 1, KeyD: 1, KeyE: 1, KeyR: 1 };
 addEventListener("keydown", (e) => {
   unlock();
+  if (e.target.closest?.("input")) return;
   if (e.code in KEYS && playing()) { if (!e.repeat) hold(e.code, KEYS[e.code]); e.preventDefault(); }
   else if ((e.code === "Enter" || e.code === "Space") && !playing()) {
-    const b = !$("#title").hidden ? $("#play") : !$("#results").hidden ? $("#again") : null;
-    if (b) { e.preventDefault(); b.click(); }
+    const b = { title: "#play", results: "#again", lobby: "#start" }[phase];
+    if (b && !$(b).hidden && !$(b).disabled) { e.preventDefault(); $(b).click(); }
   }
 });
 addEventListener("keyup", (e) => letGo(e.code));
 addEventListener("blur", () => { held.clear(); order = []; });
 
 // --------------------------------------------------------------- game flow
+// A round: { online, level, seed, me, goAt } and, online, { round, lineup,
+// host, scores }. Solo, the CPUs play here. Online, the server deals the seed
+// and GO time, every device runs the round on the server's clock, each plays
+// its own Chansey (the host's also the CPUs), and the server sends the ranking.
 
 let phase = "loading", level = "normal", round = 0, game, fx, stage;
+let current = null; // the round being played
+let catchingUp = false; // fast-forwarding an online round: no sounds
 const best = {};
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const until = (now, at) => new Promise((r) => setTimeout(r, Math.max(0, at - now())));
 
 // the countdown is the game's own 3, 2, 1, GO! (image bank 360)
 function banner(what) {
@@ -197,74 +235,108 @@ function flash(i, cls) {
 function digits(n) { return String(n).split("").map((d) => `<img src="assets/ui/n${d}.png" alt="">`).join(""); }
 
 function show(screen) {
-  for (const s of ["#title", "#results"]) $(s).hidden = s !== screen;
+  for (const s of ["#title", "#results", "#lobby"]) $(s).hidden = s !== screen;
   $("#hud").hidden = !!screen;
+  if (screen) $("#waiting").hidden = true;
 }
 
+function markLevel(group, l) { for (const b of group.querySelectorAll("button")) b.setAttribute("aria-checked", b.dataset.level === l); }
 function setLevel(l) {
   level = l;
-  for (const b of document.querySelectorAll(".levels button")) b.setAttribute("aria-checked", b.dataset.level === l);
+  markLevel($("#title .levels"), l);
   $("#best").textContent = best[l] ? best[l] + " eggs" : "–";
 }
 
 function toTitle() {
+  if (net?.wanted) { net.close(); room = null; setUrlRoom(null); }
   round++;
   phase = "title";
+  current = null;
+  me = 0;
+  soloSeats();
+  applySeats();
+  layout();
   telegram.back(null);
   game.reset(level);
   fx.clear();
   show("#title");
 }
 
-async function play() {
+function play() { startRound({ online: false, level, me: 0 }); }
+
+async function startRound(s) {
   unlock();
-  const me = ++round;
-  show(null);
-  game.reset(level);
+  const my = ++round;
+  current = s;
+  me = s.me;
+  if (s.online) roundSeats(s.lineup); else soloSeats();
+  applySeats();
+  layout();
+  const control = s.online ? [0, 1, 2, 3].map((z) => (z === me ? "local" : seats[z].human || s.host !== me ? "remote" : "cpu")) : undefined;
+  game.reset(s.level, s.seed, { me, control, delay: REMOTE_DELAY });
   fx.clear();
   held.clear(); order = [];
+  show(null);
   phase = "countdown";
   telegram.back(toTitle);
-  await wait(400);
+  const now = s.online ? () => net.now() : () => performance.now();
+  if (!s.online) s.goAt = now() + COUNTDOWN;
   for (const n of [3, 2, 1]) {
-    if (round !== me) return;
-    banner("img:count" + n); sfx.tick();
-    await wait(750);
+    const at = s.goAt - n * 750;
+    await until(now, at);
+    if (round !== my) return;
+    if (now() < at + 500) { banner("img:count" + n); sfx.tick(); } // (not when rejoining mid-round)
   }
-  if (round !== me) return;
-  banner("img:go"); sfx.go(); telegram.haptic("medium");
+  await until(now, s.goAt);
+  if (round !== my) return;
+  if (now() < s.goAt + 1000) { banner("img:go"); sfx.go(); telegram.haptic("medium"); }
   game.start();
+  if (s.scores) s.scores.forEach((e, i) => { game.players[i].eggs = e; }); // rejoining: the eggs so far
   phase = "play";
 }
 
 async function finish() {
-  const me = round;
+  const my = round;
   phase = "finish";
+  current.finishedAt = performance.now();
   banner("FINISH!"); sfx.finish(); telegram.haptic("success");
+  if (current.online) {
+    net.send("done");
+    await wait(1300);
+    if (round === my && phase === "finish") $("#waiting").hidden = false; // the results come from the server
+    return;
+  }
   await wait(1300);
-  if (round !== me) return;
+  if (round === my) showResults();
+}
+
+async function showResults() {
+  const my = round;
+  $("#waiting").hidden = true;
   const results = game.celebrate();
-  const mine = results.find((r) => r.player.i === 0);
+  const mine = results.find((r) => r.player.i === me);
   if (mine.place === 1) sfx.win(); else sfx.lose();
   await wait(1700);
-  if (round !== me) return;
+  if (round !== my) return;
   const tie = results.filter((r) => r.place === 1).length > 1;
   $("#champion").hidden = !(mine.place === 1 && !tie);
   $("#verdict").textContent = mine.place === 1 ? (tie ? "It's a tie!" : "You win!") : ["", "", "2nd place", "3rd place", "4th place"][mine.place];
   $("#ranking").innerHTML = results.map((r) => `
-    <li class="${r.player.i === 0 ? "me" : ""}" style="--c: ${PLAYER_COLOURS[r.player.i]}">
+    <li class="${r.player.i === me ? "me" : ""}" style="--c: ${PLAYER_COLOURS[r.player.i]}">
       <span class="place">${r.place}${["", "st", "nd", "rd", "th"][r.place]}</span>
-      <img class="badge" src="assets/ui/badge_${BADGES[r.player.i]}.png" alt="">
+      <img class="badge" src="assets/ui/badge_${badge(r.player.i)}.png" alt="">
       <span class="n"></span><span class="e"><i class="egg"></i>${r.eggs}</span></li>`).join("");
   [...$("#ranking").children].forEach((li, k) => {
-    li.querySelector(".n").textContent = names[results[k].player.i];
-    li.querySelector(".badge").alt = results[k].player.i ? "COM" : "1P";
+    const i = results[k].player.i;
+    li.querySelector(".n").textContent = seats[i].name;
+    li.querySelector(".badge").alt = seats[i].human ? i + 1 + "P" : "COM";
   });
-  const isBest = mine.eggs > (best[level] || 0);
+  const lvl = current.level, isBest = mine.eggs > (best[lvl] || 0);
   $("#newbest").hidden = !isBest;
-  if (isBest) { best[level] = mine.eggs; telegram.set("best_" + level, mine.eggs); setLevel(level); }
+  if (isBest) { best[lvl] = mine.eggs; telegram.set("best_" + lvl, mine.eggs); setLevel(level); }
   phase = "results";
-  telegram.back(toTitle);
+  resultButtons();
+  telegram.back(current.online ? toLobby : toTitle);
   show("#results");
 }
 
@@ -281,14 +353,214 @@ function updateHud() {
   $("#padR").classList.toggle("on", playing() && l > 0);
 }
 
+// ------------------------------------------------------------------ online
+// Rooms of up to four, on the server in tools/rooms.py. Invites are links:
+// t.me/<bot>/<app>?startapp=CODE in Telegram (config.telegramApp), or this
+// page with ?room=CODE.
+
+let net = null, room = null, mySeat = 0, status = "", roomError = "";
+
+function serverUrl() {
+  const u = params.get("server") || config.server;
+  return u || (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
+}
+
+// the same id after a reload keeps the seat (sessionStorage: per tab; ?as=
+// tells apart several players in one tab, as in party.html)
+function clientId() {
+  if (telegram.userId) return "tg" + telegram.userId;
+  const key = "egg_id" + (params.get("as") || "");
+  try {
+    let id = sessionStorage.getItem(key);
+    if (!id) sessionStorage.setItem(key, (id = Math.random().toString(36).slice(2, 12)));
+    return id;
+  } catch { return (window.eggId ||= Math.random().toString(36).slice(2, 12)); }
+}
+
+function myName() {
+  if (telegram.userName) return telegram.userName;
+  try { return params.get("name") || localStorage.getItem("egg_name") || ""; } catch { return params.get("name") || ""; }
+}
+
+function setUrlRoom(code) { // so a reload (or a copied address) comes back to the room
+  if (telegram.inside) return;
+  const u = new URL(location.href);
+  if (code) u.searchParams.set("room", code); else u.searchParams.delete("room");
+  u.searchParams.delete("create");
+  history.replaceState(null, "", u);
+}
+
+const hostName = () => room?.players.find((p) => p.seat === room.host)?.name || "the host";
+
+function goOnline(code = "", create = false) {
+  unlock();
+  if (!net) connectNet();
+  round++; // cancels a countdown
+  room = null; current = null; roomError = "";
+  phase = "lobby";
+  game.reset(level);
+  fx.clear();
+  renderLobby();
+  show("#lobby");
+  telegram.back(toTitle);
+  net.open({ room: code.toUpperCase(), id: clientId(), name: myName(), create });
+}
+
+function toLobby() {
+  round++;
+  phase = "lobby";
+  current = null;
+  renderLobby();
+  show("#lobby");
+  telegram.back(toTitle);
+}
+
+function connectNet() {
+  net = new Net(serverUrl());
+  net.on("status", (s) => { status = s; renderStatus(); });
+  net.on("welcome", (m) => {
+    mySeat = m.seat;
+    setUrlRoom(m.room);
+    if (phase === "finish" && current?.online) net.send("done"); // finished while offline
+  });
+  net.on("room", (r) => {
+    room = r; roomError = "";
+    if (current?.online && r.state === "playing" && r.round === current.round) followRound(r);
+    if (current?.online && phase === "finish" && !current.resultsIn && r.state === "lobby" && r.round >= current.round) {
+      current.resultsIn = true; // the results went out while this device was offline: go with its own counts
+      showResults();
+    }
+    if (phase === "lobby") renderLobby();
+    if (phase === "results") resultButtons();
+  });
+  net.on("start", (m) => {
+    if (current?.online && current.round === m.round) return; // already in it (a reconnect)
+    if (!m.lineup.some((p) => p.seat === mySeat)) return; // joined mid-round: next one
+    startRound({ online: true, round: m.round, level: m.level, seed: m.seed, goAt: m.at + COUNTDOWN, me: mySeat,
+                 lineup: m.lineup, host: m.host, scores: m.scores });
+  });
+  net.on("lean", (m) => {
+    if (current?.online && m.r === current.round && game.control[m.s] === "remote") game.inputs[m.s].push({ g: m.g, l: m.l });
+  });
+  net.on("ev", (m) => { if (current?.online && m.r === current.round) game.told(m.s, m.n, { e: m.e }); });
+  net.on("results", (m) => {
+    if (!current?.online || m.round !== current.round || current.resultsIn) return;
+    current.resultsIn = true;
+    if (game.state === "play") { game.stop(); banner("FINISH!"); current.finishedAt = performance.now(); } // time's up
+    m.scores.forEach((e, i) => { game.players[i].eggs = e; });
+    phase = "finish";
+    const my = round;
+    setTimeout(() => { if (round === my) showResults(); }, Math.max(0, current.finishedAt + 1300 - performance.now()));
+  });
+  net.on("error", (m) => { roomError = m.code; room = null; renderLobby(); });
+}
+
+// mid-round changes: someone left (a CPU takes their seat, played by the
+// host), or the host left (the next one takes over the CPUs)
+function followRound(r) {
+  current.host = r.host;
+  roundSeats(r.lineup);
+  for (let z = 0; z < 4; z++) if (z !== me) game.setControl(z, seats[z].human || r.host !== me ? "remote" : "cpu");
+  applySeats();
+}
+
+function resultButtons() {
+  const on = current?.online, host = on && room?.host === mySeat;
+  $("#again").disabled = on && !host;
+  $("#again").textContent = !on || host ? "Play again" : `Waiting for ${hostName()}…`;
+  $("#menu").textContent = on ? "Lobby" : "Menu";
+}
+
+function renderStatus() {
+  const el = $("#status");
+  const text = {
+    "no-room": "That room is closed. Make a new one, or check the code.",
+    full: "That room is full (4 players).",
+    "bad-code": "That isn't a room code.",
+  }[roomError] || (room && status === "online" ? "" : {
+    connecting: "Connecting…",
+    reconnecting: room ? "Reconnecting…" : "Can't reach the game server. Trying again…",
+  }[status] || "");
+  el.textContent = text;
+  el.classList.toggle("bad", !!roomError || (!room && status === "reconnecting"));
+}
+
+function renderLobby() {
+  renderStatus();
+  const r = room, host = !!r && r.host === mySeat, busy = r?.state === "playing";
+  $("#code").textContent = r ? r.room : "····";
+  $("#invite").hidden = !r;
+  $("#note").textContent = !r ? "" : busy ? "A round is on. You'll play in the next one."
+    : host ? "Up to 4 players. Empty spots are played by CPUs." : `Waiting for ${hostName()} to start…`;
+  $("#start").hidden = r ? !host || busy : !roomError;
+  $("#start").textContent = r ? "Start" : "New room";
+  markLevel($("#lobby .levels"), r?.level || "normal");
+  $("#lobby .levels").classList.toggle("locked", !host);
+  $("#lobby .levels").hidden = !r;
+  const list = $("#seats");
+  if (list.contains(document.activeElement)) return; // typing a name: don't pull it away
+  list.innerHTML = "";
+  list.hidden = !r;
+  for (let i = 0; i < 4 && r; i++) {
+    const p = r.players.find((x) => x.seat === i);
+    const li = list.appendChild(document.createElement("li"));
+    li.style.setProperty("--c", PLAYER_COLOURS[i]);
+    li.className = (p ? "" : "cpu") + (p && i === mySeat ? " me" : "");
+    const img = li.appendChild(document.createElement("img"));
+    img.className = "badge";
+    img.alt = p ? i + 1 + "P" : "COM";
+    img.src = `assets/ui/badge_${p ? i + 1 + "p" : "com_" + COLOUR_NAMES[i]}.png`;
+    let n;
+    if (p && i === mySeat && !telegram.userName) { // outside Telegram you can type a name
+      n = document.createElement("input");
+      n.value = p.name;
+      n.maxLength = 16;
+      n.setAttribute("aria-label", "Your name");
+      n.addEventListener("change", () => {
+        const v = n.value.trim();
+        if (!v) return;
+        try { localStorage.setItem("egg_name", v); } catch { /* private mode */ }
+        net.send("name", { name: v });
+      });
+      n.addEventListener("keydown", (e) => { if (e.key === "Enter") n.blur(); });
+    } else {
+      n = document.createElement("span");
+      n.textContent = p ? p.name : "CPU";
+    }
+    n.classList.add("n");
+    li.appendChild(n);
+    const tags = [];
+    if (p?.away) tags.push(["away", "reconnecting"]);
+    else if (p && r.host === i) tags.push(["", "host"]);
+    if (p && i === mySeat) tags.push(["", "you"]);
+    for (const [cls, text] of tags) {
+      const t = li.appendChild(document.createElement("span"));
+      t.className = "tag " + cls;
+      t.textContent = text;
+    }
+  }
+}
+
+async function invite() {
+  if (!room) return;
+  const code = room.room, text = `Catch eggs with me in Egg Emergency! Room ${code}`;
+  if (config.telegramApp && telegram.share(`${config.telegramApp}?startapp=${code}`, text)) return;
+  const u = new URL(location.href);
+  u.search = "?room=" + code;
+  if (telegram.share(u.href, text)) return;
+  try {
+    if (navigator.share) return await navigator.share({ title: "Egg Emergency", text, url: u.href });
+  } catch (e) { if (e.name === "AbortError") return; }
+  try {
+    await navigator.clipboard.writeText(u.href);
+    $("#note").textContent = "Link copied! Send it to your friends.";
+  } catch { $("#note").textContent = "Send your friends this link: " + u.href; }
+}
+
 // -------------------------------------------------------------------- boot
 
 async function boot() {
-  cards.forEach((c, i) => {
-    c.style.setProperty("--c", PLAYER_COLOURS[i]);
-    c.querySelector(".badge").src = `assets/ui/badge_${BADGES[i]}.png`;
-    c.querySelector(".badge").alt = i ? "COM" : "1P";
-  });
+  applySeats();
   let assets;
   try {
     assets = await loadAssets("assets/", (k) => { $("#loading .bar i").style.width = k * 100 + "%"; });
@@ -300,13 +572,18 @@ async function boot() {
   stage = buildStage(scene, assets);
   fx = new Effects(scene, assets);
   game = new Game(scene, assets, fx);
-  game.on("catch", (p) => { flash(p.i, "bump"); if (p.i === 0) { sfx.catch(); telegram.haptic("light"); } });
-  game.on("miss", (p) => { if (p.i === 0) sfx.crack(); });
-  game.on("boom", (p) => { flash(p.i, "hurt"); if (p.i === 0) { sfx.boom(); telegram.haptic("heavy"); } });
-  game.on("dud", (p) => { if (p.i === 0) sfx.dud(); });
+  const mine = (p) => p.i === me && !catchingUp;
+  game.on("catch", (p) => { flash(p.i, "bump"); if (mine(p)) { sfx.catch(); telegram.haptic("light"); } });
+  game.on("miss", (p) => { if (mine(p)) sfx.crack(); });
+  game.on("boom", (p) => { flash(p.i, "hurt"); if (mine(p)) { sfx.boom(); telegram.haptic("heavy"); } });
+  game.on("dud", (p) => { if (mine(p)) sfx.dud(); });
   game.on("finish", finish);
-  if (new URLSearchParams(location.search).has("debug")) { // for testing from the console
-    window.egg = { game, fx, scene, paused: false, phase: () => phase, lean: (d) => (d ? hold("debug", d) : letGo("debug")) };
+  // online, what this device plays goes to the others
+  game.on("lean", (s, l, g) => { if (current?.online) net.send("lean", { s, g, l }); });
+  game.on("result", (r) => { if (current?.online) net.send("ev", r); });
+  if (params.has("debug")) { // for testing from the console
+    window.egg = { game, fx, scene, paused: false, phase: () => phase, lean: (d) => (d ? hold("debug", d) : letGo("debug")),
+                   net: () => net, room: () => room, me: () => me };
   }
 
   const [e, n, h, savedLevel, muted] = await Promise.all(
@@ -316,8 +593,16 @@ async function boot() {
   setMuted(muted === "1");
   $("#sound").textContent = isMuted() ? "Sound off" : "Sound on";
 
-  for (const b of document.querySelectorAll(".levels button")) {
+  for (const b of document.querySelectorAll("#title .levels button")) {
     b.addEventListener("click", () => { sfx.tap(); telegram.haptic("select"); setLevel(b.dataset.level); telegram.set("level", level); });
+  }
+  for (const b of document.querySelectorAll("#lobby .levels button")) {
+    b.addEventListener("click", () => {
+      if (room?.host !== mySeat) return;
+      sfx.tap(); telegram.haptic("select");
+      markLevel($("#lobby .levels"), b.dataset.level);
+      net.send("level", { level: b.dataset.level });
+    });
   }
   $("#sound").addEventListener("click", () => {
     setMuted(!isMuted());
@@ -326,20 +611,44 @@ async function boot() {
     sfx.tap();
   });
   $("#play").addEventListener("click", play);
-  $("#again").addEventListener("click", play);
-  $("#menu").addEventListener("click", toTitle);
+  $("#friends").addEventListener("click", () => { sfx.tap(); goOnline(); });
+  $("#again").addEventListener("click", () => (current?.online ? net.send("start") : play()));
+  $("#menu").addEventListener("click", () => (current?.online ? toLobby() : toTitle()));
+  $("#start").addEventListener("click", () => { sfx.tap(); if (room) net.send("start"); else goOnline(); });
+  $("#invite").addEventListener("click", () => { sfx.tap(); invite(); });
+  $("#leave").addEventListener("click", () => { sfx.tap(); toTitle(); });
+  $("#join").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const code = $("#joinCode").value.trim();
+    if (!CODE.test(code)) { roomError = "bad-code"; renderStatus(); return; }
+    $("#joinCode").value = "";
+    $("#joinCode").blur();
+    if (code.toUpperCase() !== room?.room) goOnline(code);
+  });
 
   new ResizeObserver(layout).observe(app);
   telegram.onResize(layout);
   layout();
-  toTitle();
+  const code = telegram.startParam || params.get("room");
+  if (code && CODE.test(code)) goOnline(code, params.has("create")); // from an invite
+  else toTitle();
   $("#loading").hidden = true;
 
   const clock = new THREE.Clock();
   renderer.setAnimationLoop(() => {
-    const dt = window.egg?.paused ? 0 : Math.min(clock.getDelta(), 0.1); // a hidden tab pauses, it doesn't skip ahead
-    if (phase === "play") game.players[0].want = lean();
-    game.update(dt);
+    const dt = window.egg?.paused ? 0 : Math.min(clock.getDelta(), 0.1);
+    if (phase === "play") game.players[me].want = lean();
+    if (phase === "play" && current.online) {
+      // on the server's clock: catch up in small steps (after a hiccup, or rejoining mid-round)
+      let behind = Math.min((net.now() - current.goAt) / 1000 - game.time, 10);
+      catchingUp = behind > 0.25;
+      while (behind > 1e-4 && game.state === "play") {
+        const step = Math.min(behind, 1 / 30);
+        game.update(step);
+        behind -= step;
+      }
+      catchingUp = false;
+    } else game.update(dt);
     fx.update(dt);
     stage.update(performance.now() / 1000);
     updateHud();

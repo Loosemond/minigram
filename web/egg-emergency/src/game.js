@@ -211,6 +211,13 @@ class Brain {
   }
 }
 
+// Who plays each seat: "local" (this device's player), "cpu", or "remote"
+// (someone on another device, online). A remote seat runs a little behind the
+// others (setup.delay), so the leans that device sends arrive before they're
+// due, and it doesn't decide its own catches: the device that plays it says
+// what happened (told()), with its egg count, which is the one that counts.
+// The seats this device plays emit "lean" when the lean changes and "result"
+// on every catch and Voltorb hit, for sending on.
 export class Game {
   constructor(scene, assets, fx) {
     this.scene = scene; this.assets = assets; this.fx = fx;
@@ -222,29 +229,53 @@ export class Game {
     this.state = "idle";
     this.time = 0;
     this.shake = 0;
+    this.me = 0;
   }
   on(name, fn) { (this.listeners[name] ||= []).push(fn); }
   emit(name, ...args) { for (const fn of this.listeners[name] || []) fn(...args); }
 
-  reset(level, seed = (Math.random() * 2 ** 31) | 0) {
+  // setup: { me: this device's seat, control: per seat, delay: s }
+  reset(level, seed = (Math.random() * 2 ** 31) | 0, setup = {}) {
     for (const o of this.objects) this.release(o);
     this.objects = [];
+    this.level = level;
     this.drops = makeSchedules(seed);
     this.next = [0, 0, 0, 0];
     this.time = 0;
     this.state = "ready";
-    const rnd = mulberry32(seed ^ 0x5bd1e995);
-    this.brains = [null, new Brain(level, rnd), new Brain(level, rnd), new Brain(level, rnd)];
+    this.me = setup.me ?? 0;
+    this.control = setup.control || [0, 1, 2, 3].map((z) => (z === this.me ? "local" : "cpu"));
+    this.delay = this.control.map((c) => (c === "remote" ? setup.delay ?? 0.3 : 0));
+    this.inputs = [[], [], [], []]; // remote leans, due at their seat's time: {g, l}
+    this.known = [0, 1, 2, 3].map(() => new Map()); // remote results: drop number -> {e}
+    this.settled = [0, 1, 2, 3].map(() => new Set()); // drops already caught or hit
+    this.sent = [0, 0, 0, 0];
+    this.rnd = mulberry32(seed ^ 0x5bd1e995);
+    this.brains = this.control.map((c) => (c === "cpu" ? new Brain(level, this.rnd) : null));
     for (const p of this.players) p.reset();
   }
   start() {
     this.state = "play";
     for (const p of this.players) p.ready();
   }
+  stop() { // the round ends early
+    for (const o of this.objects) this.release(o);
+    this.objects = [];
+    this.state = "over";
+  }
+  // a seat changes hands mid-round, e.g. a CPU takes over from someone who left
+  setControl(z, c) {
+    if (this.control[z] === c) return;
+    this.control[z] = c;
+    this.brains[z] = c === "cpu" ? new Brain(this.level, this.rnd) : null;
+    this.inputs[z] = [];
+    this.sent[z] = this.players[z].want;
+  }
+  zoneTime(z) { return this.time - this.delay[z]; }
   get eggsLeft() { // the player's own
     let n = 0;
-    const d = this.drops?.[0] || [];
-    for (let k = this.next[0]; k < d.length; k++) if (d[k].kind === "egg") n++;
+    const d = this.drops?.[this.me] || [];
+    for (let k = this.next[this.me]; k < d.length; k++) if (d[k].kind === "egg") n++;
     return n;
   }
 
@@ -259,11 +290,12 @@ export class Game {
     this.pool[o.kind].push(o);
   }
 
-  spawn(d, zone) {
+  // drop number n of seat zone
+  spawn(d, n, zone) {
     const o = this.get(d.kind);
-    const catchY = this.players[zone].catchY(this);
+    const catchY = this.players[zone].catchY(this), t = this.zoneTime(zone);
     Object.assign(o, {
-      kind: d.kind, col: d.col, zone, state: "fall", passed: false, spawnT: this.time, arrive: this.time + d.fall,
+      kind: d.kind, col: d.col, zone, n, state: "fall", passed: false, pending: false, spawnT: t, arrive: t + d.fall,
       speed: (SPAWN_Y - catchY) / d.fall, spin: Math.random() * 6.28,
     });
     setLayer(o.mesh, zone + 1);
@@ -276,10 +308,12 @@ export class Game {
     if (this.state === "play") {
       this.time += dt;
       for (let z = 0; z < 4; z++) {
-        const list = this.drops[z];
-        while (this.next[z] < list.length && list[this.next[z]].t <= this.time) this.spawn(list[this.next[z]++], z);
+        const t = this.zoneTime(z), list = this.drops[z], p = this.players[z], q = this.inputs[z];
+        while (q.length && q[0].g <= t) p.want = q.shift().l;
+        while (this.next[z] < list.length && list[this.next[z]].t <= t) this.spawn(list[this.next[z]], this.next[z]++, z);
+        this.brains[z]?.think(p, this.objects, t, dt);
+        if (this.control[z] !== "remote" && p.want !== this.sent[z]) { this.sent[z] = p.want; this.emit("lean", z, p.want, t); }
       }
-      for (let i = 1; i < 4; i++) this.brains[i].think(this.players[i], this.objects, this.time, dt);
       this.updateObjects(dt);
       if (this.next.every((n, z) => n >= this.drops[z].length) && !this.objects.length) {
         this.state = "over";
@@ -300,23 +334,11 @@ export class Game {
       else m.material.map = m.userData.frames[Math.floor(this.time * 12 + o.spin) % 6];
       if (!o.passed && y0 > catchY && m.position.y <= catchY) {
         o.passed = true;
-        if (p.col === o.col && p.anim !== "hurt") {
-          o.state = "gone";
-          const at = new THREE.Vector3(p.x, catchY + 0.55, CATCH_Z);
-          if (o.kind === "egg") {
-            p.catchEgg();
-            this.fx.sparkle(m.position, o.zone);
-            this.fx.popup(1, at, o.zone);
-            this.emit("catch", p);
-          } else {
-            const lost = p.hit();
-            this.fx.explosion(m.position, true, o.zone);
-            this.fx.lostEggs(new THREE.Vector3(p.x, catchY, CATCH_Z), lost, o.zone);
-            if (lost) this.fx.popup(-lost, at, o.zone);
-            if (p.i === 0) this.shake = 0.35;
-            this.emit("boom", p, lost);
-          }
-        }
+        if (this.control[o.zone] === "remote") {
+          const told = this.known[o.zone].get(o.n);
+          if (told) this.resolve(o.zone, o.n, told);
+          else o.pending = true; // its player's device hasn't said yet: see told()
+        } else if (p.col === o.col && p.anim !== "hurt") this.resolve(o.zone, o.n);
       }
       if (o.state === "fall" && m.position.y <= WATER_Y) { // missed: past the bridge into the water
         o.state = "gone";
@@ -326,6 +348,47 @@ export class Game {
     }
     for (const o of this.objects) if (o.state === "gone") this.release(o);
     this.objects = this.objects.filter((o) => o.state !== "gone");
+  }
+
+  // drop n of seat z reached its player's hands: caught (an egg) or a shock (a
+  // Voltorb). told: what the device that plays the seat reported
+  resolve(z, n, told) {
+    if (this.settled[z].has(n)) return;
+    this.settled[z].add(n);
+    const p = this.players[z], catchY = p.catchY(this);
+    const o = this.objects.find((x) => x.zone === z && x.n === n && x.state === "fall");
+    if (o) o.state = "gone";
+    const hands = new THREE.Vector3(p.x, catchY, CATCH_Z);
+    const pos = o ? o.mesh.position : hands; // no object: it was already in the water here
+    const at = new THREE.Vector3(p.x, catchY + 0.55, CATCH_Z);
+    const before = p.eggs;
+    if (this.drops[z][n].kind === "egg") {
+      p.catchEgg();
+      if (told) p.eggs = told.e;
+      this.fx.sparkle(pos, z);
+      this.fx.popup(1, at, z);
+      this.emit("catch", p);
+    } else {
+      p.hit();
+      if (told) p.eggs = told.e;
+      const lost = Math.max(0, before - p.eggs);
+      this.fx.explosion(pos, true, z);
+      this.fx.lostEggs(hands, lost, z);
+      if (lost) this.fx.popup(-lost, at, z);
+      if (z === this.me) this.shake = 0.35;
+      this.emit("boom", p, lost);
+    }
+    if (!told) this.emit("result", { s: z, n, k: this.drops[z][n].kind === "egg" ? "c" : "h", e: p.eggs, g: this.zoneTime(z) });
+  }
+
+  // a remote seat's device reports drop n: {e: its egg count after it}. Usually
+  // it comes before the drop gets here; if late, it's shown when it arrives
+  told(z, n, r) {
+    if (this.state !== "play" || this.control[z] !== "remote" || !this.drops[z][n] || !Number.isFinite(r.e)) return;
+    if (this.settled[z].has(n)) { this.players[z].eggs = r.e; return; }
+    this.known[z].set(n, r);
+    const o = this.objects.find((x) => x.zone === z && x.n === n && x.state === "fall");
+    if (o ? o.pending : n < this.next[z]) this.resolve(z, n, r);
   }
 
   results() {

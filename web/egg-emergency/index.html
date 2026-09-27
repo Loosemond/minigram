@@ -24,14 +24,15 @@
   <div id="hud" hidden>
     <div id="frames"></div>
     <!-- the game's own HUD pieces: player badges (image bank 434), "EGGS" and digits (bank 404) -->
-    <div class="card"><img class="badge" alt=""><span class="count"><img class="eggs" src="assets/ui/eggs.png" alt="Eggs"><span class="num"></span></span></div>
-    <div class="card"><img class="badge" alt=""><span class="count"><img class="eggs" src="assets/ui/eggs.png" alt="Eggs"><span class="num"></span></span></div>
-    <div class="card"><img class="badge" alt=""><span class="count"><img class="eggs" src="assets/ui/eggs.png" alt="Eggs"><span class="num"></span></span></div>
-    <div class="card"><img class="badge" alt=""><span class="count"><img class="eggs" src="assets/ui/eggs.png" alt="Eggs"><span class="num"></span></span></div>
+    <div class="card"><span class="who"></span><img class="badge" alt=""><span class="count"><img class="eggs" src="assets/ui/eggs.png" alt="Eggs"><span class="num"></span></span></div>
+    <div class="card"><span class="who"></span><img class="badge" alt=""><span class="count"><img class="eggs" src="assets/ui/eggs.png" alt="Eggs"><span class="num"></span></span></div>
+    <div class="card"><span class="who"></span><img class="badge" alt=""><span class="count"><img class="eggs" src="assets/ui/eggs.png" alt="Eggs"><span class="num"></span></span></div>
+    <div class="card"><span class="who"></span><img class="badge" alt=""><span class="count"><img class="eggs" src="assets/ui/eggs.png" alt="Eggs"><span class="num"></span></span></div>
     <div id="left"><span class="num"></span><span>left</span></div>
     <div id="pads"><div class="pad" id="padL">L</div><div class="pad" id="padR">R</div></div>
   </div>
   <div id="banner"></div>
+  <div id="waiting" hidden>Waiting for the others…</div>
 
   <section id="title" class="screen" hidden>
     <div class="panel">
@@ -47,6 +48,7 @@
         <button role="radio" data-level="hard">Hard</button>
       </div>
       <button id="play" class="big">Play</button>
+      <button id="friends" class="big alt">Play with friends</button>
       <p class="best">Best: <b id="best">–</b> <span class="sep">·</span>
         <button id="sound" class="small">Sound on</button></p>
     </div>
@@ -60,6 +62,28 @@
       <p id="newbest" hidden>New best!</p>
       <button id="again" class="big">Play again</button>
       <button id="menu" class="small">Menu</button>
+    </div>
+  </section>
+
+  <section id="lobby" class="screen" hidden>
+    <div class="panel">
+      <div class="art short"><img class="logo" src="assets/ui/title.png" alt=""></div>
+      <h2>Room <span id="code">····</span></h2>
+      <p class="hint" id="note">Up to 4 players. Empty spots are CPUs.</p>
+      <p id="status" class="hint"></p>
+      <button id="invite" class="big alt">Invite friends</button>
+      <ol id="seats"></ol>
+      <div class="levels" role="radiogroup" aria-label="CPU level">
+        <button role="radio" data-level="easy">Easy</button>
+        <button role="radio" data-level="normal">Normal</button>
+        <button role="radio" data-level="hard">Hard</button>
+      </div>
+      <button id="start" class="big">Start</button>
+      <form id="join" autocomplete="off">
+        <input id="joinCode" maxlength="6" placeholder="Room code" aria-label="Room code" spellcheck="false" autocapitalize="characters">
+        <button class="small" type="submit">Join</button>
+      </form>
+      <button id="leave" class="small">Leave</button>
     </div>
   </section>
 
