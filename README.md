@@ -12,6 +12,8 @@ tools/ps2tool/                  format code (ROM/archives/Yay0, FRAGMENT models,
 tools/blender/ps2_import.py     Blender add-on: asset browser, face/flipbook animation, shiny toggle,
                                 clip browser, live arena materials
 tools/make_previews.py          thumbnails of every model + labelled sheets (needs Blender + Pillow)
+tools/web_assets.py, serve_web.py   copy assets into the browser minigames, and serve them locally
+web/                            minigames remade in three.js for the browser / Telegram (web/README.md)
 docs/                           game and ROM notes: formats, tables, what's where, open questions
 out/                            extracted assets (not in git: re-create with the commands below)
 out/catalog.json                every model with its name, category and tags
@@ -119,6 +121,17 @@ What isn't reproduced is the choreography: where, when and how many particles
 spawn during a move is run by the effect engine's bytecode. The assets are
 all here, but not the timeline.
 
+## Play in the browser
+
+`web/egg-emergency/` is Egg Emergency remade in three.js with the game's own
+models, backdrop, sprites and HUD graphics. It adapts to phones (portrait) and
+PCs (landscape) and runs as a Telegram Mini App.
+[web/README.md](web/README.md) covers running and what's from the ROM.
+
+```sh
+python3 tools/web_assets.py && python3 tools/serve_web.py   # http://localhost:8123/egg-emergency/
+```
+
 ## Open in Blender (4.2+, tested on 4.5)
 
 **Quick look:** File ▸ Import ▸ glTF 2.0 ▸ pick a `.glb`. You get the model
@@ -146,6 +159,11 @@ from Disk…* ▸ `tools/blender/ps2_import.py`, enable it. Then:
 - The scene switches to 30 fps (the game's rate) and real-time playback (Blender skips
   frames rather than slowing the animation down when the viewport can't keep up);
   untick *Game speed* in the import options if you don't want that.
+- The scene's view transform is set to Standard and the materials' specular highlight
+  is turned off, so the textures show their own colours: Blender's default (AgX) fades
+  saturated colours (Pikachu's yellow drops from 80% to 44% saturation), and the N64
+  has no specular. Untick *Game colours* in the import options to keep your settings.
+  Details, and a quick fix for scenes imported before 1.7.0: [docs/colours.md](docs/colours.md).
 - **Arenas and region maps get live materials.** The N64 has no shaders, but every
   arena surface has a recipe: a colour-combiner equation fed by up to two textures,
   each with its own scale, wrap and scroll speed, plus primitive/environment

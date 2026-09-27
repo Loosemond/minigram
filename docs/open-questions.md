@@ -20,6 +20,15 @@ What isn't known yet, roughly by how useful it would be.
 - **Attachment labels** (geo `0x18` / `0x24`): what the game attaches at each.
 - **Room decoration names** are matched to models by appearance; the table
   that links decoration items to object records hasn't been found.
+- **Egg Emergency's numbers:** fall speeds, how the drops are patterned, how
+  long a Voltorb stuns, what the CPU players do, where the HUD sits. They're
+  in module #56's code, which hasn't been read beyond its calls; the browser
+  remake guesses them ([web/README.md](../web/README.md)). Also what image
+  bank 429 (big digits with ±) is used for exactly.
+- **Battle lighting:** the ambient and directional lights (directions,
+  colours) the battle scene loads for lit models. With them, Blender could
+  match the game's shading, not just its texture colours
+  ([colours.md](colours.md)).
 
 ## Code
 

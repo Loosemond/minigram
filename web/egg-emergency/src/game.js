@@ -1,0 +1,351 @@
+// Egg Emergency rules: four Chansey, each catching in three columns (left,
+// centre, right). Holding L or R leans that way; letting go leans back to the
+// centre. A Voltorb shocks you and knocks 5 eggs out. Every player gets 100 eggs.
+import * as THREE from "three";
+import { makeChansey, makeEgg, makeVoltorb, setLayer } from "./assets.js";
+
+const S = 1 / 11.5; // model units -> world (Chansey = 1)
+export const COL_X = 5 * S; // the catch clips reach 5 units left/right
+const CATCH_Z = 4 * S; // and 4 units in front
+export const ZONE_W = 1.7; // distance between players
+
+// The stage is background picture 19 of the game, rebuilt in 3D (stage.js)
+// to the picture's measurements: a building on a bridge, one bay per player
+// between lamp poles at x = 13, 86, 159, 233 and 306 (73.25 px apart). Chansey
+// stand on the grass along the top of the bridge (row 193 of 240); under the
+// bridge, at the picture's bottom edge, is the water a missed egg falls into.
+export const BACKDROP = { w: 320, h: 240, firstCentre: 49.6, feet: 193 };
+export const PX = ZONE_W / 73.25; // world units per backdrop pixel
+export const VIEW_TOP = BACKDROP.feet * PX; // where the picture's top edge is (y = 0 is the grass)
+export const WATER_Y = -(BACKDROP.h - BACKDROP.feet) * PX; // its bottom edge
+export const VIEW_BOTTOM = WATER_Y - 0.3; // and a strip of the water under the bridge
+export const SPAWN_Y = VIEW_TOP + 0.35; // drops come from above the roofs
+export const TOTAL_EGGS = 100;
+export const VOLTORB_LOSS = 5;
+const VOLTORB_SIZE = 0.5; // 24 px sprite, about 22 px of the picture
+const MOVE_TIME = 0.23; // the lean clips
+
+// Chansey's clips, named by what they do (read from the bone tracks: the body
+// leans to x = -1.4 / 0 / +1.4, the held egg sits at x = -5 / 0 / +5)
+const CLIP = { wait: 0, idle: 1, idleL: 2, idleR: 3, catchC: 10, catchL: 11, catchR: 12, hurt: 13, win: 14, lose: 15 };
+const IDLE = { "-1": CLIP.idleL, 0: CLIP.idle, 1: CLIP.idleR };
+const CATCH = { "-1": CLIP.catchL, 0: CLIP.catchC, 1: CLIP.catchR };
+const MOVE = { "0>1": 4, "1>0": 5, "0>-1": 6, "-1>0": 7, "-1>1": 8, "1>-1": 9 };
+
+// Each CPU gets its own personality around the level's skill (see Brain).
+// Simulated (6 rounds each, eggs caught per CPU): easy ~55-85, normal ~75-90,
+// hard ~85-96; a flawless player with a 0.3 s reaction gets ~94-98.
+export const LEVELS = {
+  easy: { reaction: 0.5, fumble: 0.28, dodgeFail: 0.45, lapse: 0.15 },
+  normal: { reaction: 0.37, fumble: 0.16, dodgeFail: 0.3, lapse: 0.1 },
+  hard: { reaction: 0.23, fumble: 0.05, dodgeFail: 0.1, lapse: 0.03 },
+};
+
+export function zoneX(i) { return (i - 1.5) * ZONE_W; }
+
+export function mulberry32(a) {
+  return () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// The drops for one round, one list per player: [{t, col, kind, fall}].
+// Everyone gets the same timeline (when something drops, what pattern, how
+// fast), so it's fair, but in their own columns and with a little jitter.
+export function makeSchedules(seed) {
+  const rnd = mulberry32(seed);
+  const timeline = [];
+  let t = 0.4, eggs = 0;
+  while (eggs < TOTAL_EGGS) {
+    const p = eggs / TOTAL_EGGS;
+    const fall = 1.3 - 0.5 * p; // seconds from the top to the hands: it speeds up
+    const gap = (0.88 - 0.5 * p) * (0.85 + 0.3 * rnd());
+    const r = rnd();
+    let kind = "single", n = 1, extra = 0;
+    if (p > 0.08 && r < 0.12 + 0.1 * p) { kind = "voltorb"; extra = 0.25; } // and an egg elsewhere
+    else if (p > 0.3 && r < 0.3) { kind = "double"; n = 2; extra = 0.2; } // only one can be caught
+    else if (p > 0.15 && r < 0.45) { kind = "sweep"; n = 3; extra = 0.5; } // across the three columns
+    n = Math.min(n, TOTAL_EGGS - eggs);
+    timeline.push({ t, kind, n, fall, delay: 0.12 + 0.25 * rnd() });
+    eggs += n;
+    t += gap + extra;
+  }
+  return [0, 1, 2, 3].map((z) => {
+    const r = mulberry32(seed + 7919 * (z + 1));
+    const drops = [];
+    const last = { "-1": -9, 0: -9, 1: -9 };
+    const add = (at, col, kind, fall) => {
+      fall *= 0.94 + 0.12 * r(); // some drops fall a little faster than others
+      at = Math.max(0, at + (r() - 0.5) * 0.12);
+      while (at + fall - last[col] < 0.32) at += 0.06; // never two in a column at once
+      last[col] = at + fall;
+      drops.push({ t: at, col, kind, fall });
+    };
+    const other = (c) => { const o = [-1, 0, 1].filter((x) => x !== c); return o[Math.floor(r() * 2)]; };
+    for (const e of timeline) {
+      const c = Math.floor(r() * 3) - 1;
+      if (e.kind === "voltorb") { add(e.t, c, "voltorb", e.fall); add(e.t + e.delay, other(c), "egg", e.fall); }
+      else if (e.kind === "double") { add(e.t, c, "egg", e.fall); if (e.n > 1) add(e.t, other(c), "egg", e.fall); }
+      else if (e.kind === "sweep") {
+        const dir = r() < 0.5 ? 1 : -1;
+        for (let k = 0; k < e.n; k++) add(e.t + k * 0.24, (k - 1) * dir, "egg", e.fall);
+      } else add(e.t, c, "egg", e.fall);
+    }
+    return drops.sort((a, b) => a.t - b.t);
+  });
+}
+
+class Player {
+  constructor(game, i) {
+    this.i = i;
+    this.ch = makeChansey(game.assets);
+    this.ch.root.position.x = zoneX(i);
+    this.ch.root.position.y = game.feet; // the rig's origin sits a little above the feet
+    setLayer(this.ch.root, i + 1);
+    game.scene.add(this.ch.root);
+    this.reset();
+  }
+  reset() {
+    this.col = 0; this.want = 0; this.eggs = 0; this.stun = 0; this.anim = "wait";
+    this.ch.play(CLIP.wait, { fade: 0.2 });
+  }
+  ready() { this.anim = "idle"; this.ch.play(IDLE[0]); }
+  get x() { return this.ch.root.position.x; }
+  catchY(game) { return game.feet + 5 * S; }
+  update(dt) {
+    const ch = this.ch;
+    if (this.anim === "hurt") {
+      this.stun -= dt;
+      if (this.stun <= 0) { this.anim = "idle"; this.col = 0; ch.play(IDLE[0], { fade: 0.15 }); }
+    } else if (this.anim === "idle" || this.anim === "move" || this.anim === "catch") {
+      if (this.want !== this.col) {
+        ch.play(MOVE[this.col + ">" + this.want], { loop: false, fade: 0.05, restart: true });
+        this.col = this.want;
+        this.anim = "move";
+      } else if (this.anim !== "idle" && ch.done) {
+        this.anim = "idle";
+        ch.play(IDLE[this.col], { fade: 0.08 });
+      }
+    }
+    ch.update(dt);
+  }
+  catchEgg() {
+    this.eggs++;
+    this.anim = "catch";
+    this.ch.play(CATCH[this.col], { loop: false, fade: 0.03, restart: true });
+  }
+  hit() {
+    const lost = Math.min(this.eggs, VOLTORB_LOSS);
+    this.eggs -= lost;
+    this.anim = "hurt";
+    this.stun = 0.8; // long enough to miss the next egg, as in the game
+    this.ch.play(CLIP.hurt, { loop: false, fade: 0.03, restart: true });
+    return lost;
+  }
+  end(won, last) {
+    this.anim = "end";
+    this.ch.play(won ? CLIP.win : last ? CLIP.lose : CLIP.wait, { loop: !won && !last, fade: 0.2 });
+  }
+}
+
+// A CPU player. Its personality is rolled around the level's skill each round:
+// how quickly it notices a drop (with jitter), how long before the catch it
+// leans (some go early, some at the last moment), whether it leans back to the
+// centre between drops or stays, fidgeting, and short lapses of attention. It
+// is slower for a moment after a shock. Fumbles and failed dodges are decided
+// once per drop.
+function personality(level, rnd) {
+  const L = LEVELS[level], f = (a, b) => a + (b - a) * rnd();
+  return {
+    reaction: L.reaction * f(0.8, 1.25), jitter: f(0.1, 0.35),
+    lead: f(0.08, 0.5),
+    fumble: L.fumble * f(0.6, 1.4), dodgeFail: L.dodgeFail * f(0.6, 1.4),
+    home: rnd() < 0.5,
+    fidget: f(0, 0.7),
+    lapse: L.lapse * f(0.5, 1.5),
+  };
+}
+
+class Brain {
+  constructor(level, rnd) {
+    this.rnd = rnd;
+    this.k = personality(level, rnd);
+    this.seen = new Map();
+    this.away = 0; this.flustered = 0; this.hold = 0;
+  }
+  think(p, objects, now, dt) {
+    const k = this.k, rnd = this.rnd;
+    if (p.anim === "hurt") { this.flustered = now + 2; return; }
+    if (now < this.away) return;
+    if (rnd() < k.lapse * dt) { this.away = now + 0.3 + 0.5 * rnd(); return; }
+    const slow = now < this.flustered ? 1.4 : 1;
+    const mine = [];
+    for (const o of objects) {
+      if (o.zone !== p.i || o.state !== "fall" || o.passed) continue;
+      let d = this.seen.get(o);
+      if (!d) {
+        d = { at: o.spawnT + k.reaction * slow * (1 + k.jitter * (2 * rnd() - 1)),
+              skip: rnd() < (o.kind === "egg" ? k.fumble : k.dodgeFail) };
+        this.seen.set(o, d);
+      }
+      if (now >= d.at && !d.skip) mine.push(o);
+    }
+    mine.sort((a, b) => a.arrive - b.arrive);
+    const bombs = mine.filter((o) => o.kind === "voltorb" && o.arrive - now < 0.55);
+    const unsafe = new Set(bombs.map((b) => b.col));
+    const firstBomb = bombs.length ? bombs[0].arrive : Infinity;
+    const target = mine.find((o) => o.kind === "egg" && (!unsafe.has(o.col) || o.arrive < firstBomb - 0.25));
+    if (target && target.arrive - now <= k.lead + MOVE_TIME) { p.want = target.col; return; }
+    if (unsafe.has(p.want)) {
+      const safe = [0, -1, 1].filter((c) => !unsafe.has(c));
+      p.want = target && safe.includes(target.col) ? target.col : safe[0];
+      return;
+    }
+    if (target && target.arrive - now < 0.7) return; // something's coming: stay ready
+    if (now < this.hold) return;
+    if (rnd() < k.fidget * dt) { p.want = Math.floor(rnd() * 3) - 1; this.hold = now + 0.2 + 0.4 * rnd(); }
+    else if (k.home && !target) p.want = 0;
+  }
+}
+
+export class Game {
+  constructor(scene, assets, fx) {
+    this.scene = scene; this.assets = assets; this.fx = fx;
+    this.feet = measureFeet(assets);
+    this.players = [0, 1, 2, 3].map((i) => new Player(this, i));
+    this.objects = [];
+    this.pool = { egg: [], voltorb: [] };
+    this.listeners = {};
+    this.state = "idle";
+    this.time = 0;
+    this.shake = 0;
+  }
+  on(name, fn) { (this.listeners[name] ||= []).push(fn); }
+  emit(name, ...args) { for (const fn of this.listeners[name] || []) fn(...args); }
+
+  reset(level, seed = (Math.random() * 2 ** 31) | 0) {
+    for (const o of this.objects) this.release(o);
+    this.objects = [];
+    this.drops = makeSchedules(seed);
+    this.next = [0, 0, 0, 0];
+    this.time = 0;
+    this.state = "ready";
+    const rnd = mulberry32(seed ^ 0x5bd1e995);
+    this.brains = [null, new Brain(level, rnd), new Brain(level, rnd), new Brain(level, rnd)];
+    for (const p of this.players) p.reset();
+  }
+  start() {
+    this.state = "play";
+    for (const p of this.players) p.ready();
+  }
+  get eggsLeft() { // the player's own
+    let n = 0;
+    const d = this.drops?.[0] || [];
+    for (let k = this.next[0]; k < d.length; k++) if (d[k].kind === "egg") n++;
+    return n;
+  }
+
+  get(kind) {
+    const o = this.pool[kind].pop() || { mesh: kind === "egg" ? makeEgg(this.assets) : makeVoltorb(this.assets, VOLTORB_SIZE) };
+    this.scene.add(o.mesh);
+    return o;
+  }
+  release(o) {
+    this.scene.remove(o.mesh);
+    for (const b of this.brains || []) b?.seen.delete(o); // pooled: forget the old decisions
+    this.pool[o.kind].push(o);
+  }
+
+  spawn(d, zone) {
+    const o = this.get(d.kind);
+    const catchY = this.players[zone].catchY(this);
+    Object.assign(o, {
+      kind: d.kind, col: d.col, zone, state: "fall", passed: false, spawnT: this.time, arrive: this.time + d.fall,
+      speed: (SPAWN_Y - catchY) / d.fall, spin: Math.random() * 6.28,
+    });
+    setLayer(o.mesh, zone + 1);
+    o.mesh.position.set(zoneX(zone) + d.col * COL_X, SPAWN_Y, CATCH_Z);
+    if (d.kind === "egg") o.mesh.rotation.set(0, o.spin, 0);
+    this.objects.push(o);
+  }
+
+  update(dt) {
+    if (this.state === "play") {
+      this.time += dt;
+      for (let z = 0; z < 4; z++) {
+        const list = this.drops[z];
+        while (this.next[z] < list.length && list[this.next[z]].t <= this.time) this.spawn(list[this.next[z]++], z);
+      }
+      for (let i = 1; i < 4; i++) this.brains[i].think(this.players[i], this.objects, this.time, dt);
+      this.updateObjects(dt);
+      if (this.next.every((n, z) => n >= this.drops[z].length) && !this.objects.length) {
+        this.state = "over";
+        this.emit("finish");
+      }
+    }
+    for (const p of this.players) p.update(dt);
+    this.shake = Math.max(0, this.shake - dt);
+  }
+
+  updateObjects(dt) {
+    for (const o of this.objects) {
+      const m = o.mesh, p = this.players[o.zone];
+      const catchY = p.catchY(this);
+      const y0 = m.position.y;
+      m.position.y -= o.speed * dt;
+      if (o.kind === "egg") m.rotation.z = Math.sin(this.time * 9 + o.spin) * 0.25;
+      else m.material.map = m.userData.frames[Math.floor(this.time * 12 + o.spin) % 6];
+      if (!o.passed && y0 > catchY && m.position.y <= catchY) {
+        o.passed = true;
+        if (p.col === o.col && p.anim !== "hurt") {
+          o.state = "gone";
+          const at = new THREE.Vector3(p.x, catchY + 0.55, CATCH_Z);
+          if (o.kind === "egg") {
+            p.catchEgg();
+            this.fx.sparkle(m.position, o.zone);
+            this.fx.popup(1, at, o.zone);
+            this.emit("catch", p);
+          } else {
+            const lost = p.hit();
+            this.fx.explosion(m.position, true, o.zone);
+            this.fx.lostEggs(new THREE.Vector3(p.x, catchY, CATCH_Z), lost, o.zone);
+            if (lost) this.fx.popup(-lost, at, o.zone);
+            if (p.i === 0) this.shake = 0.35;
+            this.emit("boom", p, lost);
+          }
+        }
+      }
+      if (o.state === "fall" && m.position.y <= WATER_Y) { // missed: past the bridge into the water
+        o.state = "gone";
+        this.fx.splash(new THREE.Vector3(m.position.x, WATER_Y, m.position.z), o.zone);
+        this.emit(o.kind === "egg" ? "miss" : "dud", p);
+      }
+    }
+    for (const o of this.objects) if (o.state === "gone") this.release(o);
+    this.objects = this.objects.filter((o) => o.state !== "gone");
+  }
+
+  results() {
+    const order = this.players.slice().sort((a, b) => b.eggs - a.eggs);
+    return order.map((p) => ({ player: p, eggs: p.eggs, place: 1 + order.filter((q) => q.eggs > p.eggs).length }));
+  }
+  celebrate() {
+    const r = this.results();
+    const low = Math.min(...r.map((x) => x.eggs));
+    for (const x of r) x.player.end(x.place === 1, x.eggs === low && x.place !== 1);
+    return r;
+  }
+}
+
+// how far the rig's origin is above Chansey's feet, in world units
+function measureFeet(assets) {
+  const c = makeChansey(assets);
+  c.play(CLIP.wait, { fade: 0 });
+  c.update(0);
+  c.root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(c.root, true);
+  return -box.min.y;
+}

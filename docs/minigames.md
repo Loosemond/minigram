@@ -64,9 +64,66 @@ Worth knowing:
   "Lab Room" (189/214) isn't a minigame's. Only two of the twelve gift boxes
   are Delibird's.
 - Other Pokémon in the minigames (per Serebii: Magnemite, Spinarak, Electrode,
-  Diglett, Voltorb) are not in the objects table. They are presumably drawn
-  with their battle models (*unverified*).
+  Diglett, Voltorb) are not in the objects table. Egg Emergency's Voltorb is a
+  2D sprite (image bank 227, below); the others may be sprites too, or their
+  battle models (*unverified*).
 - Why Gutsy Golbat loads Jynx is *unknown*.
+
+## Egg Emergency: Chansey's clips
+
+Chansey (object 144) has 16 unnamed clips. What each does was read from its
+bone tracks: the body bone (`bone_02`) sits at x = 0, −1.4 or +1.4, and the
+held egg (`bone_01`) appears at x = 0, −5 or +5 (5 up, 4 in front) and shrinks
+to nothing. So Chansey doesn't walk. It stays on its spot and catches in three
+columns, 5 model units apart: the game's "use the L and R Buttons" means hold
+L to lean left, hold R to lean right, and let go to come back to the centre.
+That explains the six transition clips, including left ↔ right.
+
+| Clip | Length | What it does |
+|---|---|---|
+| 00 | 0.77 s | waiting, centre |
+| 01 | 0.50 s | idle, centre |
+| 02, 03 | 0.50 s | idle, leaning left / right |
+| 04, 06 | 0.23 s | centre → right / left |
+| 05, 07 | 0.23 s | right / left → centre |
+| 08, 09 | 0.23 s | left → right / right → left |
+| 10, 11, 12 | 0.30 s | catch in the centre / left / right column: an egg in the hands shrinks into the pouch |
+| 13 | 0.63 s | hurt: jumps with the pained face (face 3) and a dust cloud; the Voltorb hit |
+| 14 | 2.37 s | big jump (celebrating, *by appearance*) |
+| 15 | 3.20 s | sits back with face 4 (disappointed, *by appearance*) |
+
+### What else module #56 loads
+
+Listing every call from the module into the main program with constant
+arguments (the same method as for the object loader, below) shows the rest of
+the minigame:
+
+| Call | Argument | What it is |
+|---|---|---|
+| `0x8004D770` (show background picture) | 19 | the backdrop: a building on a bridge, with blue, green, red and yellow roofs and one column of windows per player (lamp poles at x = 13, 86, 159, 233, 306 of 320). The Chansey stand on the grass along the top of the bridge (rows 188–193), each under its colour; below the bridge's arches is the water |
+| `0x8004CA70` (load image bank) | 227 | **Voltorb**, a 24×24 sprite in 6 frames: in this minigame it isn't a 3D model |
+| | 434 | player badges: blank, "COM" in grey / blue / green / red / yellow, "1P"–"4P" (blue, green, red, yellow: the player colours) |
+| | 404 | small digits 0–9 and "EGGS": each player's counter |
+| | 429 | big digits 0–9, "−" and "+": presumably the "+1" / "−5" that show on a catch and a Voltorb hit (*by appearance*) |
+| | 152 | the splash, 12 frames of 32×32: a missed egg falls past the bridge into the water |
+| `0x8004DED4` (load object) | 145, 185 | the egg and the effect object |
+
+Object 185 carries three effect textures (a smoke noise, a flame burst and
+sparkles). Its own mesh is a four-triangle strip with a 12-frame clip, and
+what it's drawn as is *unknown*. The countdown "1", "2", "3", "GO!" is image
+bank 360, and the minigame's name banner is bank 403; both are loaded outside
+the module. Other sources agree on the rules: a Voltorb costs five eggs and
+stuns you long enough to miss the next one.
+
+Only Clear Cut Challenge (15), Egg Emergency (19) and Eager Eevee (44) call
+`0x8004D770`, so the others build their scene from objects. The module also
+calls `0x80021EC8` once with 45; every minigame calls it with a different
+number (Topsy-Turvy 33, Gutsy Golbat 13, …), maybe the music track
+(*unverified*).
+
+The browser remake in `web/egg-emergency/` is built on these findings,
+with the backdrop rebuilt in 3D to the picture's measurements
+([web/README.md](../web/README.md)).
 
 ## How this was found
 
