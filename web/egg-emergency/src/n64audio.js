@@ -12,6 +12,8 @@
 // a tick), the envelopes and the vibratos, and turns what changed into Web
 // Audio events a little ahead of time.
 
+import { fetchRetry } from "./retry.js";
+
 const RATE = 32000; // samples play at 32 kHz times their frequency scale
 const PER_FRAME = 3; // audio updates per 60 Hz frame
 const UPDATES = 60 * PER_FRAME;
@@ -56,7 +58,7 @@ const u8 = (v) => v & 0xff;
 // ---- the file ------------------------------------------------------------
 
 export async function loadBank(url) {
-  const res = await fetch(url);
+  const res = await fetchRetry(url);
   if (!res.ok) throw new Error(url + ": " + res.status);
   const buf = await res.arrayBuffer();
   const view = new DataView(buf);

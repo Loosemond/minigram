@@ -26,6 +26,7 @@ import rooms
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT", 8123))
 folder = sys.argv[2] if len(sys.argv) > 2 else os.path.join(root, "web")
+games = sorted(d for d in os.listdir(folder) if os.path.isfile(os.path.join(folder, d, "index.html")))
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -41,8 +42,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     gzipped = {}  # path -> (mtime, size, gzipped bytes or None when it doesn't shrink)
 
     def do_GET(self):
-        if self.path.split("?")[0] == "/ws":
+        path, _, query = self.path.partition("?")
+        if path == "/ws":
             return rooms.serve(self)
+        if path == "/" and len(games) == 1:  # straight to the only minigame, not a file listing
+            self.send_response(302)
+            self.send_header("Location", "/%s/%s" % (games[0], "?" + query if query else ""))
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return None
         return super().do_GET()
 
     def send_head(self):

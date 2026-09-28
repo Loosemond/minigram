@@ -132,7 +132,7 @@ the N64 shades.
 Code: `src/game.js` has the rules, drop schedules, CPU players and Chansey's
 clip map. `src/assets.js` loads the models and pictures. `src/fx.js` has the effects,
 `src/audio.js` the sounds (`src/n64audio.js` the engine that plays them), `src/telegram.js` the Telegram glue, `src/net.js`
-the connection to the rooms server, `src/config.js` the online settings, and
+the connection to the rooms server, `src/retry.js` tries failed loads again, `src/config.js` the online settings, and
 `src/main.js` does the layout, input, HUD, lobby and game flow.
 
 ## Online play

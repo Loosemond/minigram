@@ -4,6 +4,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
+import { retry, attemptURL, fetchRetry } from "./retry.js";
 
 THREE.ColorManagement.enabled = false; // colours are the game's own values
 
@@ -36,8 +37,11 @@ function prepare(scene) {
   return scene;
 }
 
+const gltf = (url) => retry((n) => gltfLoader.loadAsync(attemptURL(url, n)), url);
+const texture = (url) => retry((n) => texLoader.loadAsync(attemptURL(url, n)), url);
+
 function loadTexture(url, like) {
-  return texLoader.loadAsync(url).then((t) => {
+  return texture(url).then((t) => {
     t.flipY = false; // glTF convention, like the model's own textures
     t.colorSpace = THREE.NoColorSpace;
     if (like) {
@@ -50,14 +54,21 @@ function loadTexture(url, like) {
 }
 
 function spriteTexture(url) {
-  return texLoader.loadAsync(url).then((t) => { t.colorSpace = THREE.NoColorSpace; return t; });
+  return texture(url).then((t) => { t.colorSpace = THREE.NoColorSpace; return t; });
 }
 
 function image(url) {
-  const img = new Image();
-  img.src = url;
-  return img.decode().then(() => img);
+  return retry((n) => {
+    const img = new Image();
+    img.src = attemptURL(url, n);
+    return img.decode().then(() => img);
+  }, url);
 }
+
+// the HUD's pictures during a round (the countdown, and digits for the eggs
+// and the drops left), loaded now so a round doesn't wait on the server: once
+// the page has an image, its <img> elements reuse it
+const ROUND_UI = ["count3", "count2", "count1", "go", ...Array.from({ length: 10 }, (_, i) => "n" + i)];
 
 export async function loadAssets(base, onProgress = () => {}) {
   const jobs = [];
@@ -66,10 +77,11 @@ export async function loadAssets(base, onProgress = () => {}) {
   const frames = (name, n, pad) => Promise.all([...Array(n)].map((_, i) =>
     job(spriteTexture(base + name + String(i).padStart(pad, "0") + ".png"))));
   const big = Promise.all([...Array(10)].map((_, i) => job(image(base + "ui/big" + i + ".png"))));
-  const [chansey, info, egg, voltorb, splash, smoke, burst, sparks, backdrop, digits, plus, minus] = await Promise.all([
-    job(gltfLoader.loadAsync(base + "chansey.glb")),
-    job(fetch(base + "chansey.json").then((r) => r.json())),
-    job(gltfLoader.loadAsync(base + "egg.glb")),
+  const ui = Promise.all(ROUND_UI.map((name) => job(image(base + "ui/" + name + ".png"))));
+  const [chansey, info, egg, voltorb, splash, smoke, burst, sparks, backdrop, digits, plus, minus, roundUI] = await Promise.all([
+    job(gltf(base + "chansey.glb")),
+    job(fetchRetry(base + "chansey.json").then((r) => r.json())),
+    job(gltf(base + "egg.glb")),
     frames("voltorb", 6, 1),
     frames("splash", 12, 2),
     job(spriteTexture(base + "fx_smoke.png")),
@@ -79,6 +91,7 @@ export async function loadAssets(base, onProgress = () => {}) {
     big,
     job(image(base + "ui/plus.png")),
     job(image(base + "ui/minus.png")),
+    ui,
   ]);
   prepare(chansey.scene);
   prepare(egg.scene);
@@ -105,6 +118,7 @@ export async function loadAssets(base, onProgress = () => {}) {
     backdrop,
     fx: { smoke, burst, sparks, splash },
     digits: { big: digits, plus, minus },
+    roundUI, // kept, so the browser keeps them
   };
 }
 

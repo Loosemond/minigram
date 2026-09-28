@@ -10,7 +10,43 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&display=swap">
-<link rel="stylesheet" href="style.css">
+<script>
+  // The server can turn requests away for a few seconds when many come at
+  // once. So an image that fails is loaded
+  // again, with ?retry=n (a browser won't reload a URL that just failed), and
+  // if the page's style or code fails, the whole page is, once the server
+  // answers again (so the reload isn't turned away too), up to 3 times.
+  // src/retry.js does the same for the models, pictures and sound.
+  addEventListener("error", (e) => {
+    const img = e.target;
+    if (!(img instanceof HTMLImageElement) || !img.getAttribute("src")) return;
+    const n = +(img.dataset.retries || 0);
+    if (n >= 6) return;
+    img.dataset.retries = n + 1;
+    const url = new URL(img.getAttribute("src"), location.href);
+    url.searchParams.set("retry", n + 1);
+    setTimeout(() => { if (img.isConnected) img.src = url.href; }, 500 * 2 ** Math.min(n, 4));
+  }, true);
+  function reloadPage() {
+    if (reloadPage.called) return;
+    reloadPage.called = true;
+    let n = 3;
+    try { n = +sessionStorage.getItem("egg-reloads") || 0; sessionStorage.setItem("egg-reloads", n + 1); } catch {}
+    const giveUp = () => {
+      const say = () => { const p = document.querySelector("#loading p"); if (p) p.textContent = "Couldn't load the game. Try again in a minute."; };
+      document.readyState === "loading" ? addEventListener("DOMContentLoaded", say) : say();
+    };
+    if (n >= 3) return giveUp();
+    (async () => {
+      for (const ms of [500, 1000, 2000, 4000, 4000, 4000, 4000, 4000]) {
+        await new Promise((r) => setTimeout(r, ms));
+        try { if ((await fetch(location.href, { cache: "no-store" })).ok) return location.reload(); } catch {}
+      }
+      giveUp();
+    })();
+  }
+</script>
+<link rel="stylesheet" href="style.css" onerror="reloadPage()">
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }
@@ -93,6 +129,6 @@
 
   <div id="loading"><div class="bar"><i></i></div><p>Loading…</p></div>
 </div>
-<script type="module" src="src/main.js"></script>
+<script type="module" src="src/main.js" onerror="reloadPage()"></script>
 </body>
 </html>

@@ -608,6 +608,7 @@ async function boot() {
     $("#loading p").textContent = "Couldn't load the game's files. (Developers: run tools/web_assets.py.)";
     return;
   }
+  try { sessionStorage.removeItem("egg-reloads"); } catch {} // the page's retries (index.html) start over
   stage = buildStage(scene, assets);
   fx = new Effects(scene, assets);
   game = new Game(scene, assets, fx);
