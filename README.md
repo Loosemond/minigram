@@ -1,18 +1,20 @@
 # Pokémon Stadium 2 asset extraction
 
 Tools that pull the **Pokémon, minigame and battle-effect models (with their
-animations), arenas, 2D graphics and all game text** out of a Pokémon Stadium 2
-ROM, in formats Blender and any image viewer open directly.
+animations), arenas, 2D graphics, all game text and the music's sequences and
+samples** out of a Pokémon Stadium 2 ROM, in formats Blender, any image viewer
+and any audio editor open directly.
 
 ```
 rom/ps2_eu.z64                  your own dump of the game (not included)
 tools/ps2extract.py             the extractor (Python 3, no dependencies)
 tools/ps2tool/                  format code (ROM/archives/Yay0, FRAGMENT models, glTF,
-                                colour combiner, effects, images, text)
+                                colour combiner, effects, images, text, audio)
 tools/blender/ps2_import.py     Blender add-on: asset browser, face/flipbook animation, shiny toggle,
                                 clip browser, live arena materials
 tools/make_previews.py          thumbnails of every model + labelled sheets (needs Blender + Pillow)
-tools/web_assets.py, serve_web.py   copy assets into the browser minigames, and serve them (with
+tools/web_assets.py, serve_web.py   copy assets into the browser minigames (and make their
+                                sound), and serve them (with
                                 rooms.py: the online rooms, egg_rules.py: their scoring, and
                                 test_rooms.py)
 web/                            minigames remade in three.js for the browser / Telegram (web/README.md)
@@ -26,8 +28,8 @@ out/previews/                   thumbnail sheets
 ## Extract
 
 ```sh
-python3 tools/ps2extract.py rom/ps2_eu.z64 all             # everything (~70 s)
-python3 tools/ps2extract.py rom/ps2_eu.z64 pokemon 25 150  # or: objects / effects / images / stages / text
+python3 tools/ps2extract.py rom/ps2_eu.z64 all             # everything (~95 s)
+python3 tools/ps2extract.py rom/ps2_eu.z64 pokemon 25 150  # or: objects / effects / images / stages / text / audio
 python3 tools/make_previews.py out                         # thumbnails for the browser + sheets (~2-3 min)
 ```
 
@@ -47,6 +49,7 @@ offsets match the US research this is based on), but only the EU ROM was tested.
 | `stages/` | the 30 battle arenas (`stage_06_pryce_mahogany_gym.glb` + `.json` with the background colour, `textures/` for the live materials) |
 | `scenes/` | 3 large 3D maps: Johto, Johto around Mt. Silver, Kanto |
 | `text/` | all 331 string tables (21,610 strings) as JSON + `all_text.txt` |
+| `audio/` | the 137 sequences as they are (`.seq`, with an index naming the minigames' songs), the 582 instrument and sound-effect samples as WAVs (with their loops), one JSON per soundfont ([docs/audio.md](docs/audio.md)) |
 
 ### Names
 
@@ -253,8 +256,10 @@ HarbourMasters' Torch has no Stadium support, so the tools here don't use it.
 
 ## Known gaps
 
-- **Audio is not extracted.** Music and sound effects live in the ~17 MB region
-  `0x49B780`–`0x1606000` (N64 ADPCM sample banks + sequences).
+- **Audio:** the sequences and samples are extracted, but songs aren't
+  rendered to audio files (the browser minigames play them with a port of
+  the game's sequence player). The voices (announcer, 1,387 samples in banks
+  4–6) use a codec that isn't decoded.
 - Battle-effect choreography (particle timing and motion) isn't reproduced; see above.
 - Other runtime effects: Gastly's gas, Grimer/Muk's scrolling slime, Ponyta/Rapidash's
   flickering mane (static). Fire tails (Charmander line, Magmar, Moltres) are

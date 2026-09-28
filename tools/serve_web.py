@@ -4,14 +4,20 @@
 
 Sets the MIME types browsers need for ES modules (on Windows, Python's guess
 for .js can come from the registry and be wrong), and makes the browser
-revalidate every file, so edits show up on reload. The online rooms
+revalidate every file, so edits show up on reload (an unchanged file costs a
+304 with no body). Scripts, pages, models and the sound file go out gzipped
+to browsers that take it, which about quarters what a first visit downloads;
+each is compressed once and kept until it changes. The online rooms
 (tools/rooms.py) are at ws://localhost:8123/ws, so one server is all
 online play needs. The port can also come from $PORT, and
 TELEGRAM_BOT_TOKEN and TYPESAFE_API_KEY turn on the rooms' login and name
 checks.
 """
+import email.utils
 import functools
+import gzip
 import http.server
+import io
 import os
 import sys
 
@@ -31,10 +37,45 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ".css": "text/css", ".html": "text/html", ".svg": "image/svg+xml",
     }
 
+    COMPRESS = {".js", ".mjs", ".json", ".html", ".css", ".svg", ".glb", ".bin", ".txt"}
+    gzipped = {}  # path -> (mtime, size, gzipped bytes or None when it doesn't shrink)
+
     def do_GET(self):
         if self.path.split("?")[0] == "/ws":
             return rooms.serve(self)
         return super().do_GET()
+
+    def send_head(self):
+        path = self.translate_path(self.path)
+        if (os.path.splitext(path)[1].lower() not in self.COMPRESS or not os.path.isfile(path)
+                or "gzip" not in self.headers.get("Accept-Encoding", "")):
+            return super().send_head()
+        st = os.stat(path)
+        since = self.headers.get("If-Modified-Since")
+        if since and "If-None-Match" not in self.headers:
+            try:
+                if int(st.st_mtime) <= email.utils.parsedate_to_datetime(since).timestamp():
+                    self.send_response(304)
+                    self.end_headers()
+                    return None
+            except (TypeError, ValueError, OverflowError):
+                pass
+        cached = self.gzipped.get(path)
+        if not cached or cached[:2] != (st.st_mtime, st.st_size):
+            with open(path, "rb") as fh:
+                raw = fh.read()
+            body = gzip.compress(raw, 6, mtime=0)
+            cached = self.gzipped[path] = (st.st_mtime, st.st_size, body if len(body) < 0.9 * len(raw) else None)
+        if cached[2] is None:
+            return super().send_head()
+        self.send_response(200)
+        self.send_header("Content-Type", self.guess_type(path))
+        self.send_header("Content-Encoding", "gzip")
+        self.send_header("Content-Length", str(len(cached[2])))
+        self.send_header("Last-Modified", self.date_time_string(st.st_mtime))
+        self.send_header("Vary", "Accept-Encoding")
+        self.end_headers()
+        return io.BytesIO(cached[2])
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-cache")

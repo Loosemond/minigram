@@ -3,7 +3,7 @@
 
 Exports Pokemon, minigame/object and battle-effect models (skeletons,
 textures, animations) and arenas as binary glTF (.glb) for Blender, plus all
-2D graphics and game text.
+2D graphics, game text, and the music's sequences and samples.
 
     python3 ps2extract.py ROM info
     python3 ps2extract.py ROM pokemon [25 150 ...]      (default: all)
@@ -12,6 +12,7 @@ textures, animations) and arenas as binary glTF (.glb) for Blender, plus all
     python3 ps2extract.py ROM images                    sprites, backgrounds, faces, icons
     python3 ps2extract.py ROM stages                    arenas + large scenes
     python3 ps2extract.py ROM text
+    python3 ps2extract.py ROM audio                     sequences, samples (WAV), soundfonts
     python3 ps2extract.py ROM all
 
 Output goes to ./out (change with -o).
@@ -25,6 +26,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from ps2tool import audio as audiomod  # noqa: E402
 from ps2tool import clips as clipmod  # noqa: E402
 from ps2tool import shiny as shinymod  # noqa: E402
 from ps2tool import objects as objmod  # noqa: E402
@@ -262,10 +264,19 @@ def cmd_text(rom, outdir):
     print("text: %d tables, %d strings -> %s" % (len(tables), sum(len(t or []) for t in tables), d))
 
 
+def cmd_audio(rom, outdir):
+    t0 = time.time()
+    audio = audiomod.Audio(rom.data)
+    d = os.path.join(outdir, "audio")
+    wavs, skipped = audiomod.export(audio, d)
+    print("audio: %d sequences, %d soundfonts, %d samples (+%d voice samples not decoded) -> %s (%.0f s)" % (
+        len(audio.seqs), len(audio.fonts), wavs, skipped, d, time.time() - t0))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("rom")
-    ap.add_argument("what", choices=["info", "text", "pokemon", "stages", "objects", "effects", "images", "all"])
+    ap.add_argument("what", choices=["info", "text", "pokemon", "stages", "objects", "effects", "images", "audio", "all"])
     ap.add_argument("ids", nargs="*", type=int, help="record numbers (pokemon: 1-281)")
     ap.add_argument("-o", "--out", default="out")
     ap.add_argument("--scale", type=float, default=0.01,
@@ -291,6 +302,8 @@ def main():
         print("warning: could not read names:", e)
     if args.what in ("text", "all"):
         cmd_text(rom, args.out)
+    if args.what in ("audio", "all"):
+        cmd_audio(rom, args.out)
     if args.what in ("pokemon", "all"):
         ids = args.ids or list(range(rom.archive(MODEL_TABLE).count))
         t0 = time.time()

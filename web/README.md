@@ -11,7 +11,7 @@ and pictures. They run in any browser and as Telegram Mini Apps.
 
 ```sh
 python3 tools/ps2extract.py rom/ps2_eu.z64 all   # once: the models and images
-python3 tools/web_assets.py                      # copy what the minigames use into web/*/assets/
+python3 tools/web_assets.py                      # copy what the minigames use into web/*/assets/, and make their sound from the ROM
 python3 tools/serve_web.py                       # http://localhost:8123/egg-emergency/
 ```
 
@@ -19,15 +19,19 @@ There is no build step. three.js (0.170.0) comes from jsDelivr through an import
 in `index.html`. The `assets/` folders aren't in git, like `out/`. `serve_web.py`
 exists because Python's built-in server can send `.js` with the wrong MIME type
 on Windows, and browsers then refuse to load the modules; it also keeps
-connections open, since the game loads ~60 small files. It also runs the
-online rooms (`tools/rooms.py`) at `/ws`. Both are standard library only.
+connections open, since the game loads ~60 small files, and gzips scripts,
+pages, models and the sound file: a first visit downloads 284 KB instead of
+742 (the Chansey model goes from 446 KB to 96), and the sound 322 KB instead
+of 372. It also runs the online
+rooms (`tools/rooms.py`) at `/ws`. Both are standard library only.
 
 Add `?debug` to the URL to get `window.egg` in the console (`egg.game`,
-`egg.paused = true`, `egg.lean(-1 | 0 | 1)`, `egg.net()`, `egg.room()`). It
+`egg.paused = true`, `egg.lean(-1 | 0 | 1)`, `egg.net()`, `egg.room()`,
+`egg.sound.engine`: the audio engine, once it's loaded). It
 works on localhost only, unless `debug` is true in `src/config.js`.
 `clips.html` plays every Chansey clip side by side (`?t=0.3` freezes them at a
-time). `party.html` runs several online players in one tab
-([below](#online-play)).
+time). `party.html` runs several online players in one tab, and
+`tests.html` runs the regression tests ([below](#online-play)).
 
 ## Egg Emergency
 
@@ -76,6 +80,36 @@ the centre between drops, how much it fidgets, lapses of attention, and being
 slower for a moment after a shock. In a simulated round one CPU leaned 42
 times and another 135.
 
+**Sound.** The music and sound effects are the game's own, played the way
+the N64 plays them. There are no recordings in the ROM: a song is a sequence,
+a MIDI-like script of a few KB, whose notes play instruments made of short
+VADPCM samples, and the console mixes them as it goes. So the remake ships
+the same things, the sequences and just the samples they use, as they are in
+the ROM (`assets/sound.bin`, made by `web_assets.py`), and
+`src/n64audio.js` plays them: a port of the sequence player of the game's
+audio engine (Nintendo EAD's, from *Ocarina of Time* and *Majora's Mask*;
+the zeldaret decomps document it), with Web Audio doing the mixing. It runs
+the scripts 180 times a second like the console, and turns notes,
+envelopes, vibrato and pans into Web Audio events a little ahead. What plays
+([docs/audio.md](../docs/audio.md) has how each was found):
+
+- Egg Emergency's song (song 45, a 23.6 s loop) from GO! until the finish,
+  when it fades out with the finish whistle as in the game.
+- The effects the minigame's code plays, with the game's volumes, reverbs
+  and pans (yours to your column): a catch, a Voltorb's shock and the eggs
+  it knocks out, a drop falling in the water, the countdown, GO! and the
+  whistle; and a menu sound for the buttons.
+- The fanfare the minigame results play (song 55), when you win.
+
+The file is 372 KB (322 KB gzipped): the song's samples are 138 KB, the
+fanfare's another 97, the effects' 159, and the scripts 10 KB. It's fetched
+after the first tap with the sound on, so with the sound off it's never
+downloaded; until it's in, simple Web Audio tones stand in. For comparison,
+the same half minute of sound recorded would be about as big (Opus at 64
+kbit/s: ~280 KB); where this wins is the next songs: every song in the game
+uses the same instrument bank, so another minigame's music would cost its
+few new samples and a 2-5 KB script.
+
 What comes from the ROM and what is made up
 ([docs/minigames.md](../docs/minigames.md#what-else-module-56-loads) has how
 each asset was found):
@@ -85,9 +119,10 @@ each asset was found):
 | Chansey (object 144) with its clips and face textures, the egg (145) | fall speeds, drop patterns and the CPU players (module #56's code isn't read yet) |
 | the stage's layout, sizes and colours (background picture 19), the window paintings' Pokémon, Voltorb's 6-frame sprite (bank 227) | the 3D stage itself and its textures, the bays beyond the players', the far bank |
 | the three-column lean-and-catch, read from Chansey's clips | where the HUD sits |
-| the rules: L/R, Voltorb costs 5 eggs and a stun, 100 eggs (text 50.11) | sound effects (synthesised: the game's audio isn't extracted) |
+| the rules: L/R, Voltorb costs 5 eggs and a stun, 100 eggs (text 50.11) | the reverb (the game's settings aren't known) |
 | HUD: player badges (434), "EGGS" and digits (404), "+1" / "−5" (429), countdown 3-2-1-GO! (360), the name banner (403), "The Champion!" (358) | "FINISH!", the menus |
 | effects: the splash (152), explosion textures (object 185) | how the effects move |
+| the song, the fanfare and the sound effects (sequences 84, 94 and 9; fonts 49, 54 and 12's samples) | when the song starts (at GO!), and that the fanfare plays only for the winner |
 
 Colours follow [docs/colours.md](../docs/colours.md): the textures are used
 without sRGB conversion, lighting is Lambert (ambient + one sun, no specular)
@@ -96,7 +131,7 @@ the N64 shades.
 
 Code: `src/game.js` has the rules, drop schedules, CPU players and Chansey's
 clip map. `src/assets.js` loads the models and pictures. `src/fx.js` has the effects,
-`src/audio.js` the sounds, `src/telegram.js` the Telegram glue, `src/net.js`
+`src/audio.js` the sounds (`src/n64audio.js` the engine that plays them), `src/telegram.js` the Telegram glue, `src/net.js`
 the connection to the rooms server, `src/config.js` the online settings, and
 `src/main.js` does the layout, input, HUD, lobby and game flow.
 
@@ -182,7 +217,21 @@ each in a frame, all in one room (`&room=CODE` picks it). The first frame is
 the host. The frames stack on a tall window and sit side by side on a wide one.
 `python3 tools/test_rooms.py` tests the server: the protocol, the scoring and
 the cheats it stops, rejoining, Telegram logins, names and limits (about half
-a minute, no network).
+a minute, no network). `tests.html`, with `serve_web.py` running, tests the
+game with it, in real games in frames: the drops against the server's copy,
+the catching rule (the same short round `test_rooms.py` plays), the CPU
+levels (what it takes to win, simulated), the sound (the song, the fanfare
+and every effect rendered offline: they play, the song loops, and nothing
+they need is missing from `sound.bin`), a solo round, the lobby and the
+invite link, and an online round with two scripted players. One of them
+meddles from the console partway through: he claims an egg he missed, with a
+made-up count, claims a catch for the other player and leans for her, claims
+a drop still to come, says he's done and tries to start the next round, then
+reloads mid-round. Both devices have to agree with each other throughout,
+end with the same ranking, and never be corrected by the server when playing
+honestly. It takes about two minutes; keep the page showing, as browsers
+pause hidden pages' games (the real-time tests wait for it, and count as
+inconclusive if it's hidden while they run).
 
 Give the server `TELEGRAM_BOT_TOKEN` (from @BotFather) and `TYPESAFE_API_KEY`
 as environment variables to turn on the login and name checks; it says at

@@ -17,6 +17,7 @@ rediscover it.
 | [objects.md](objects.md) | The general objects table: room decorations, props, TV screens, who loads what |
 | [minigames.md](minigames.md) | The 12 minigames: code modules, objects, text, and how they were identified |
 | [images-and-text.md](images-and-text.md) | 2D graphics archives, text format, markup and the notable string tables |
+| [audio.md](audio.md) | The audio engine (Zelda 64's): tables, soundfonts, samples, sequences, which song and sound effects each minigame plays |
 | [colours.md](colours.md) | Why models looked washed out in Blender, the *Game colours* fix, and what's left (the game's lighting) |
 | [open-questions.md](open-questions.md) | What isn't known yet |
 
@@ -45,5 +46,10 @@ rediscover it.
 - Our own reading of the ROM: minigame modules and the object loader, arena
   background colours and materials, render callbacks, text tables, the
   archive scan.
+- [zeldaret/oot](https://github.com/zeldaret/oot) and
+  [zeldaret/mm](https://github.com/zeldaret/mm): the audio engine, whose
+  decomps document the sequence format; the N64 Sound Tool's configs
+  ([jombo23/N64-Tools](https://github.com/jombo23/N64-Tools)) for where the
+  tables are.
 - [Serebii's minigame page](https://www.serebii.net/stadium2/minigames.shtml):
   cross-check of each minigame's characters and props.

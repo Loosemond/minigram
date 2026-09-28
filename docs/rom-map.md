@@ -25,7 +25,7 @@ three byte orders; `ps2tool/rom.py` normalises them to big-endian:
 | `0x0A8BE0`–`0x437990` | 88 code modules (FRAGMENT overlays), see below |
 | `0x437AD0` | fonts (not converted) |
 | `0x449840`, `0x47D690`, `0x493410` | first asset archives (table below) |
-| `0x49B780`–`0x1606000` | audio, ~17 MB: N64 ADPCM sample banks and sequences (not extracted) |
+| `0x49B780`–`0x1606000` | audio, ~17 MB: soundfonts from `0x4AD7D0`, sample banks from `0x50FB60`, sequences `0x14D69E0`–`0x154F530`; the tables are in the main program at `0x86AC0` ([audio.md](audio.md)) |
 | `0x1638000`–`0x3FD5000` | the other asset archives (table below) |
 | `0x3FED000` | species metadata: 16 bytes per species (not an archive) |
 

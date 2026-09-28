@@ -118,8 +118,9 @@ stuns you long enough to miss the next one.
 Only Clear Cut Challenge (15), Egg Emergency (19) and Eager Eevee (44) call
 `0x8004D770`, so the others build their scene from objects. The module also
 calls `0x80021EC8` once with 45; every minigame calls it with a different
-number (Topsy-Turvy 33, Gutsy Golbat 13, …), maybe the music track
-(*unverified*).
+number (Topsy-Turvy 33, Gutsy Golbat 13, …): the song, which the game plays as
+sequence 45 + 39 = 84 ([audio.md](audio.md), with the sound effects the
+module plays).
 
 The browser remake in `web/egg-emergency/` is built on these findings,
 with the backdrop rebuilt in 3D to the picture's measurements

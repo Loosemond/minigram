@@ -1,16 +1,24 @@
-"""Copy the extracted models and images a web minigame needs into its assets/ folder.
+"""Copy the extracted models and images a web minigame needs into its assets/
+folder, and make its sound file from the ROM.
 
-    python3 tools/web_assets.py [out] [web]
+    python3 tools/web_assets.py [out] [web] [rom]
 
-Run tools/ps2extract.py first. The copies are not in git (like out/).
+Run tools/ps2extract.py first. The copies are not in git (like out/). The ROM
+defaults to the one in rom/.
 """
+import glob
 import os
 import shutil
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ps2tool import audio  # noqa: E402
+from ps2tool.rom import Rom  # noqa: E402
+
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(root, "out")
 web = sys.argv[2] if len(sys.argv) > 2 else os.path.join(root, "web")
+roms = [sys.argv[3]] if len(sys.argv) > 3 else sorted(glob.glob(os.path.join(root, "rom", "*.[zvn]64")))
 
 
 def bank(b, i):
@@ -51,6 +59,37 @@ for i, name in enumerate(["blank", "com", "com_blue", "com_green", "com_red", "c
 # minigame -> {asset name: file under out/}
 GAMES = {"egg-emergency": EGG}
 
+# Sound (docs/audio.md). Egg Emergency asks for song 45, which the game plays
+# as sequence 45 + 39; after the finish, the minigame results play song 55
+# (sequence 94), a fanfare: the remake plays it when you win. The effects are
+# sounds of sequence 9, the one the game runs for them on sequence player 2;
+# each comes with what the game's effect table gives it (EU RAM 0x80090E88,
+# 16 bytes per effect: sound number, volume, pitch, reverb, pan, channels):
+#   catch   0x7F01  an egg caught             (the minigame's own bank, 7)
+#   shock   0x7F02  a Voltorb goes off
+#   lost    0x7F00  and knocks eggs out (only then)
+#   splash  0x7F05  a drop falls in the water
+#   count   0xCF00  the countdown's 3, 2, 1   (the minigames' shared bank, 12)
+#   go      0xCF06  GO!
+#   finish  0xCF0B  the whistle at the end (the song fades out with it)
+#   tap     0xCF01  a menu button
+# The finish whistle's script writes the note it plays into itself from the
+# sound number, so the effect it ends up on (86) is listed by hand.
+def _sound(n, vol, rev, chans, **more):
+    return dict(n=n, vol=vol, rev=rev, chans=chans, pitch=1.0, **more)
+
+
+SOUNDS = {"egg-emergency": ({"egg": 84, "win": 94}, {
+    "catch": _sound(0x4E, 83, 1, 0x0003),
+    "shock": _sound(0x4F, 100, 1, 0x0003),
+    "lost": _sound(0x4D, 103, 1, 0x0003),
+    "splash": _sound(0x2F, 100, 1, 0x0003),
+    "count": _sound(0x7C, 127, 3, 0x0700),
+    "go": _sound(0x28, 127, 8, 0x0700),
+    "finish": _sound(0x86, 117, 30, 0x0700, sfx=[86]),
+    "tap": _sound(0x7D, 100, 3, 0x0030),
+})}
+
 missing = 0
 for game, files in GAMES.items():
     dst = os.path.join(web, game, "assets")
@@ -63,4 +102,16 @@ for game, files in GAMES.items():
         os.makedirs(os.path.dirname(os.path.join(dst, name)), exist_ok=True)
         shutil.copyfile(src, os.path.join(dst, name))
     print(game, len(files), "files ->", dst)
+
+if roms:
+    sound = audio.Audio(Rom(roms[0]).data)
+    for game, (songs, sounds) in SOUNDS.items():
+        dst = os.path.join(web, game, "assets", "sound.bin")
+        data = audio.web_pack(sound, songs, sounds, 9)
+        with open(dst, "wb") as fh:
+            fh.write(data)
+        print(game, "sound.bin: %d KB ->" % (len(data) // 1024), dst)
+else:
+    print("no ROM in rom/: no sound (the game plays stand-ins)")
+    missing += 1
 sys.exit(1 if missing else 0)

@@ -3,7 +3,7 @@ import { loadAssets } from "./assets.js";
 import { Game, zoneX, ZONE_W, VIEW_TOP, VIEW_BOTTOM, BACKDROP, PX } from "./game.js";
 import { buildStage } from "./stage.js";
 import { Effects } from "./fx.js";
-import { sfx, unlock, setMuted, isMuted } from "./audio.js";
+import { sfx, music, unlock, setMuted, isMuted, debug as sound } from "./audio.js";
 import { telegram } from "./telegram.js";
 import { Net } from "./net.js";
 import config from "./config.js";
@@ -261,6 +261,7 @@ function toTitle() {
   telegram.back(null);
   game.reset(level);
   fx.clear();
+  music(null);
   show("#title");
 }
 
@@ -287,11 +288,12 @@ async function startRound(s) {
     const at = s.goAt - n * 750;
     await until(now, at);
     if (round !== my) return;
-    if (now() < at + 500) { banner("img:count" + n); sfx.tick(); } // (not when rejoining mid-round)
+    if (now() < at + 500) { banner("img:count" + n); sfx.count(); } // (not when rejoining mid-round)
   }
   await until(now, s.goAt);
   if (round !== my) return;
   if (now() < s.goAt + 1000) { banner("img:go"); sfx.go(); telegram.haptic("medium"); }
+  music("egg");
   game.start();
   if (s.scores) s.scores.forEach((e, i) => { game.players[i].eggs = e; }); // rejoining: the eggs so far
   phase = "play";
@@ -301,7 +303,7 @@ async function finish() {
   const my = round;
   phase = "finish";
   current.finishedAt = performance.now();
-  banner("FINISH!"); sfx.finish(); telegram.haptic("success");
+  banner("FINISH!"); sfx.finish(); music(null, 40); telegram.haptic("success");
   if (current.online) {
     net.send("done", { r: current.round }, true);
     await wait(1300);
@@ -317,7 +319,7 @@ async function showResults() {
   $("#waiting").hidden = true;
   const results = game.celebrate();
   const mine = results.find((r) => r.player.i === me);
-  if (mine.place === 1) sfx.win(); else sfx.lose();
+  if (mine.place === 1) sfx.win();
   await wait(1700);
   if (round !== my) return;
   const tie = results.filter((r) => r.place === 1).length > 1;
@@ -402,6 +404,7 @@ function goOnline(code = "", create = false) {
   phase = "lobby";
   game.reset(level);
   fx.clear();
+  music(null);
   renderLobby();
   show("#lobby");
   telegram.back(toTitle);
@@ -609,10 +612,10 @@ async function boot() {
   fx = new Effects(scene, assets);
   game = new Game(scene, assets, fx);
   const mine = (p) => p.i === me && !catchingUp;
-  game.on("catch", (p) => { flash(p.i, "bump"); if (mine(p)) { sfx.catch(); telegram.haptic("light"); } });
-  game.on("miss", (p) => { if (mine(p)) sfx.crack(); });
-  game.on("boom", (p) => { flash(p.i, "hurt"); if (mine(p)) { sfx.boom(); telegram.haptic("heavy"); } });
-  game.on("dud", (p) => { if (mine(p)) sfx.dud(); });
+  game.on("catch", (p) => { flash(p.i, "bump"); if (mine(p)) { sfx.catch(p.i); telegram.haptic("light"); } });
+  game.on("miss", (p) => { if (mine(p)) sfx.splash(p.i); });
+  game.on("boom", (p, lost) => { flash(p.i, "hurt"); if (mine(p)) { sfx.shock(p.i); if (lost) sfx.lost(p.i); telegram.haptic("heavy"); } });
+  game.on("dud", (p) => { if (mine(p)) sfx.splash(p.i); });
   game.on("finish", finish);
   // online, what this device plays goes to the others
   // (kept while offline, and sent on reconnecting, so the server's copy of the leans stays whole)
@@ -620,7 +623,7 @@ async function boot() {
   game.on("result", (r) => { if (current?.online) net.send("ev", { r: current.round, ...r }, true); });
   if (testing && params.has("debug")) { // for testing from the console
     window.egg = { game, fx, scene, paused: false, phase: () => phase, lean: (d) => (d ? hold("debug", d) : letGo("debug")),
-                   net: () => net, room: () => room, me: () => me };
+                   net: () => net, room: () => room, me: () => me, sound };
   }
 
   const [e, n, h, savedLevel, muted] = await Promise.all(

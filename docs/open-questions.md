@@ -12,8 +12,9 @@ What isn't known yet, roughly by how useful it would be.
   empty), `0x1708000` (72), `0x266B000` (279, mostly empty); and, known but
   not converted, the UI layouts (`0x1E40000`) and fonts (`0x437AD0`)
   ([rom-map.md](rom-map.md)).
-- **Audio** (`0x49B780`–`0x1606000`, N64 ADPCM sample banks and sequences)
-  isn't extracted.
+- **Audio:** the voices' codec (5, in sample banks 4–6), the reverb
+  settings, the game's custom sequence function (`0x800275D8`), and the
+  0x28-byte records at `0x49B780` ([audio.md](audio.md)).
 - **Arenas 23–25:** which stadium each is ("Stadium A/B/C" are placeholders).
 - **Battle contexts 255–267, 269, 270** of the battle motion table
   ([animation.md](animation.md)).
