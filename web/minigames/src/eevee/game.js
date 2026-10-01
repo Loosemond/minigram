@@ -101,7 +101,7 @@ export class Game {
       e.r = R.RING_R;
       e.off = 0;
       this.setClip(e, CLIP.wait);
-      this.place(e, e.r, R.HOME[e.z]);
+      this.place(e, e.r, R.HOME[e.z], true);
     }
     // the basket's up to begin with (G+0x44 starts at 1: 0x86B0D3C8), and the
     // first round's call brings it down
@@ -382,14 +382,26 @@ export class Game {
     this.emit("blown", z);
     this.shakeIf(z, 0.35);
   }
-  place(e, r, ang) {
-    const x = r * Math.cos(ang), y = r * Math.sin(ang), root = e.m.root;
-    const dx = x - root.position.x, dy = y - root.position.z;
+  // e's place on this frame (at = { x, y, face }). The screen shows it on
+  // its way there from the last frame's (pose), as the round runs at 30 frames
+  // a second and the screen at 60 or more; snap: straight there.
+  place(e, r, ang, snap = false) {
+    const x = r * Math.cos(ang), y = r * Math.sin(ang), was = e.at || { x, y, face: 0 };
+    const dx = x - was.x, dy = y - was.y;
     // which way it faces: where it's going, walking round; the middle in a
     // dash, grabbing, eating, bouncing back; out when it's blown away
-    if (["dash", "grab", "eat", "back", "feint", "blown", "out", "idle", "cheer", "sad"].includes(e.mode)) root.rotation.y = Math.atan2(-x, -y);
-    else if (dx * dx + dy * dy > 1e-4) root.rotation.y = Math.atan2(dx, dy);
-    root.position.set(x, 0, y);
+    let face = was.face;
+    if (["dash", "grab", "eat", "back", "feint", "blown", "out", "idle", "cheer", "sad"].includes(e.mode)) face = Math.atan2(-x, -y);
+    else if (dx * dx + dy * dy > 1e-4) face = Math.atan2(dx, dy);
+    e.was = snap ? null : was;
+    e.at = { x, y, face };
+    if (snap) this.pose(e, 1);
+  }
+  // e k of the way from the last frame's place to this one's
+  pose(e, k) {
+    const a = e.was || e.at, b = e.at, root = e.m.root;
+    root.position.set(a.x + (b.x - a.x) * k, 0, a.y + (b.y - a.y) * k);
+    root.rotation.y = a.face + wrap(b.face - a.face) * k;
   }
 
   // ---- Aipom and its basket ----
@@ -422,7 +434,7 @@ export class Game {
     m.root.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.transparent = true; } });
     this.contents.add(m.root);
     let vx = 0, vz = 0;
-    if (tie) for (const e of es) { vx -= (3 * e.m.root.position.x) / 25; vz -= (3 * e.m.root.position.z) / 25; }
+    if (tie) for (const e of es) { vx -= (3 * e.at.x) / 25; vz -= (3 * e.at.y) / 25; }
     this.flying = { m, t0: t / R.FPS, vx, vz, vy: tie ? 24 : [12, 12.5, 13][(Math.random() * 3) | 0],
                     g: tie ? 2 : 1, fade: tie ? 21 : 5, life: tie ? 12 : 25 };
     this.fly();
@@ -477,7 +489,9 @@ export class Game {
 
   // ---- every rendered frame ----
   animate(dt) {
+    const since = this.time * R.FPS - this.lastFrame, between = since > 0 ? Math.min(1, since) : 0; // (of a frame)
     for (const e of this.eevees) {
+      this.pose(e, between);
       e.cf += dt * R.FPS;
       if (LOOPS.has(e.clip)) e.cf %= CLIP_FRAMES[e.clip];
       e.m.update(dt);
@@ -514,7 +528,7 @@ export class Game {
       const e = this.eevees[x.i];
       if (e.mode === "blown" || e.mode === "out") continue;
       this.goMode(e, x.place === 1 && !all ? "cheer" : "sad");
-      this.place(e, e.r, R.HOME[e.z] + e.off);
+      this.place(e, e.r, R.HOME[e.z] + e.off, true);
     }
     return r;
   }
