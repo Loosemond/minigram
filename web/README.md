@@ -306,8 +306,9 @@ server's copy: the rounds' scripts, the presses and the judging),
 **Play with friends** on the title screen makes a room with a four-letter
 code, on the game picked there. **Invite friends** sends a link: in Telegram it opens the share picker
 (with `telegramApp` set in `src/config.js`, the link opens the game straight
-in Telegram, `t.me/<bot>/<app>?startapp=CODE`; without it, it's this page with
-`?room=CODE`); in a browser it uses the system share sheet or copies the link.
+in Telegram, `t.me/<bot>?startapp=CODE`; without it, it's this page with
+`?room=CODE`); in a browser it uses the system share sheet or copies the link,
+always this page's (so friends without Telegram can come too).
 The link is also shown under the button, with a Copy button.
 The code can also be typed into the lobby. Up to four people join; the empty
 spots are CPUs. Everyone gets the next free seat and its colour (1P blue, 2P
@@ -524,11 +525,14 @@ To put it in Telegram:
 1. Telegram opens Mini Apps only over HTTPS, so the page (with its
    `assets/`) needs an HTTPS address.
 2. In [@BotFather](https://t.me/BotFather): `/newbot` if you don't have a bot,
-   then `/newapp`, pick the bot, and give it the URL. The game then opens from
-   `t.me/<bot>/<app name>`. Or set it as the bot's menu button: `/mybots` ▸
-   Bot Settings ▸ Menu Button.
-3. Put that `t.me/<bot>/<app name>` link in `telegramApp` in
-   `src/config.js`, so invites open the game in Telegram.
+   then `/mybots` ▸ the bot ▸ Bot Settings ▸ Configure Mini App, and give it
+   the URL (`https://…/minigames/`). That's the bot's main Mini App: its
+   profile gets a button that opens the game, and `t.me/<bot>?startapp=CODE`
+   opens it in a room. (Or `/newapp`, for a `t.me/<bot>/<app name>` link with
+   its own title and picture.) The chat's menu button can open it too: Bot
+   Settings ▸ Menu Button, or the Bot API's `setChatMenuButton`.
+3. Put that link, `t.me/<bot>` (or `t.me/<bot>/<app name>`), in `telegramApp`
+   in `src/config.js`, so invites sent from Telegram open the game there.
 4. Start the server with the bot's token in `TELEGRAM_BOT_TOKEN`, so it
    checks logins ([Cheating](#online-play)).
 

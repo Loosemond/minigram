@@ -413,8 +413,8 @@ addEventListener("blur", () => game?.blur?.());
 
 // ------------------------------------------------------------------ online
 // Rooms of up to four, on the server in tools/rooms.py. Invites are links:
-// t.me/<bot>/<app>?startapp=CODE in Telegram (config.telegramApp), or this
-// page with ?room=CODE.
+// t.me/<bot>?startapp=CODE from inside Telegram (config.telegramApp), or this
+// page with ?room=CODE (from a browser, so friends without Telegram can come).
 
 let net = null, room = null, mySeat = 0, status = "", roomError = "";
 
@@ -629,7 +629,7 @@ function renderLobby() {
 }
 
 function inviteLink(code) {
-  if (config.telegramApp) return `${config.telegramApp}?startapp=${code}`;
+  if (config.telegramApp && telegram.inside) return `${config.telegramApp}?startapp=${code}`;
   const u = new URL(location.href);
   u.search = "?room=" + code;
   if (testing && params.get("server")) u.searchParams.set("server", params.get("server")); // friends need it too
