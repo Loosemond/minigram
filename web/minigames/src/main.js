@@ -1,20 +1,23 @@
+// The minigames' shell: the title screen with the game picker, rounds (the
+// countdown, GO, the finish and the results), the online rooms and their
+// lobby, where the host picks the game, and the renderer. Each game is a
+// module (src/<game>/index.js, listed in games.js) with its own scene,
+// controls, HUD and online messages; it's loaded the first time it's picked.
 import * as THREE from "three";
-import { loadAssets } from "./assets.js";
-import { Game, zoneX, ZONE_W, VIEW_TOP, VIEW_BOTTOM, BACKDROP, PX } from "./game.js";
-import { buildStage } from "./stage.js";
-import { Effects } from "./fx.js";
-import { sfx, music, unlock, setMuted, isMuted, debug as sound } from "./audio.js";
+import { GAMES, ORDER } from "./games.js";
+import { sfx, music, sound, stopSound, unlock, useSounds, setMuted, isMuted, SHARED_STAND_INS, debug as audioDebug } from "./audio.js";
 import { telegram } from "./telegram.js";
 import { Net } from "./net.js";
+import { startDelay } from "./lag.js";
 import config from "./config.js";
 
-const BG = "#4a3a30"; // the brick base of the backdrop, for Telegram's header and the page
+THREE.ColorManagement.enabled = false; // colours are the game's own values (docs/colours.md)
+
 const PLAYER_COLOURS = ["#2f5de0", "#23a043", "#dc3030", "#e8a412"]; // 1P-4P, as on the game's badges
 const COLOUR_NAMES = ["blue", "green", "red", "yellow"];
 const COUNTDOWN = 2650; // ms from the countdown's start to GO (online, the server says when GO is)
-const REMOTE_DELAY = 0.3; // s: other devices' players are shown this far behind, so their leans arrive in time
 const CODE = /^[A-Za-z]{4,6}$/;
-telegram.init(BG);
+const UI = "assets/ui/";
 
 const $ = (s) => document.querySelector(s);
 const app = $("#app");
@@ -22,6 +25,7 @@ const cards = [...document.querySelectorAll(".card")];
 const params = new URLSearchParams(location.search);
 // ?debug and ?server= are for testing: on this computer, or with config.debug
 const testing = config.debug || /^(localhost|127\.0\.0\.1|\[::1\])$|\.localhost$|\.test$/.test(location.hostname);
+telegram.init(GAMES.egg.color);
 
 // who is in each seat: people get the 1P-4P badges, CPUs "COM" in the seat's colour
 let me = 0; // this device's seat
@@ -38,7 +42,7 @@ function applySeats() {
   cards.forEach((c, i) => {
     c.style.setProperty("--c", PLAYER_COLOURS[i]);
     const b = c.querySelector(".badge");
-    b.src = `assets/ui/badge_${badge(i)}.png`;
+    b.src = `${UI}badge_${badge(i)}.png`;
     b.alt = seats[i].human ? i + 1 + "P" : "COM";
     c.querySelector(".who").textContent = current?.online && seats[i].human ? seats[i].name : "";
     c.classList.toggle("me", !!current?.online && i === me);
@@ -55,172 +59,186 @@ try {
   $("#loading p").textContent = "This device can't show 3D graphics (WebGL is off).";
   throw new Error("no WebGL");
 }
-renderer.outputColorSpace = THREE.LinearSRGBColorSpace; // the colours as they are (see assets.js)
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace; // the colours as they are
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setClearColor("#17110e"); // behind the small boxes
 renderer.autoClear = false;
 
-const scene = new THREE.Scene();
-// N64-style shade = ambient + N.L x sun (x PI: three's lights are physical units);
-// surfaces facing the camera come out at about the texture's own colour
-scene.add(new THREE.AmbientLight(0xffffff, 0.7 * Math.PI));
-const sun = new THREE.DirectionalLight(0xffffff, 0.42 * Math.PI);
-sun.position.set(-1.5, 3, 4);
-scene.add(sun);
+function place(el, style) { Object.assign(el.style, { left: "auto", right: "auto", top: "auto", bottom: "auto", transform: "none" }, style); }
 
-// ------------------------------------------------------------------ layout
-// Landscape: one camera on all four players, like the game. Portrait: your
-// Chansey fills the screen and the other three get small boxed views along
-// the top, each framed on its own bay.
-
-let views = [];
-const frames = $("#frames");
-
-// fit [width] x [bottom, top] around the player(s) in the Chansey's plane, the
-// camera level with the scene and far back with a narrow lens, close to the
-// game's straight-on picture. Extra height goes below (the water), so drops
-// always enter at the top edge; extra width shows more of the building.
-function frameCamera(v) {
-  const cam = v.cam, top = v.top ?? VIEW_TOP, bottom = v.bottom ?? VIEW_BOTTOM;
-  cam.aspect = v.w / v.h;
-  const t = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2);
-  const d = Math.max((top - bottom) / 2 / t, v.width / 2 / (t * cam.aspect));
-  const cy = top - d * t;
-  const cx = v.zone === undefined ? 0 : zoneX(v.zone);
-  if (v.zone === undefined) cam.layers.enableAll();
-  else { cam.layers.set(0); cam.layers.enable(v.zone + 1); }
-  v.base = new THREE.Vector3(cx, cy, d);
-  cam.position.copy(v.base);
-  cam.lookAt(cx, cy, 0);
-  cam.updateProjectionMatrix();
+// Portrait, for the games that use it: your player fills the screen and the
+// other three get small boxed views along the top. aspect: a small box's
+// width / height; main, mini: extra fields for the big view and the small ones.
+function miniViews(W, H, safe, seat, cams, aspect, main, mini) {
+  const pad = 8, gap = 10, room = safe.right - safe.left - 2 * pad;
+  let miniH = Math.round(H * 0.22), miniW = Math.round(miniH * aspect);
+  if (3 * miniW + 2 * gap > room) { miniW = Math.floor((room - 2 * gap) / 3); miniH = Math.round(miniW / aspect); }
+  const strip = safe.top + miniH + 2 * pad;
+  const x0 = Math.round((W - 3 * miniW - 2 * gap) / 2);
+  const others = [0, 1, 2, 3].filter((i) => i !== seat);
+  const views = [{ cam: cams[0], zone: seat, x: 0, y: strip, w: W, h: H - strip, ...main }];
+  others.forEach((z, k) => views.push({ cam: cams[k + 1], zone: z, mini: true, x: x0 + k * (miniW + gap), y: safe.top + pad, w: miniW, h: miniH, ...mini }));
+  return views;
 }
 
-function place(el, style) { Object.assign(el.style, { left: "auto", right: "auto", top: "auto", bottom: "auto", transform: "none" }, style); }
+// the small boxes' coloured frames, and the cards under them
+function frameMinis(views, cardEls, framesEl) {
+  const border = 3;
+  for (const v of views) {
+    cardEls[v.zone].classList.toggle("mini", !!v.mini);
+    if (!v.mini) continue;
+    place(cardEls[v.zone], { left: v.x + v.w / 2 + "px", top: v.y + v.h - 3 + "px", transform: "translate(-50%, -100%)" });
+    const f = framesEl.appendChild(document.createElement("div"));
+    f.className = "frame";
+    Object.assign(f.style, {
+      left: v.x - border + "px", top: v.y - border + "px", width: v.w + 2 * border + "px", height: v.h + 2 * border + "px",
+      borderWidth: border + "px", borderColor: PLAYER_COLOURS[v.zone],
+    });
+  }
+}
 
 function layout() {
   const W = app.clientWidth, H = app.clientHeight;
   renderer.setSize(W, H, false);
+  if (!game) return;
   const safe = $("#safe").getBoundingClientRect();
-  const left = $("#left");
-  frames.innerHTML = "";
-  app.classList.toggle("portrait", W / H < 1.25);
-  if (W / H >= 1.25) {
-    const cam = views.find((v) => v.zone === undefined)?.cam || new THREE.PerspectiveCamera(20, 1, 0.1, 200);
-    views = [{ cam, x: 0, y: 0, w: W, h: H, width: BACKDROP.w * PX }]; // the game's whole screen
-    frameCamera(views[0]);
-    for (let i = 0; i < 4; i++) {
-      const p = new THREE.Vector3(zoneX(i), 0, 0).project(cam);
-      // on the bridge's front, under each Chansey (the roofs are where the eggs come from)
-      place(cards[i], { left: ((p.x + 1) / 2) * W + "px", bottom: H - safe.bottom + 8 + "px", transform: "translateX(-50%)" });
-      cards[i].classList.remove("mini");
-    }
-    place(left, { right: W - safe.right + 10 + "px", top: safe.top + 10 + "px" });
-  } else {
-    // each small box shows exactly its own bay, pole to pole, from the bridge's
-    // front up to where the eggs are a moment from the hands; the boxes keep
-    // that shape and sit apart, so each player's area reads on its own
-    const MINI = { width: ZONE_W + 0.1, bottom: -0.5, top: 1.95 };
-    const aspect = MINI.width / (MINI.top - MINI.bottom);
-    const pad = 8, gap = 10, border = 3, room = safe.right - safe.left - 2 * pad;
-    let miniH = Math.round(H * 0.22), miniW = Math.round(miniH * aspect);
-    if (3 * miniW + 2 * gap > room) { miniW = Math.floor((room - 2 * gap) / 3); miniH = Math.round(miniW / aspect); }
-    const strip = safe.top + miniH + 2 * pad;
-    const x0 = Math.round((W - 3 * miniW - 2 * gap) / 2);
-    const cams = views.length === 4 ? views.map((v) => v.cam) : [0, 1, 2, 3].map(() => new THREE.PerspectiveCamera(22, 1, 0.1, 200));
-    const others = [0, 1, 2, 3].filter((i) => i !== me);
-    views = [{ cam: cams[0], zone: me, x: 0, y: strip, w: W, h: H - strip, width: ZONE_W }];
-    others.forEach((z, k) => {
-      views.push({ cam: cams[k + 1], zone: z, mini: true, x: x0 + k * (miniW + gap), y: safe.top + pad, w: miniW, h: miniH, ...MINI });
-    });
-    for (const v of views) {
-      frameCamera(v);
-      cards[v.zone].classList.toggle("mini", !!v.mini);
-      if (!v.mini) continue;
-      place(cards[v.zone], { left: v.x + v.w / 2 + "px", top: v.y + v.h - 3 + "px", transform: "translate(-50%, -100%)" });
-      const f = frames.appendChild(document.createElement("div"));
-      f.className = "frame";
-      Object.assign(f.style, {
-        left: v.x - border + "px", top: v.y - border + "px", width: v.w + 2 * border + "px", height: v.h + 2 * border + "px",
-        borderWidth: border + "px", borderColor: PLAYER_COLOURS[v.zone],
-      });
-    }
-    place(cards[me], { left: safe.left + 8 + "px", top: strip + 8 + "px" });
-    place(left, { right: W - safe.right + 8 + "px", top: strip + 12 + "px" });
-  }
+  $("#frames").innerHTML = "";
+  app.classList.toggle("portrait", !!game.layout(W, H, safe, me, cards, $("#frames")));
 }
 
 function render() {
   const H = app.clientHeight;
   renderer.setScissorTest(false);
   renderer.clear(); // the whole canvas: the strip behind the small boxes
+  if (!game) return;
   renderer.setScissorTest(true);
-  for (const v of views) {
+  for (const v of game.views) {
     const y = H - v.y - v.h;
     renderer.setViewport(v.x, y, v.w, v.h);
     renderer.setScissor(v.x, y, v.w, v.h);
     v.cam.position.copy(v.base);
     if (game.shake && !v.mini) {
-      v.cam.position.x += (Math.random() - 0.5) * game.shake * 0.25;
-      v.cam.position.y += (Math.random() - 0.5) * game.shake * 0.25;
+      v.cam.position.x += (Math.random() - 0.5) * game.shake * (v.shakeScale ?? 0.25);
+      v.cam.position.y += (Math.random() - 0.5) * game.shake * (v.shakeScale ?? 0.25);
     }
     renderer.clearDepth();
-    renderer.render(scene, v.cam);
+    (v.render || ((r, c) => r.render(game.scene, c)))(renderer, v.cam);
   }
 }
 
-// ------------------------------------------------------------------- input
-// Like the game's L and R buttons: hold a side to lean, the last one pressed wins.
+// ------------------------------------------------------------------- games
+// The game on show (picked on the title, or the room's), loaded on first use.
 
-const held = new Map(); // pointer id or key -> -1 | 1
-let order = [];
-function hold(id, dir) { held.set(id, dir); order = order.filter((x) => x !== id); order.push(id); }
-function letGo(id) { held.delete(id); order = order.filter((x) => x !== id); }
-function lean() { return order.length ? held.get(order[order.length - 1]) : 0; }
-const sideOf = (x) => (x < app.clientWidth / 2 ? -1 : 1);
-const playing = () => phase === "play" || phase === "countdown";
+let gameId = null, game = null; // game: the loaded game's module instance, see src/egg/index.js
+const loaded = new Map(); // id -> Promise of its instance
+const hudOf = new Map(); // id -> its HUD element
 
-app.addEventListener("pointerdown", (e) => {
-  unlock();
-  if (!playing() || e.target.closest("button")) return;
-  hold("p" + e.pointerId, sideOf(e.clientX));
-  e.preventDefault();
-});
-app.addEventListener("pointermove", (e) => {
-  if (held.has("p" + e.pointerId)) held.set("p" + e.pointerId, sideOf(e.clientX)); // sliding across
-});
-for (const ev of ["pointerup", "pointercancel", "pointerleave"]) app.addEventListener(ev, (e) => letGo("p" + e.pointerId));
-app.addEventListener("contextmenu", (e) => e.preventDefault());
+const shell = {
+  renderer, app, hud: null, place, miniViews, frameMinis,
+  me: () => me,
+  online: () => !!current?.online,
+  catchingUp: () => catchingUp,
+  playing: () => playing(),
+  flash, digits, bigDigits,
+  haptic: (k) => telegram.haptic(k),
+  sound: (name, seat) => { if (!catchingUp) sound(name, seat); },
+  music: (name, fade, once) => { if (!catchingUp) music(name, fade, once); },
+  stopSound,
+  // online: a message for the round, to the others (kept while offline, sent on reconnecting)
+  send: (t, data) => { if (current?.online) net.send(t, { r: current.round, ...data }, true); },
+  get seats() { return seats; },
+  get round() { return current; },
+};
 
-const KEYS = { ArrowLeft: -1, KeyA: -1, KeyQ: -1, KeyL: -1, ArrowRight: 1, KeyD: 1, KeyE: 1, KeyR: 1 };
-addEventListener("keydown", (e) => {
-  unlock();
-  if (e.target.closest?.("input")) return;
-  if (e.code in KEYS && playing()) { if (!e.repeat) hold(e.code, KEYS[e.code]); e.preventDefault(); }
-  else if ((e.code === "Enter" || e.code === "Space") && !playing()) {
-    const b = { title: "#play", results: "#again", lobby: "#start" }[phase];
-    if (b && !$(b).hidden && !$(b).disabled) { e.preventDefault(); $(b).click(); }
+function loadGame(id) {
+  if (!loaded.has(id)) {
+    const info = GAMES[id];
+    const bar = $("#loading .bar i");
+    const p = info.load().then(async (mod) => {
+      const hud = document.createElement("div");
+      hud.className = "game " + id;
+      hud.hidden = true;
+      $("#hud").append(hud);
+      hudOf.set(id, hud);
+      const g = await mod.create({ ...shell, hud }, (k) => { if (gameId === id) bar.style.width = k * 100 + "%"; });
+      g.sounds = mod.SOUNDS;
+      try { sessionStorage.removeItem("egg-reloads"); } catch {} // the page's retries (index.html) start over
+      return g;
+    });
+    p.catch(() => loaded.delete(id)); // try again next time
+    loaded.set(id, p);
   }
-});
-addEventListener("keyup", (e) => letGo(e.code));
-addEventListener("blur", () => { held.clear(); order = []; });
+  return loaded.get(id);
+}
+
+// Show game id (loading it first if need be). Resolves once it's on.
+async function showGame(id) {
+  if (!GAMES[id]) id = "egg";
+  if (gameId === id && game) return game;
+  gameId = id;
+  const info = GAMES[id];
+  telegram.color(info.color);
+  document.documentElement.style.setProperty("--sky", info.color);
+  app.dataset.game = id;
+  for (const b of document.querySelectorAll(".games button")) b.setAttribute("aria-checked", b.dataset.game === id);
+  showInfo(id);
+  let g = null;
+  const pending = loadGame(id);
+  const quick = await Promise.race([pending.then(() => true, () => true), new Promise((r) => setTimeout(r, 50, false))]);
+  if (!quick) { $("#loading .bar i").style.width = "0%"; $("#loading").hidden = false; }
+  try {
+    g = await pending;
+  } catch (err) {
+    console.error(err);
+    $("#loading").hidden = false;
+    $("#loading p").textContent = "Couldn't load the game's files. (Developers: run tools/web_assets.py.)";
+    throw err;
+  }
+  if (gameId !== id) return g; // picked another meanwhile
+  $("#loading").hidden = true;
+  game = g;
+  if (!playing() && phase !== "finish" && phase !== "results") g.idle(); // on show, not playing yet
+  for (const [k, el] of hudOf) el.hidden = k !== id;
+  const label = g.label;
+  for (const c of cards) { const l = c.querySelector(".label"); l.hidden = !label; if (label) l.src = label; }
+  shown.fill(-1);
+  useSounds(id, g.sounds.url, { ...SHARED_STAND_INS, ...g.sounds.standIns });
+  applySeats();
+  layout();
+  return g;
+}
+
+// the title's and the lobby's words for the picked game
+function showInfo(id) {
+  const info = GAMES[id];
+  for (const img of document.querySelectorAll(".logo")) { img.src = info.banner; img.alt = info.name; }
+  for (const art of document.querySelectorAll(".art")) art.style.backgroundImage = `url(${info.art})`;
+  $("#title h1").textContent = info.name;
+  $("#how").innerHTML = info.how;
+  $("#keys").innerHTML = info.keys;
+  document.title = info.name;
+  showBest();
+}
 
 // --------------------------------------------------------------- game flow
-// A round: { online, level, seed, me, goAt } and, online, { round, lineup,
-// host, scores }. Solo, the CPUs play here. Online, the server deals the seed
-// and GO time, every device runs the round on the server's clock, each plays
-// its own Chansey (the host's also the CPUs), and the server sends the ranking.
+// A round: { online, level, seed, me, goAt, control, game } and, online,
+// { round, lineup, host, start: the server's message }. Solo, the CPUs play
+// here. Online, the server deals the seed and GO time, every device runs the
+// round on the server's clock, each plays its own player (the host's also the
+// CPUs), and the server sends the ranking.
 
-let phase = "loading", level = "normal", round = 0, game, fx, stage;
+let phase = "loading", level = "normal", round = 0;
 let current = null; // the round being played
 let catchingUp = false; // fast-forwarding an online round: no sounds
-const best = {};
+const best = {}; // "<game>:<level>" -> best score
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const until = (now, at) => new Promise((r) => setTimeout(r, Math.max(0, at - now())));
+const playing = () => phase === "play" || phase === "countdown";
 
 // the countdown is the game's own 3, 2, 1, GO! (image bank 360)
 function banner(what) {
   const b = $("#banner");
-  b.innerHTML = what.startsWith("img:") ? `<img src="assets/ui/${what.slice(4)}.png" alt="">` : `<span>${what}</span>`;
+  b.innerHTML = what.startsWith("img:") ? `<img src="${UI}${what.slice(4)}.png" alt="">` : `<span>${what}</span>`;
   b.classList.remove("show");
   void b.offsetWidth; // restart the animation
   b.classList.add("show");
@@ -233,8 +251,12 @@ function flash(i, cls) {
   c.classList.add(cls);
 }
 
-// numbers in the game's small HUD digits (image bank 404)
-function digits(n) { return String(n).split("").map((d) => `<img src="assets/ui/n${d}.png" alt="">`).join(""); }
+// numbers in the game's small HUD digits (image bank 404), or its big ones (bank 429)
+function digits(n) { return String(n).split("").map((d) => `<img src="${UI}n${d}.png" alt="${d}">`).join(""); }
+function bigDigits(n, sign = false) {
+  const s = (sign && n > 0 ? "+" : "") + n;
+  return s.split("").map((d) => `<img src="${UI}${d === "+" ? "plus" : d === "-" ? "minus" : "big" + d}.png" alt="${d}">`).join("");
+}
 
 function show(screen) {
   for (const s of ["#title", "#results", "#lobby"]) $(s).hidden = s !== screen;
@@ -243,10 +265,15 @@ function show(screen) {
 }
 
 function markLevel(group, l) { for (const b of group.querySelectorAll("button")) b.setAttribute("aria-checked", b.dataset.level === l); }
+const bestKey = (id, l) => GAMES[id].store + "best_" + l;
+function showBest() {
+  const v = best[gameId + ":" + level];
+  $("#best").innerHTML = v !== undefined && v !== null ? GAMES[gameId].unit(v) : "–";
+}
 function setLevel(l) {
   level = l;
   markLevel($("#title .levels"), l);
-  $("#best").textContent = best[l] ? best[l] + " eggs" : "–";
+  showBest();
 }
 
 function toTitle() {
@@ -259,26 +286,30 @@ function toTitle() {
   applySeats();
   layout();
   telegram.back(null);
-  game.reset(level);
-  fx.clear();
+  game?.idle();
   music(null);
+  stopSound();
   show("#title");
 }
 
-function play() { startRound({ online: false, level, me: 0 }); }
+function play() { startRound({ online: false, game: gameId, level, me: 0 }); }
 
 async function startRound(s) {
   unlock();
+  stopSound(); // (anything the last round left going)
   const my = ++round;
   current = s;
   me = s.me;
+  await showGame(s.game);
+  if (round !== my) return;
   if (s.online) roundSeats(s.lineup); else soloSeats();
   applySeats();
   layout();
-  const control = s.online ? [0, 1, 2, 3].map((z) => (z === me ? "local" : seats[z].human || s.host !== me ? "remote" : "cpu")) : undefined;
-  game.reset(s.level, s.seed, { me, control, delay: REMOTE_DELAY, drops: s.drops, leans: s.leans, hits: s.hits, settled: s.settled });
-  fx.clear();
-  held.clear(); order = [];
+  s.control = [0, 1, 2, 3].map((z) => (z === me ? "local" : !s.online ? "cpu" : seats[z].human || s.host !== me ? "remote" : "cpu"));
+  // how far behind to show each other device's player (Egg Emergency; src/lag.js)
+  s.delay = [0, 1, 2, 3].map((z) => startDelay(net?.typical, s.start?.rtt?.[z]));
+  if (s.seed === undefined) s.seed = (Math.random() * 2 ** 31) | 0;
+  game.reset(s);
   show(null);
   phase = "countdown";
   telegram.back(toTitle);
@@ -293,9 +324,7 @@ async function startRound(s) {
   await until(now, s.goAt);
   if (round !== my) return;
   if (now() < s.goAt + 1000) { banner("img:go"); sfx.go(); telegram.haptic("medium"); }
-  music("egg");
-  game.start();
-  if (s.scores) s.scores.forEach((e, i) => { game.players[i].eggs = e; }); // rejoining: the eggs so far
+  game.go();
   phase = "play";
 }
 
@@ -303,7 +332,7 @@ async function finish() {
   const my = round;
   phase = "finish";
   current.finishedAt = performance.now();
-  banner("FINISH!"); sfx.finish(); music(null, 40); telegram.haptic("success");
+  banner("FINISH!"); game.finish(); telegram.haptic("success");
   if (current.online) {
     net.send("done", { r: current.round }, true);
     await wait(1300);
@@ -318,44 +347,66 @@ async function showResults() {
   const my = round;
   $("#waiting").hidden = true;
   const results = game.celebrate();
-  const mine = results.find((r) => r.player.i === me);
+  const mine = results.find((r) => r.i === me);
   if (mine.place === 1) sfx.win();
   await wait(1700);
   if (round !== my) return;
   const tie = results.filter((r) => r.place === 1).length > 1;
+  const info = GAMES[current.game];
   $("#champion").hidden = !(mine.place === 1 && !tie);
   $("#verdict").textContent = mine.place === 1 ? (tie ? "It's a tie!" : "You win!") : ["", "", "2nd place", "3rd place", "4th place"][mine.place];
   $("#ranking").innerHTML = results.map((r) => `
-    <li class="${r.player.i === me ? "me" : ""}" style="--c: ${PLAYER_COLOURS[r.player.i]}">
+    <li class="${r.i === me ? "me" : ""}" style="--c: ${PLAYER_COLOURS[r.i]}">
       <span class="place">${r.place}${["", "st", "nd", "rd", "th"][r.place]}</span>
-      <img class="badge" src="assets/ui/badge_${badge(r.player.i)}.png" alt="">
-      <span class="n"></span><span class="e"><i class="egg"></i>${r.eggs}</span></li>`).join("");
+      <img class="badge" src="${UI}badge_${badge(r.i)}.png" alt="">
+      <span class="n"></span><span class="e">${info.unit(r.score)}</span></li>`).join("");
   [...$("#ranking").children].forEach((li, k) => {
-    const i = results[k].player.i;
+    const i = results[k].i;
     li.querySelector(".n").textContent = seats[i].name;
     li.querySelector(".badge").alt = seats[i].human ? i + 1 + "P" : "COM";
   });
-  const lvl = current.level, isBest = mine.eggs > (best[lvl] || 0);
+  const key = current.game + ":" + current.level, isBest = !(mine.score <= (best[key] ?? -Infinity));
   $("#newbest").hidden = !isBest;
-  if (isBest) { best[lvl] = mine.eggs; telegram.set("best_" + lvl, mine.eggs); setLevel(level); }
+  if (isBest) { best[key] = mine.score; telegram.set(bestKey(current.game, current.level), mine.score); showBest(); }
   phase = "results";
   resultButtons();
   telegram.back(current.online ? toLobby : toTitle);
   show("#results");
 }
 
-const shown = [-1, -1, -1, -1, -1];
+const shown = [-1, -1, -1, -1];
 function updateHud() {
   for (let i = 0; i < 4; i++) {
-    const n = game.players[i].eggs;
-    if (n !== shown[i]) { cards[i].querySelector(".num").innerHTML = digits(n); shown[i] = n; }
+    const n = game.score(i);
+    if (n !== shown[i]) { cards[i].querySelector(".num").innerHTML = digits(Math.max(0, n)); shown[i] = n; }
   }
-  const left = game.eggsLeft;
-  if (left !== shown[4]) { $("#left .num").innerHTML = digits(left); shown[4] = left; }
-  const l = lean();
-  $("#padL").classList.toggle("on", playing() && l < 0);
-  $("#padR").classList.toggle("on", playing() && l > 0);
+  game.hud(playing());
 }
+
+// ------------------------------------------------------------------- input
+// While a round is on, the game gets the taps and keys (src/<game>/index.js).
+
+app.addEventListener("pointerdown", (e) => {
+  unlock();
+  if (!playing() || e.target.closest("button")) return;
+  game.pointerdown(e);
+  e.preventDefault();
+});
+app.addEventListener("pointermove", (e) => { if (playing()) game.pointermove?.(e); });
+for (const ev of ["pointerup", "pointercancel", "pointerleave"]) app.addEventListener(ev, (e) => game?.pointerup?.(e));
+app.addEventListener("contextmenu", (e) => e.preventDefault());
+
+addEventListener("keydown", (e) => {
+  unlock();
+  if (e.target.closest?.("input")) return;
+  if (playing() && game.keydown(e)) { e.preventDefault(); return; }
+  if ((e.code === "Enter" || e.code === "Space") && !playing()) {
+    const b = { title: "#play", results: "#again", lobby: "#start" }[phase];
+    if (b && !$(b).hidden && !$(b).disabled) { e.preventDefault(); $(b).click(); }
+  }
+});
+addEventListener("keyup", (e) => game?.keyup?.(e));
+addEventListener("blur", () => game?.blur?.());
 
 // ------------------------------------------------------------------ online
 // Rooms of up to four, on the server in tools/rooms.py. Invites are links:
@@ -391,6 +442,7 @@ function setUrlRoom(code) { // so a reload (or a copied address) comes back to t
   const u = new URL(location.href);
   if (code) u.searchParams.set("room", code); else u.searchParams.delete("room");
   u.searchParams.delete("create");
+  u.searchParams.delete("game");
   history.replaceState(null, "", u);
 }
 
@@ -402,19 +454,22 @@ function goOnline(code = "", create = false) {
   round++; // cancels a countdown
   room = null; current = null; roomError = "";
   phase = "lobby";
-  game.reset(level);
-  fx.clear();
+  game?.idle();
   music(null);
   renderLobby();
   show("#lobby");
   telegram.back(toTitle);
-  net.open({ room: code.toUpperCase(), id: clientId(), name: myName(), create, tg: telegram.initData || undefined });
+  // a new room starts with the game on the title (the server keeps it)
+  net.open({ room: code.toUpperCase(), id: clientId(), name: myName(), create, tg: telegram.initData || undefined,
+             game: !code || create ? gameId : undefined });
 }
 
 function toLobby() {
   round++;
   phase = "lobby";
   current = null;
+  music(null);
+  stopSound();
   renderLobby();
   show("#lobby");
   telegram.back(toTitle);
@@ -435,23 +490,26 @@ function connectNet() {
       current.resultsIn = true; // the results went out while this device was offline: go with its own counts
       showResults();
     }
-    if (phase === "lobby") renderLobby();
+    if (phase === "lobby") { renderLobby(); if (r.game && r.game !== gameId) showGame(r.game).catch(() => {}); }
     if (phase === "results") resultButtons();
   });
   net.on("start", (m) => {
     if (current?.online && current.round === m.round) return; // already in it (a reconnect)
     if (!m.lineup.some((p) => p.seat === mySeat)) return; // joined mid-round: next one
-    const drops = m.drops.map((seat) => seat.map(([t, col, k, fall]) => ({ t, col, kind: k === "v" ? "voltorb" : "egg", fall })));
-    startRound({ online: true, round: m.round, level: m.level, seed: m.seed, goAt: m.go, me: mySeat,
-                 lineup: m.lineup, host: m.host, scores: m.scores, drops, leans: m.leans, hits: m.hits, settled: m.settled });
+    startRound({ online: true, game: m.game || "egg", round: m.round, level: m.level, seed: m.seed, goAt: m.go, me: mySeat,
+                 lineup: m.lineup, host: m.host, start: m });
   });
-  net.on("lean", (m) => { if (current?.online && m.r === current.round) game.remoteLean(m.s, m.g, m.l); });
-  net.on("ev", (m) => { if (current?.online && m.r === current.round) game.told(m.s, m.n, { k: m.k, e: m.e }); });
+  // the games' own messages about the round
+  for (const id of ORDER) {
+    for (const t of GAMES[id].messages || []) {
+      net.on(t, (m) => { if (current?.online && current.game === id && m.r === current.round && game) game.remote(t, m); });
+    }
+  }
   net.on("results", (m) => {
     if (!current?.online || m.round !== current.round || current.resultsIn) return;
     current.resultsIn = true;
     if (game.state === "play") { game.stop(); banner("FINISH!"); current.finishedAt = performance.now(); } // time's up
-    m.scores.forEach((e, i) => { game.players[i].eggs = e; });
+    game.setScores(m.scores);
     phase = "finish";
     const my = round;
     setTimeout(() => { if (round === my) showResults(); }, Math.max(0, current.finishedAt + 1300 - performance.now()));
@@ -517,8 +575,11 @@ function renderLobby() {
   $("#start").hidden = r ? !host || busy : !roomError;
   $("#start").textContent = r ? "Start" : "New room";
   markLevel($("#lobby .levels"), r?.level || "normal");
-  $("#lobby .levels").classList.toggle("locked", !host);
-  $("#lobby .levels").hidden = !r;
+  for (const group of document.querySelectorAll("#lobby .levels, #lobby .games")) {
+    group.classList.toggle("locked", !host);
+    group.hidden = !r;
+  }
+  for (const b of document.querySelectorAll("#lobby .games button")) b.setAttribute("aria-checked", b.dataset.game === (r?.game || gameId));
   const list = $("#seats");
   if (list.contains(document.activeElement)) return; // typing a name: don't pull it away
   list.innerHTML = "";
@@ -531,7 +592,7 @@ function renderLobby() {
     const img = li.appendChild(document.createElement("img"));
     img.className = "badge";
     img.alt = p ? i + 1 + "P" : "COM";
-    img.src = `assets/ui/badge_${p ? i + 1 + "p" : "com_" + COLOUR_NAMES[i]}.png`;
+    img.src = `${UI}badge_${p ? i + 1 + "p" : "com_" + COLOUR_NAMES[i]}.png`;
     let n;
     if (p && i === mySeat && !telegram.userName) { // outside Telegram you can type a name
       n = document.createElement("input");
@@ -574,10 +635,11 @@ function inviteLink(code) {
 
 async function invite() {
   if (!room) return;
-  const url = inviteLink(room.room), text = `Catch eggs with me in Egg Emergency! Room ${room.room}`;
+  const info = GAMES[room.game] || GAMES[gameId];
+  const url = inviteLink(room.room), text = `${info.invite} Room ${room.room}`;
   if (telegram.share(url, text)) return;
   try {
-    if (navigator.share) return await navigator.share({ title: "Egg Emergency", text, url });
+    if (navigator.share) return await navigator.share({ title: info.name, text, url });
   } catch (e) { if (e.name === "AbortError") return; }
   copyLink();
 }
@@ -598,41 +660,56 @@ async function copyLink() {
 
 // -------------------------------------------------------------------- boot
 
+// the game pickers on the title and in the lobby: the games' name banners
+function buildPickers() {
+  for (const group of document.querySelectorAll(".games")) {
+    for (const id of ORDER) {
+      const b = group.appendChild(document.createElement("button"));
+      b.setAttribute("role", "radio");
+      b.dataset.game = id;
+      b.style.backgroundImage = `url(${GAMES[id].art})`;
+      b.innerHTML = `<img src="${GAMES[id].banner}" alt="${GAMES[id].name}">`;
+    }
+  }
+  for (const b of document.querySelectorAll("#title .games button")) {
+    b.addEventListener("click", () => {
+      sfx.tap(); telegram.haptic("select");
+      telegram.set("game", b.dataset.game);
+      showGame(b.dataset.game).catch(() => {});
+    });
+  }
+  for (const b of document.querySelectorAll("#lobby .games button")) {
+    b.addEventListener("click", () => {
+      if (room?.host !== mySeat) return;
+      sfx.tap(); telegram.haptic("select");
+      for (const x of document.querySelectorAll("#lobby .games button")) x.setAttribute("aria-checked", x === b);
+      net.send("game", { game: b.dataset.game });
+    });
+  }
+}
+
 async function boot() {
   applySeats();
-  let assets;
-  try {
-    assets = await loadAssets("assets/", (k) => { $("#loading .bar i").style.width = k * 100 + "%"; });
-  } catch (err) {
-    console.error(err);
-    $("#loading p").textContent = "Couldn't load the game's files. (Developers: run tools/web_assets.py.)";
-    return;
+  buildPickers();
+  const keys = ["level", "muted", "game"];
+  for (const id of ORDER) for (const l of ["easy", "normal", "hard"]) keys.push(bestKey(id, l));
+  const got = await Promise.all(keys.map((k) => telegram.get(k)));
+  const saved = Object.fromEntries(keys.map((k, i) => [k, got[i]]));
+  for (const id of ORDER) for (const l of ["easy", "normal", "hard"]) {
+    const v = saved[bestKey(id, l)];
+    if (v !== null && v !== undefined && v !== "" && Number.isFinite(+v)) best[id + ":" + l] = +v;
   }
-  try { sessionStorage.removeItem("egg-reloads"); } catch {} // the page's retries (index.html) start over
-  stage = buildStage(scene, assets);
-  fx = new Effects(scene, assets);
-  game = new Game(scene, assets, fx);
-  const mine = (p) => p.i === me && !catchingUp;
-  game.on("catch", (p) => { flash(p.i, "bump"); if (mine(p)) { sfx.catch(p.i); telegram.haptic("light"); } });
-  game.on("miss", (p) => { if (mine(p)) sfx.splash(p.i); });
-  game.on("boom", (p, lost) => { flash(p.i, "hurt"); if (mine(p)) { sfx.shock(p.i); if (lost) sfx.lost(p.i); telegram.haptic("heavy"); } });
-  game.on("dud", (p) => { if (mine(p)) sfx.splash(p.i); });
-  game.on("finish", finish);
-  // online, what this device plays goes to the others
-  // (kept while offline, and sent on reconnecting, so the server's copy of the leans stays whole)
-  game.on("lean", (s, l, g) => { if (current?.online) net.send("lean", { r: current.round, s, g, l }, true); });
-  game.on("result", (r) => { if (current?.online) net.send("ev", { r: current.round, ...r }, true); });
-  if (testing && params.has("debug")) { // for testing from the console
-    window.egg = { game, fx, scene, paused: false, phase: () => phase, lean: (d) => (d ? hold("debug", d) : letGo("debug")),
-                   net: () => net, room: () => room, me: () => me, sound };
-  }
-
-  const [e, n, h, savedLevel, muted] = await Promise.all(
-    ["best_easy", "best_normal", "best_hard", "level", "muted"].map((k) => telegram.get(k)));
-  Object.assign(best, { easy: +e || 0, normal: +n || 0, hard: +h || 0 });
-  setLevel(savedLevel in best ? savedLevel : "normal");
-  setMuted(muted === "1");
+  const code = telegram.startParam || params.get("room");
+  const first = params.get("game") in GAMES ? params.get("game") : saved.game in GAMES ? saved.game : "egg";
+  try { await showGame(first); } catch { return; }
+  setLevel(["easy", "normal", "hard"].includes(saved.level) ? saved.level : "normal");
+  setMuted(saved.muted === "1");
   $("#sound").textContent = isMuted() ? "Sound off" : "Sound on";
+  if (testing && params.has("debug")) { // for testing from the console
+    window.mg = { get game() { return game?.game; }, get mini() { return game; }, paused: false, phase: () => phase,
+                  lean: (d) => game?.debug.lean?.(d), cut: () => game?.debug.cut?.(), show: showGame, title: toTitle,
+                  net: () => net, room: () => room, me: () => me, sound: audioDebug };
+  }
 
   for (const b of document.querySelectorAll("#title .levels button")) {
     b.addEventListener("click", () => { sfx.tap(); telegram.haptic("select"); setLevel(b.dataset.level); telegram.set("level", level); });
@@ -662,41 +739,45 @@ async function boot() {
   $("#leave").addEventListener("click", () => { sfx.tap(); toTitle(); });
   $("#join").addEventListener("submit", (e) => {
     e.preventDefault();
-    const code = $("#joinCode").value.trim();
-    if (!CODE.test(code)) { roomError = "bad-code"; renderStatus(); return; }
+    const c = $("#joinCode").value.trim();
+    if (!CODE.test(c)) { roomError = "bad-code"; renderStatus(); return; }
     $("#joinCode").value = "";
     $("#joinCode").blur();
-    if (code.toUpperCase() !== room?.room) goOnline(code);
+    if (c.toUpperCase() !== room?.room) goOnline(c);
   });
 
   new ResizeObserver(layout).observe(app);
   telegram.onResize(layout);
   layout();
-  const code = telegram.startParam || params.get("room");
   if (code && CODE.test(code)) goOnline(code, params.has("create")); // from an invite
   else toTitle();
   $("#loading").hidden = true;
 
   const clock = new THREE.Clock();
-  renderer.setAnimationLoop(() => {
-    const dt = window.egg?.paused ? 0 : Math.min(clock.getDelta(), 0.1);
-    if (phase === "play") game.players[me].want = lean();
-    if (phase === "play" && current.online) {
+  renderer.setAnimationLoop(() => tick(window.mg?.paused ? 0 : Math.min(clock.getDelta(), 0.1)));
+  if (window.mg) window.mg.tick = tick; // (the tests step it by hand while the page is hidden)
+}
+
+// one frame: the round on (on the server's clock online), the HUD, the picture
+function tick(dt) {
+  if (game) {
+    const on = phase === "play";
+    if (on && current.online) {
       // on the server's clock: catch up in small steps (after a hiccup, or rejoining mid-round)
       let behind = Math.min((net.now() - current.goAt) / 1000 - game.time, 10);
       catchingUp = behind > 0.25;
       while (behind > 1e-4 && game.state === "play") {
         const step = Math.min(behind, 1 / 30);
-        game.update(step);
+        game.step(step, true);
         behind -= step;
       }
       catchingUp = false;
-    } else game.update(dt);
-    fx.update(dt);
-    stage.update(performance.now() / 1000);
+    } else game.step(dt, on);
+    if (on && game.state === "over" && phase === "play") finish();
+    game.animate(dt, performance.now() / 1000);
     updateHud();
-    render();
-  });
+  }
+  render();
 }
 
 boot();

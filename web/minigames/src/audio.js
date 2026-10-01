@@ -1,10 +1,10 @@
-// Music and sound effects: the game's own, played by n64audio.js from
-// assets/sound.bin (the song, the fanfare, the effects and just the samples
-// they use, as in the ROM; tools/web_assets.py makes it). It's fetched after
-// the first tap with the sound on, so players with the sound off never
-// download it. Until it's in (or if it can't load), simple Web Audio stand-ins
-// play instead. Browsers only allow sound after a tap or key press: call
-// unlock() from one.
+// Music and sound effects: the games' own, played by n64audio.js from each
+// game's assets/<game>/sound.bin (its songs, the effects it plays and just
+// the samples they use, as in the ROM; tools/web_assets.py makes them). A
+// game's file is fetched after the first tap with the sound on, once that game
+// is picked, so players with the sound off never download one. Until it's in
+// (or if it can't load), simple Web Audio stand-ins play instead. Browsers only
+// allow sound after a tap or key press: call unlock() from one.
 import { Engine, loadBank } from "./n64audio.js";
 
 // The sequence players the game uses: music on 0, sound effects on 2, at the
@@ -18,7 +18,8 @@ const LEVEL = 1.6; // overall loudness: the N64 mixes quietly
 const SEAT_PAN = [20, 49, 78, 108];
 
 let ctx = null, master = null, noiseBuf = null, muted = false;
-let engine = null, loading = null, song = null;
+let pack = null; // the game whose sounds play: { url, standIns, engine, loading, song }
+const packs = new Map();
 
 export function unlock() {
   if (!ctx) {
@@ -41,15 +42,30 @@ export function unlock() {
   if (!muted) load();
 }
 
+// Make this game's sounds the ones that play: url, its sound.bin; standIns,
+// {name: (tone, noise) => ...} for while it loads. The other game's stop.
+export function useSounds(id, url, standIns = {}) {
+  if (pack?.id === id) return;
+  stopSound();
+  if (pack?.engine) { pack.engine.stop(MUSIC); pack.engine.stop(EFFECTS); }
+  if (pack) pack.song = null;
+  pack = packs.get(id) || { id, url, standIns, engine: null, loading: null, song: null };
+  packs.set(id, pack);
+  if (pack.engine) startEffects(pack.engine);
+  if (ctx && !muted) load();
+}
+
 function load() {
-  if (loading || !ctx) return;
-  loading = loadBank("assets/sound.bin").then((bank) => {
+  const p = pack;
+  if (!p || p.loading || !ctx) return;
+  p.loading = loadBank(p.url).then((bank) => {
     const out = ctx.createGain();
     out.gain.value = LEVEL;
     out.connect(master);
-    engine = new Engine(ctx, bank, out);
-    startEffects(engine);
-    if (song) playSong(song);
+    p.engine = new Engine(ctx, bank, out);
+    if (pack !== p) return; // picked another game meanwhile
+    startEffects(p.engine);
+    if (p.song) playSong(p.song);
   }).catch((e) => console.warn("sound:", e.message)); // the stand-ins stay
 }
 
@@ -62,18 +78,21 @@ export function isMuted() { return muted; }
 
 // ---- music ----
 
-// Start a song by name ("egg", "win"), or stop the one playing (null), fading
-// over the given frames (the game fades its song for 40 at the finish).
-export function music(name, fade = 0) {
-  song = name;
-  if (!engine) return;
+// Start one of the game's songs by name ("egg", "win"...), or stop the one
+// playing (null), fading over the given frames (the games fade their song for
+// 40 at the finish). once: a jingle, which is skipped rather than played late
+// if the sound file isn't in yet.
+export function music(name, fade = 0, once = false) {
+  if (!pack) return;
+  pack.song = once ? null : name;
+  if (!pack.engine) return;
   if (name) playSong(name);
-  else engine.stop(MUSIC, fade * 3);
+  else pack.engine.stop(MUSIC, fade * 3);
 }
 
 function playSong(name) {
-  startSong(engine, name);
-  if (name === "win") song = null; // a fanfare: plays once
+  startSong(pack.engine, name);
+  if (name === "win") pack.song = null; // a fanfare: plays once
 }
 
 export function startSong(engine, name) {
@@ -93,6 +112,7 @@ export function trigger(engine, name, seat) {
   const chans = [];
   for (let i = 0; i < 16; i++) if (s.chans & (1 << i)) chans.push(p.channels[i]);
   const c = chans.find((ch) => ch.io[2] !== 1) || chans[0];
+  c.sfxName = name;
   c.sfxState[0] = s.vol;
   c.sfxState[1] = s.rev;
   c.sfxState[2] = seat === undefined ? 64 : SEAT_PAN[seat];
@@ -102,6 +122,22 @@ export function trigger(engine, name, seat) {
   c.io[0] = 1;
   engine.wake();
   return true;
+}
+
+// Stop a sound that plays until it's stopped (a crowd, say), as the game's
+// sound manager does once the sound's no longer asked for: 0 on its channel's
+// port 0 (port 2 is 1 while it plays). No name: every sound still playing.
+export function stopSound(name) {
+  if (pack?.engine) stopEffect(pack.engine, name);
+}
+export function stopEffect(engine, name) {
+  for (const c of engine.players[EFFECTS].channels) {
+    if (!c.sfxName || (name && c.sfxName !== name)) continue;
+    if (c.io[2] === 1) c.io[0] = 0;
+    else if (c.io[0] === 1) c.io[0] = -1; // asked for but not started yet: never mind
+    c.sfxName = null;
+  }
+  engine.wake();
 }
 
 // the effects sequence running, as the game starts it
@@ -121,9 +157,11 @@ function custom(index, value, channel) {
   return value;
 }
 
-function sound(name, seat, standIn) {
-  if (!ctx || muted) return;
-  if (!(engine && trigger(engine, name, seat))) standIn();
+// one of the game's sounds by name; seat: whose it is (panned to their column)
+export function sound(name, seat) {
+  if (!ctx || muted || !pack) return;
+  if (pack.engine && trigger(pack.engine, name, seat)) return;
+  pack.standIns[name]?.(tone, noise);
 }
 
 // ---- stand-ins (Web Audio tones), while the game's sounds load ----
@@ -154,22 +192,31 @@ function noise(at, dur, { vol = 0.3, filter = "lowpass", freq = 1000 } = {}) {
   s.stop(t + dur + 0.02);
 }
 
-// seat: whose sound it is (panned to their column)
+// the stand-ins every game has (the minigames share these sounds)
+export const SHARED_STAND_INS = {
+  count: (tone) => tone(660, 0, 0.12, { vol: 0.12 }),
+  go: (tone) => tone(1320, 0, 0.35, { vol: 0.12 }),
+  finish: (tone) => [784, 988, 1175, 1568].forEach((f, i) => tone(f, i * 0.09, 0.16, { vol: 0.1 })),
+  tap: (tone) => tone(1200, 0, 0.04, { vol: 0.06 }),
+};
+
+// the shell's sounds, the same in every game
 export const sfx = {
-  catch: (seat) => sound("catch", seat, () => { tone(988, 0, 0.06, { vol: 0.1 }); tone(1480, 0.05, 0.09, { vol: 0.1 }); }),
-  shock: (seat) => sound("shock", seat, () => { noise(0, 0.6, { vol: 0.7, freq: 700 }); tone(130, 0, 0.4, { type: "sine", vol: 0.6, to: 35 }); }),
-  lost: (seat) => sound("lost", seat, () => {}),
-  splash: (seat) => sound("splash", seat, () => noise(0, 0.3, { vol: 0.25, freq: 500 })),
-  count: () => sound("count", undefined, () => tone(660, 0, 0.12, { vol: 0.12 })),
-  go: () => sound("go", undefined, () => tone(1320, 0, 0.35, { vol: 0.12 })),
-  finish: () => sound("finish", undefined, () => [784, 988, 1175, 1568].forEach((f, i) => tone(f, i * 0.09, 0.16, { vol: 0.1 }))),
-  tap: () => sound("tap", undefined, () => tone(1200, 0, 0.04, { vol: 0.06 })),
+  count: () => sound("count"),
+  go: () => sound("go"),
+  finish: () => sound("finish"),
+  tap: () => sound("tap"),
   win: () => {
-    if (!ctx || muted) return;
-    if (engine) music("win");
+    if (!ctx || muted || !pack) return;
+    if (pack.engine) music("win");
     else [1047, 1319, 1568, 2093].forEach((f, i) => tone(f, i * 0.11, 0.22, { type: "triangle", vol: 0.2 }));
   },
 };
 
 // for the tests and the console (?debug)
-export const debug = { get engine() { return engine; }, get ctx() { return ctx; }, loaded: () => loading };
+export const debug = {
+  get engine() { return pack?.engine; },
+  get ctx() { return ctx; },
+  loaded: () => pack?.loading,
+  get pack() { return pack?.id; },
+};

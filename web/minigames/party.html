@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Egg Emergency: party test</title>
+<title>Minigames: party test</title>
 <link rel="icon" href="data:,">
 <style>
   html, body { margin: 0; height: 100%; background: #111; }
@@ -12,20 +12,22 @@
 </head>
 <body>
 <!-- For testing online play: n players (?n=2..4, default 2), each in its own
-     frame, all joining one room (?room=CODE, or a new one). The first frame
-     is the host. Frames get ?debug, so each has window.egg. -->
+     frame, all joining one room (?room=CODE, or a new one) with the game
+     ?game= (egg, clearcut). The first frame is the host. Frames get ?debug,
+     so each has window.mg. -->
 <script>
   const q = new URLSearchParams(location.search);
   const n = Math.max(1, Math.min(4, +q.get("n") || 2));
   const L = "BCDFGHJKLMNPQRSTVWXZ";
   const code = q.get("room") || Array.from({ length: 4 }, () => L[Math.floor(Math.random() * L.length)]).join("");
+  const game = q.get("game") ? "&game=" + encodeURIComponent(q.get("game")) : "";
   const names = ["Ann", "Bob", "Cid", "Dee"];
   const tall = innerHeight > innerWidth, cols = n > 2 || (n === 2 && !tall) ? 2 : 1; // two players: side by side, or stacked
   document.body.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
   document.body.style.gridTemplateRows = `repeat(${Math.ceil(n / cols)}, 1fr)`;
   for (let i = 0; i < n; i++) {
     const f = document.createElement("iframe");
-    f.src = `index.html?debug&create&room=${code}&as=${i}&name=${names[i]}`;
+    f.src = `index.html?debug&create&room=${code}&as=${i}&name=${names[i]}${game}`;
     document.body.append(f);
   }
 </script>

@@ -1,37 +1,52 @@
 # Minigames in the browser
 
-Remakes of the Stadium 2 minigames in three.js, made from the extracted models
-and pictures. They run in any browser and as Telegram Mini Apps.
+Remakes of the Stadium 2 minigames in three.js, made from the extracted models,
+pictures and sound, in one app ([minigames/](minigames/)) that runs in any
+browser and as a Telegram Mini App. The title screen and the online lobby
+have a game picker; a game's code and files load the first time it's picked.
 
-| Minigame | Folder |
-|---|---|
-| Egg Emergency | [egg-emergency/](egg-emergency/) |
+| Minigame | Code | Its rules |
+|---|---|---|
+| Egg Emergency | [minigames/src/egg/](minigames/src/egg/) | made for the remake, from the game's text and Chansey's clips |
+| Clear Cut Challenge | [minigames/src/clearcut/](minigames/src/clearcut/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#clear-cut-challenge)) |
 
 ## Run it
 
 ```sh
 python3 tools/ps2extract.py rom/ps2_eu.z64 all   # once: the models and images
-python3 tools/web_assets.py                      # copy what the minigames use into web/*/assets/, and make their sound from the ROM
-python3 tools/serve_web.py                       # http://localhost:8123/egg-emergency/
+python3 tools/web_assets.py                      # copy what the minigames use into web/minigames/assets/, and make their sound from the ROM
+python3 tools/serve_web.py                       # http://localhost:8123/ (?game=clearcut opens on that game)
 ```
 
 There is no build step. three.js (0.170.0) comes from jsDelivr through an import map
-in `index.html`. The `assets/` folders aren't in git, like `out/`. `serve_web.py`
+in `index.html`. `assets/` isn't in git, like `out/`: `assets/ui/` has the HUD
+pictures the games share, `assets/<game>/` each game's own. `serve_web.py`
 exists because Python's built-in server can send `.js` with the wrong MIME type
 on Windows, and browsers then refuse to load the modules; it also keeps
-connections open, since the game loads ~60 small files, and gzips scripts,
-pages, models and the sound file: a first visit downloads 284 KB instead of
-742 (the Chansey model goes from 446 KB to 96), and the sound 322 KB instead
-of 372. It also runs the online
-rooms (`tools/rooms.py`) at `/ws`. Both are standard library only.
+connections open, since a game loads dozens of small files, and gzips scripts,
+pages, models and the sound files: a first visit to Egg Emergency downloads
+284 KB instead of 742 (the Chansey model goes from 446 KB to 96), one to Clear
+Cut Challenge about 180 KB (Scyther: 224 KB, 89 gzipped). It also runs the
+online rooms (`tools/rooms.py`) at `/ws`, and sends `/` and the old
+`/egg-emergency/` address to the app. Both are standard library only.
 
-Add `?debug` to the URL to get `window.egg` in the console (`egg.game`,
-`egg.paused = true`, `egg.lean(-1 | 0 | 1)`, `egg.net()`, `egg.room()`,
-`egg.sound.engine`: the audio engine, once it's loaded). It
-works on localhost only, unless `debug` is true in `src/config.js`.
-`clips.html` plays every Chansey clip side by side (`?t=0.3` freezes them at a
-time). `party.html` runs several online players in one tab, and
-`tests.html` runs the regression tests ([below](#online-play)).
+Add `?debug` to the URL to get `window.mg` in the console: `mg.game` (the
+game's round), `mg.mini` (the game's module), `mg.paused = true`, `mg.tick(dt)`
+(one frame by hand, for a hidden page), `mg.lean(-1 | 0 | 1)`, `mg.cut()`,
+`mg.show("clearcut")`, `mg.title()`, `mg.net()`, `mg.room()`,
+`mg.sound.engine` (the audio engine, once it's loaded). It works on localhost
+only, unless `debug` is true in `src/config.js`. `clips.html` plays every clip
+of a model side by side (`?model=assets/clearcut/scyther.glb`; `?t=0.3`
+freezes them at a time). `party.html` runs several online players in one tab,
+and `tests.html` runs the regression tests ([below](#online-play)).
+
+**The shell** (`src/main.js`) has the title with the game picker, the rounds
+(the countdown, GO, the finish and the results), the online rooms and their
+lobby, the players' cards and the renderer. A game is a module
+(`src/<game>/index.js`, listed in `src/games.js` with its name, banner,
+instructions and colour) with its own scene, cameras, controls, bits of HUD,
+sounds (`assets/<game>/sound.bin`) and online messages; the shell gives it the
+taps and keys while a round is on, and passes on its messages.
 
 ## Egg Emergency
 
@@ -47,14 +62,17 @@ eggs, and whoever catches the most wins. The CPUs come in three levels.
   screens show more of the building, then its ends, the river and the far
   bank.
 - **Portrait (phones):** your bay fills the screen, from the roof down to the
-  water, and the other three players get small boxes along the top, apart
+  water, with whatever of the bays next to it fits at the edges (your
+  neighbours and their eggs, as on the game's one screen; how much depends on
+  the screen's shape, the zoom stays on your bay), and the other three
+  players get small boxes along the top, apart
   from each other and outlined in their colour. Each box is framed on exactly its own
   bay, pole to pole, from the bridge up to where the eggs are about to land,
   and draws only its own player (the players' objects are on separate
   three.js layers).
 
 **The stage.** In the game it's a pre-rendered picture (background 19).
-`src/stage.js` rebuilds it in 3D to that picture's measurements: four
+`src/egg/stage.js` rebuilds it in 3D to that picture's measurements: four
 three-sided brick bays (73.25 px apart, one per player), fish-scale roofs in
 the player colours with a scalloped eave, the dark band under the roofs, two
 windows per bay with frames, sills and ivy-covered balconies, lamp posts
@@ -85,7 +103,7 @@ the N64 plays them. There are no recordings in the ROM: a song is a sequence,
 a MIDI-like script of a few KB, whose notes play instruments made of short
 VADPCM samples, and the console mixes them as it goes. So the remake ships
 the same things, the sequences and just the samples they use, as they are in
-the ROM (`assets/sound.bin`, made by `web_assets.py`), and
+the ROM (`assets/egg/sound.bin`, made by `web_assets.py`), and
 `src/n64audio.js` plays them: a port of the sequence player of the game's
 audio engine (Nintendo EAD's, from *Ocarina of Time* and *Majora's Mask*;
 the zeldaret decomps document it), with Web Audio doing the mixing. It runs
@@ -101,14 +119,12 @@ envelopes, vibrato and pans into Web Audio events a little ahead. What plays
   whistle; and a menu sound for the buttons.
 - The fanfare the minigame results play (song 55), when you win.
 
-The file is 372 KB (322 KB gzipped): the song's samples are 138 KB, the
+Egg Emergency's file is 372 KB (322 KB gzipped): the song's samples are 138 KB, the
 fanfare's another 97, the effects' 159, and the scripts 10 KB. It's fetched
 after the first tap with the sound on, so with the sound off it's never
 downloaded; until it's in, simple Web Audio tones stand in. For comparison,
 the same half minute of sound recorded would be about as big (Opus at 64
-kbit/s: ~280 KB); where this wins is the next songs: every song in the game
-uses the same instrument bank, so another minigame's music would cost its
-few new samples and a 2-5 KB script.
+kbit/s: ~280 KB).
 
 What comes from the ROM and what is made up
 ([docs/minigames.md](../docs/minigames.md#what-else-module-56-loads) has how
@@ -129,16 +145,94 @@ without sRGB conversion, lighting is Lambert (ambient + one sun, no specular)
 on the display values, and the frame is written as it is. That is close to how
 the N64 shades.
 
-Code: `src/game.js` has the rules, drop schedules, CPU players and Chansey's
-clip map. `src/assets.js` loads the models and pictures. `src/fx.js` has the effects,
-`src/audio.js` the sounds (`src/n64audio.js` the engine that plays them), `src/telegram.js` the Telegram glue, `src/net.js`
-the connection to the rooms server, `src/retry.js` tries failed loads again, `src/config.js` the online settings, and
-`src/main.js` does the layout, input, HUD, lobby and game flow.
+Code: `src/egg/game.js` has the rules, drop schedules, CPU players and
+Chansey's clip map, `src/egg/assets.js` loads the models and pictures,
+`src/egg/fx.js` has the effects, and `src/egg/index.js` the cameras, the lean
+controls and its HUD. Shared: `src/audio.js` the sounds (`src/n64audio.js` the
+engine that plays them), `src/telegram.js` the Telegram glue, `src/net.js` the
+connection to the rooms server, `src/retry.js` tries failed loads again,
+`src/config.js` the online settings.
+
+## Clear Cut Challenge
+
+Four Scyther stand in front of a castle's curtain. Spinarak hauls a log up on
+its thread and drops it; tap the screen (or Space) to swing, and the blade
+cuts the log where it is. The white line on the log marks the perfect cut.
+Five logs; after a miss you can swing again 45 frames later, unless you
+swung too early and the log reached the blade first. The highest total wins. This one follows the
+game's own code (module #53, read from the ROM:
+[docs/minigames.md](../docs/minigames.md#clear-cut-challenge) has where each
+number is):
+
+- **The fall.** A log's bottom is at `285 − 4.9 (r f)²` f frames after the
+  drop (the game runs its logic 30 times a second), with r 0.35 on Easy, 0.4
+  on Normal (and with no CPUs), 0.45 on Hard. The blade cuts 2 frames after
+  you press, at height 90, and only if the log is there: on Normal, from frame
+  16 to 27 after the drop, 0.4 s.
+- **The score** is how many frames early or late you pressed, against the
+  frame the line is dealt for: on it 20, early by 1-5 frames 10, 5, 4, 3, 2,
+  more 1; late (the cut above the line) −1 to −5 instead of the points; a
+  miss, or no swing, −10. A total never goes below 0. Pressing while the log
+  hangs is a miss.
+- **The logs.** Each round deals every log a target frame, somewhere in the
+  window (where depends on the level), and a wait before the drop: the first
+  log always waits 100 frames, the others 0, 40, 70 and 150 in a shuffled
+  order. The game's two random number generators do it, seeded from the round.
+- **The CPUs** are the game's: for each log they pick the frame they'll press
+  on, on the target or a few frames off (early more often than late), by
+  level, and once a CPU is over its level's cap (20 Easy, 40 Normal, 55 Hard)
+  it cuts late on purpose, so it doesn't run away with the round; on the last
+  log it avoids ending on 0. What it takes to win a solo round, simulated: the
+  best of the three CPUs scores about 20 on Easy, 41 on Normal, 59 on Hard, of
+  a possible 100.
+- **A log's round**, as the game plays it: Spinarak goes down its thread and
+  hauls the log up from below, it bounces at the top, and the "1st CUT" …
+  "FINAL CUT" sign comes down on a thread; after the wait the log drops;
+  Scyther gets ready as it comes up, swings, and misses or cuts; then the log's
+  two pieces come up on a signpost in front of each Scyther, the points come
+  down onto the cards and count up one at a time, and the pieces fall away.
+
+The camera is the game's (45°, from 760 in front at height 110, straight on),
+with background picture 15 behind; wider screens see the picture carry on
+mirrored at the sides. Portrait shows your lane big (with the lanes next to
+it at its edges) and the others in small boxes, like Egg Emergency.
+
+**The log** isn't one of the objects: the game draws it from its own code
+module, a hexagonal prism with three textures (bark, the rings on its ends and
+the white line). `tools/ps2tool/minigames.py` takes the textures out;
+`src/clearcut/assets.js` builds the prism from the module's numbers, so a cut
+can split it anywhere, with the bark wrapping as the module's tiles have it.
+
+**Sound**: the game's (`assets/clearcut/sound.bin`, 706 KB, 627 gzipped,
+fetched only with the sound on): song 18 while each log is hauled up, song 19
+when the pieces are shown, the crowd (by the sound of it: while a log hangs,
+as each comes up and for the best cut), the cut, a perfect cut, a swing
+that misses, Scyther getting ready, the points in, the minigame's own
+countdown and GO, the shared finish whistle, and the fanfare when you win.
+The crowd's samples are 238 KB of it and the fanfare 131.
+
+What comes from the ROM and what is made up:
+
+| From the game | Made for the remake |
+|---|---|
+| the rules, the timings, the scoring, the deal and the CPUs (module #53's code) | the timeline between logs, fixed (the game's varies a little, e.g. it waits for every Scyther to be ready before a drop) so every device agrees |
+| Scyther (object 122), its clips and what follows each, the signpost (59), the log (the module's own), Spinarak (image bank 397) and its thread, the stars over the losers (190) | the streak of light at the cut (the game shows objects 130 and 131, whose colours its code sets as it draws them), a perfect cut's flash (bank 398) |
+| the camera, background picture 15, the lanes, the heights, the sign (bank 399), the cards and digits (434, 404, 429) | how the cut pieces tumble (close to the game's), the portrait layout |
+| songs 18 and 19, the fanfare, the effects (bank 1 of the effect table) | the crowd while a log hangs is started once and stopped 50 frames after the drop (the game asks for it every frame until then), and the crowd stops at the finish (the game's carries on until it leaves the minigame) |
+
+Not in the remake: the game lets a player whose Game Boy Game Pak has a Pinsir
+or a Scizor play as that Pokémon (objects 55 and 179), and it has debug
+settings for other game types (logs that change length, and more).
+
+Code: `src/clearcut/rules.js` has the rules (and `tools/clearcut_rules.py`,
+the server's copy, the deal and the judging), `src/clearcut/game.js` the round
+and its scene, `src/clearcut/assets.js` the models, the log and Spinarak,
+`src/clearcut/index.js` the cameras, the tap, its HUD and its online messages.
 
 ## Online play
 
 **Play with friends** on the title screen makes a room with a four-letter
-code. **Invite friends** sends a link: in Telegram it opens the share picker
+code, on the game picked there. **Invite friends** sends a link: in Telegram it opens the share picker
 (with `telegramApp` set in `src/config.js`, the link opens the game straight
 in Telegram, `t.me/<bot>/<app>?startapp=CODE`; without it, it's this page with
 `?room=CODE`); in a browser it uses the system share sheet or copies the link.
@@ -146,13 +240,14 @@ The link is also shown under the button, with a Copy button.
 The code can also be typed into the lobby. Up to four people join; the empty
 spots are CPUs. Everyone gets the next free seat and its colour (1P blue, 2P
 green, 3P red, 4P yellow). The host (whoever has been in the room longest)
-picks the CPU level and starts. On a phone your own bay is the big view,
+picks the game and the CPU level, and starts; everyone's lobby switches with
+it (loading the game if they haven't yet). On a phone your own bay is the big view,
 whichever seat you have, and names show over the cards.
 
 How it works:
 
-- **Each device plays its own Chansey**, with no network delay; the host's
-  device also plays the CPUs. Devices send their players' leans (which
+- **Each device plays its own player**, with no network delay; the host's
+  device also plays the CPUs. In Egg Emergency (Clear Cut Challenge below): Devices send their players' leans (which
   column, from which moment of the round), and the server passes them on
   and **keeps the score itself** from them (`tools/egg_rules.py`): a drop
   counts if the player leans its way when it reaches the hands, and isn't
@@ -161,14 +256,40 @@ How it works:
   server agrees. Devices also report their catches and shocks as they
   happen, so the others see them straight away; the server checks each one
   and passes on its own verdict, with the egg count.
+- **Clear Cut Challenge**: devices send each cut, the frame their player
+  pressed on after the log's drop, and the server judges it
+  (`tools/clearcut_rules.py`, the same deal and judging as
+  `src/clearcut/rules.js`, bit for bit) and tells everyone the points and the
+  total. As in the game, a cut is a log's last swing, and after a miss a seat
+  may swing again 45 frames on, unless it swung before the log got to the
+  blade and the log got there first; the server holds a miss that may be
+  followed up (it tells everyone with `a: 1`) till the log's judged. Swings
+  count from the log's hanging to its end (with 2 s for clocks off), and a
+  seat that doesn't cut scores the miss.
 - **Same round, same moment.** The server deals the drops (the game's own
   schedule, from a seed; `egg_rules.py` has a copy of `makeSchedules()` that
   matches it bit for bit) and a GO time on its own clock. Clients sync to it
   with ping/pong (the lowest-delay round trip of the last 12) and run the
   round on that clock, catching up in small steps after a hiccup.
-- **Other players are shown 0.3 s behind**, so their leans arrive before
-  they're due. Their catches come from the server, not from what this device
-  sees; if one is late, the egg falls on and the catch shows when it arrives.
+- **Egg Emergency shows the other players a little behind**, so their leans
+  arrive before they're due: as far behind as their moves take to get here
+  and a little more (`src/lag.js`). A round starts from both devices' round
+  trips to the server (each ping tells the server the device's, a round trip
+  three in four of its last few beat, and `start` passes them on, `rtt`; 0.3
+  s if they're not known), and then each seat's delay follows how old its
+  leans and catches are when they get here: up quickly to cover a late one
+  (the seat's clock runs at 3/4 speed meanwhile), and back down slowly, from
+  0.05 s to 0.6 s. Their catches come from the server, not from what this
+  device sees; if one is late, the egg falls on and the catch shows when it
+  arrives.
+- **Clear Cut Challenge shows every lane on the round's clock**, so the four
+  logs come up and fall together, as on the game's one screen. The others'
+  swings are shown as they get here, a little after they happened: a late
+  cut splits the log where the blade met it, which has fallen on a bit by
+  then, so it looks a little high, but the pieces go up on the signpost as
+  they were cut, and the points are the server's. One that gets here after
+  the fall shows only on the signpost; a seat with no swing yet at the end of
+  the fall shows the miss till the server's word comes.
 - **Dropping out.** A dropped connection keeps its seat for 8 s: a reload or a
   network blip rejoins the same seat and round, with its eggs, and the leans
   made while offline go out once it's back. After that the seat becomes a
@@ -184,7 +305,7 @@ How it works:
   it all out from the leans, and a device that says otherwise is corrected.
   That goes for the CPUs too, whose leans come from the host's device.
 - **Each device plays only its own seat** (the host also the CPUs), only in
-  the current round; only the host picks the level and starts.
+  the current round; only the host picks the game and the level, and starts.
 - **"Done" counts only once the last drop has fallen**, so no one can cut a
   round short.
 - **Limits:** 60 messages a second per connection (400 at once, for catching
@@ -208,30 +329,34 @@ How it works:
 - `?debug` and `?server=` work on localhost only.
 
 What it can't stop: a script that plays perfectly by the rules (it can know
-the drops), which looks just like a flawless player; a modified host making
+the drops, or the frame to cut on), which looks just like a flawless player; a modified host making
 the CPUs play badly (it can't make them score, though); and best scores,
 which are kept on each device.
 
 **Testing.** `party.html?n=2` (up to 4) opens that many players in one tab,
-each in a frame, all in one room (`&room=CODE` picks it). The first frame is
-the host. The frames stack on a tall window and sit side by side on a wide one.
-`python3 tools/test_rooms.py` tests the server: the protocol, the scoring and
-the cheats it stops, rejoining, Telegram logins, names and limits (about half
-a minute, no network). `tests.html`, with `serve_web.py` running, tests the
-game with it, in real games in frames: the drops against the server's copy,
-the catching rule (the same short round `test_rooms.py` plays), the CPU
-levels (what it takes to win, simulated), the sound (the song, the fanfare
-and every effect rendered offline: they play, the song loops, and nothing
-they need is missing from `sound.bin`), a solo round, the lobby and the
-invite link, and an online round with two scripted players. One of them
-meddles from the console partway through: he claims an egg he missed, with a
-made-up count, claims a catch for the other player and leans for her, claims
-a drop still to come, says he's done and tries to start the next round, then
-reloads mid-round. Both devices have to agree with each other throughout,
-end with the same ranking, and never be corrected by the server when playing
-honestly. It takes about two minutes; keep the page showing, as browsers
-pause hidden pages' games (the real-time tests wait for it, and count as
-inconclusive if it's hidden while they run).
+each in a frame, all in one room (`&room=CODE` picks it, `&game=clearcut` the
+game). The first frame is the host. The frames stack on a tall window and sit
+side by side on a wide one. `python3 tools/test_rooms.py` tests the server:
+the protocol, both games' scoring (Clear Cut Challenge's deal against the
+browser's, bit for bit) and the cheats it stops, picking the game, rejoining,
+Telegram logins, names and limits (about half a minute, no network).
+`tests.html`, with `serve_web.py` running, tests the games with it, in real
+games in frames: each game's deal against the server's copy, the catching
+rule (the same short round `test_rooms.py` plays) and the cut scoring, the
+CPU levels (what it takes to win, simulated), each game's sound (every song
+and effect rendered offline: they play, and nothing they need is missing from
+the file), a solo round of each, the lobby, the invite link and the game
+picker (only the host's counts), and an online round of each with two
+scripted players. In Egg Emergency one of them meddles from the console
+partway through: he claims an egg he missed, with a made-up count, claims a
+catch for the other player and leans for her, claims a drop still to come,
+says he's done and tries to start the next round, then reloads mid-round. In
+Clear Cut Challenge he claims a perfect cut for the other player, a cut for a
+log that isn't up yet, and a second swing at one. Both devices have to agree
+with each other throughout and end with the same ranking, and the server
+must never correct an honest device. It takes about three minutes. A hidden
+page steps the games itself (browsers pause hidden pages' animation), and a
+real-time test that fails while it's hidden says so.
 
 Give the server `TELEGRAM_BOT_TOKEN` (from @BotFather) and `TYPESAFE_API_KEY`
 as environment variables to turn on the login and name checks; it says at
@@ -241,24 +366,34 @@ Messages are JSON objects with their type in `t`. From the client:
 
 | `t` | Fields | |
 |---|---|---|
-| `hello` | `room`, `id`, `name`, `create`, `tg` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData` |
-| `ping` | `c` | the client's clock; answered with `pong` |
+| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`) |
+| `ping` | `c`, `rtt` | the client's clock; answered with `pong`. `rtt`: a round trip it can count on, ms (from the last pongs) |
 | `name` | `name` | rename |
 | `level` | `level` | host, in the lobby: `easy`, `normal` or `hard` |
+| `game` | `game` | host, in the lobby: `egg` or `clearcut` |
 | `start` | | host, in the lobby |
 | `lean` | `r`, `s`, `g`, `l` | in round `r`, seat `s` leans `l` (−1, 0, 1) from round time `g` (s) |
 | `ev` | `r`, `s`, `g`, `n`, `k`, `e` | seat `s` caught its drop `n` (`k: "c"`) or was shocked by it (`"h"`), as this device judged it; `e` is its egg count after. The server answers only if it disagrees |
+| `cut` | `r`, `s`, `n`, `f` | Clear Cut Challenge: seat `s` pressed `f` frames after log `n`'s drop (negative: while it hung) |
 | `done` | `r` | this device's round is over |
 | `leave` | | |
 
 From the server: `welcome` (`room`, `seat`, `now`); `room`, the room's
-state (`state` lobby or playing, `round`, `level`, `host`, `players` with
-`away`, and during a round the `lineup`, with `here` for who's still in it);
-`start` (`round`, `seed`, `level`, `host`, `lineup`; `at` and `go` on the
-server's clock: the countdown starts at `at`, GO is at `go`; `drops`, each
+state (`state` lobby or playing, `round`, `level`, `game`, `host`, `players`
+with `away`, and during a round the `lineup`, with `here` for who's still in
+it); `start` (`game`, `round`, `seed`, `level`, `host`, `lineup`, `rtt`, the
+round trip of the device playing each seat, ms or null; `at` and
+`go` on the server's clock: the countdown starts at `at`, GO is at `go`. Egg
+Emergency: `drops`, each
 seat's `[t, col, "e" or "v", fall]`; and, to rejoin midway, `scores`, each
 seat's last lean `leans` `[g, l]`, last shock `hits` and how many of its
-drops are judged, `settled`, in the order they arrive); `pong` (`c`, `s`);
+drops are judged, `settled`, in the order they arrive. Clear Cut Challenge:
+`c`, the level code the logs are dealt for (the devices deal them from the
+seed), and to rejoin, `scores` and `cuts`, each seat's `[f, points]` by log, `[f, points, 1]` for a miss it may still follow up);
+`pong` (`c`, `s`); `cut` (`r`, `s`, `n`, `f`, `p`, `e`), the server's word on
+a seat's swing at a log: the frame (null: no swing), the points and the
+total after, and `a: 1` for a miss that doesn't count yet (the seat may swing
+again; the total leaves it out);
 `lean` as above (with the time the server kept: never before the seat's last
 lean); `ev` (`r`, `s`, `n`, `k`, `e`, `g`), the server's verdict on a drop:
 `c` caught, `h` a shock, or `m`, not a catch after all, with the egg count
@@ -273,11 +408,11 @@ opens it (and nothing in a normal browser):
 
 - `ready()`, `expand()` to full height, and `disableVerticalSwipes()` (so a
   swipe down doesn't close the game mid-round).
-- Header, background and bottom-bar colours matched to the building.
+- Header, background and bottom-bar colours matched to the game on show.
 - The Telegram **back button** leaves a round.
-- **Haptics** on a catch, a Voltorb hit, GO and FINISH.
-- **CloudStorage** keeps the best score per level, the level and the sound
-  setting, so they follow the player across devices; localStorage is the
+- **Haptics** on a catch, a Voltorb hit, a cut, GO and FINISH.
+- **CloudStorage** keeps the best score per game and level, the last game,
+  the level and the sound setting, so they follow the player across devices; localStorage is the
   fallback. Reads time out after 1.5 s, so a slow answer can't block loading.
 - The player's Telegram first name on their score card and in rooms, and
   their Telegram id as their player id (another device rejoins the same
@@ -314,5 +449,8 @@ matched), the host closing mid-round (the other player took over the CPUs
 and the host's seat), joining mid-round from a simulated `startapp` launch,
 a closed room's code, and a device claiming an egg its player missed (the
 server corrected it within half a second, and no one else saw it).
-`tools/test_rooms.py` passes its 10 checks. It hasn't been tried inside the
-real Telegram apps or over a mobile network yet.
+Clear Cut Challenge: solo rounds at 1280×720 and 375×812, and an online round
+with two players (both devices showed the same cuts, totals and ranking, the
+CPUs played by the host's). `tools/test_rooms.py` passes its 12 checks and
+`tests.html` its 13. It hasn't been tried inside the real Telegram apps or
+over a mobile network yet.

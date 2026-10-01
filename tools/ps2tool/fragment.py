@@ -23,8 +23,10 @@ CMD_SIZES = {
 }
 
 # Render-time callbacks (fragment26 descriptors) that supply the texture of
-# the untextured geometry drawn after them ("phase 5" geometry pipeline).
-PHASE5_HANDLERS = (0x81000138, 0x81000140, 0x81000148)
+# the untextured geometry drawn after them ("phase 5" geometry pipeline). All
+# four build the material with 0x810024E0, in modes 0, 1, 2 and 4 (0x81000178:
+# the stars of object 190, the cut effects 130 and 131...).
+PHASE5_HANDLERS = (0x81000138, 0x81000140, 0x81000148, 0x81000178)
 # Shared fire card (Charmander line, Magmar, Moltres): 8 IA16 frames at
 # arg+8, rendered as 32x64 IA8 on a 100x200-unit billboard at the bone.
 FLAME_HANDLER = 0x81000038

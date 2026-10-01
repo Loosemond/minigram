@@ -26,6 +26,12 @@ What isn't known yet, roughly by how useful it would be.
   in module #56's code, which hasn't been read beyond its calls; the browser
   remake guesses them ([web/README.md](../web/README.md)). Also what image
   bank 429 (big digits with ±) is used for exactly.
+- **Clear Cut Challenge's loose ends** (its rules are read: [minigames.md](minigames.md#clear-cut-challenge)):
+  the game's frame rate (30 a second is assumed: the scheduler's retrace
+  count wasn't traced), how objects 130 and 131 (the cut's effects) are
+  coloured as they're drawn, exactly how the cut pieces tumble and the show's
+  timings between logs (the remake fixes them), and what the object at `0x8650E6E0`
+  (scale 0.095, at height 55) is.
 - **Battle lighting:** the ambient and directional lights (directions,
   colours) the battle scene loads for lit models. With them, Blender could
   match the game's shading, not just its texture colours

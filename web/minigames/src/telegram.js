@@ -29,6 +29,12 @@ export const telegram = {
     if (atLeast("7.10")) tg.setBottomBarColor(color);
   },
 
+  // the header and page colour, for the game on show
+  color(color) {
+    if (atLeast("6.1")) { tg.setHeaderColor(color); tg.setBackgroundColor(color); }
+    if (atLeast("7.10")) tg.setBottomBarColor(color);
+  },
+
   onResize(fn) { if (inside) tg.onEvent("viewportChanged", fn); },
 
   // kind: light | medium | heavy | rigid | soft | success | warning | error | select

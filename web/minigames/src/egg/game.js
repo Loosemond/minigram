@@ -3,6 +3,7 @@
 // centre. A Voltorb shocks you and knocks 5 eggs out. Every player gets 100 eggs.
 import * as THREE from "three";
 import { makeChansey, makeEgg, makeVoltorb, setLayer } from "./assets.js";
+import { Lag, LAG } from "../lag.js";
 
 const S = 1 / 11.5; // model units -> world (Chansey = 1)
 export const COL_X = 5 * S; // the catch clips reach 5 units left/right
@@ -222,9 +223,10 @@ class Brain {
 // for sending on. A drop lands (takes()) if its seat leans its way at the
 // moment it reaches the hands, going by the leans sent, which is exactly how
 // the rooms server judges it (tools/egg_rules.py), so the two agree. A remote
-// seat runs a little behind the others (setup.delay), so the leans its device
-// sends arrive before they're due, and it isn't judged here: the server says
-// what happened (told()), with the egg count, which is the one that counts.
+// seat runs a little behind the others (setup.delay, then as late as its
+// moves come: src/lag.js), so the leans its device sends arrive before
+// they're due, and it isn't judged here: the server says what happened
+// (told()), with the egg count, which is the one that counts.
 export class Game {
   constructor(scene, assets, fx) {
     this.scene = scene; this.assets = assets; this.fx = fx;
@@ -241,7 +243,7 @@ export class Game {
   on(name, fn) { (this.listeners[name] ||= []).push(fn); }
   emit(name, ...args) { for (const fn of this.listeners[name] || []) fn(...args); }
 
-  // setup: { me: this device's seat, control: per seat, delay: s } and, online,
+  // setup: { me: this device's seat, control: per seat, delay: s per seat } and, online,
   // the server's round: { drops, and to rejoin it midway, each seat's leans
   // (its last so far, [g, l]), hits (its last shock) and settled (how many of
   // its drops are judged, in the order they arrive) }
@@ -256,7 +258,9 @@ export class Game {
     this.state = "ready";
     this.me = setup.me ?? 0;
     this.control = setup.control || [0, 1, 2, 3].map((z) => (z === this.me ? "local" : "cpu"));
-    this.delay = this.control.map((c) => (c === "remote" ? setup.delay ?? 0.3 : 0));
+    this.delay = this.control.map((c, z) => (c === "remote" ? setup.delay?.[z] ?? LAG.fallback : 0));
+    this.lag = this.delay.map((d, z) => (this.control[z] === "remote" ? new Lag(d) : null));
+    this.ticked = [0, 0, 0, 0];
     this.inputs = [[], [], [], []]; // remote leans, due at their seat's time: {g, l}
     this.leans = [0, 1, 2, 3].map((z) => (setup.leans?.[z] ? [{ g: setup.leans[z][0], l: setup.leans[z][1] }] : [])); // all of them
     this.hitAt = [0, 1, 2, 3].map((z) => setup.hits?.[z] ?? -Infinity); // when the last shock was
@@ -286,6 +290,7 @@ export class Game {
     const q = this.inputs[z];
     if (q.length && c !== "remote") this.players[z].want = q[q.length - 1].l; // its leans still due
     this.control[z] = c;
+    this.lag[z] = c === "remote" ? new Lag(this.delay[z], LAG.fallback) : null; // (from where it is: it eases back)
     this.brains[z] = c === "cpu" ? new Brain(this.level, this.rnd) : null;
     this.inputs[z] = [];
     this.sent[z] = this.players[z].want;
@@ -301,6 +306,7 @@ export class Game {
   }
   remoteLean(z, g, l) { // from another device, through the server
     if (this.control[z] !== "remote") return;
+    this.lag[z].heard(this.time - g);
     this.inputs[z].push({ g: this.logLean(z, g, l), l });
   }
   leanAt(z, t) {
@@ -350,6 +356,9 @@ export class Game {
     if (this.state === "play") {
       this.time += dt;
       for (let z = 0; z < 4; z++) {
+        const was = this.delay[z];
+        if (this.lag[z]) this.delay[z] = this.lag[z].step(dt);
+        this.ticked[z] = dt - (this.delay[z] - was); // how far its clock went
         const t = this.zoneTime(z), list = this.drops[z], p = this.players[z], q = this.inputs[z];
         while (q.length && q[0].g <= t) p.want = q.shift().l;
         while (this.next[z] < list.length && list[this.next[z]].t <= t) this.spawn(list[this.next[z]], this.next[z]++, z);
@@ -374,7 +383,7 @@ export class Game {
       const m = o.mesh, p = this.players[o.zone];
       const catchY = p.catchY(this);
       const y0 = m.position.y;
-      m.position.y -= o.speed * dt;
+      m.position.y -= o.speed * this.ticked[o.zone]; // (on its seat's clock, which may run slow or fast a while)
       if (o.kind === "egg") m.rotation.z = Math.sin(this.time * 9 + o.spin) * 0.25;
       else m.material.map = m.userData.frames[Math.floor(this.time * 12 + o.spin) % 6];
       if (!o.passed && y0 > catchY && m.position.y <= catchY) {
@@ -433,6 +442,7 @@ export class Game {
   // just sets the count (the server's is the one that counts)
   told(z, n, r) {
     if (this.state !== "play" || !this.drops[z]?.[n] || !Number.isFinite(r.e)) return;
+    if (r.k !== "m" && Number.isFinite(r.g)) this.lag[z]?.heard(this.time - r.g); // (its device's word, passed on at once)
     if (this.settled[z].has(n) || r.k === "m") { this.players[z].eggs = r.e; return; }
     this.known[z].set(n, r);
     const o = this.objects.find((x) => x.zone === z && x.n === n && x.state === "fall");

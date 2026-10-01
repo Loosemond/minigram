@@ -93,6 +93,8 @@ module owns a 1 MB slot.
 | 26 | `0x15EA20` | `0x81000000` | render callbacks used by models: fire card `0x81000038`, material callbacks `0x81000138` / `0x81000140` / `0x81000148` |
 | 47, 49–56, 59–61 | `0x2469A0`–`0x2F32D0` | `0x86000000`–`0x86B00000` | the 12 minigames, in 12 consecutive slots ([minigames.md](minigames.md)); #48, #57 and #58 in between run elsewhere |
 | 62 | `0x303890` | `0x86C00000` | tiny module next to the minigames (*unknown*) |
+| 63 | `0x303CF0` | `0x87E00000` | the Mini-Game Park's menus: it writes the COM level (Easy 1, Normal 2, Hard 3) the minigames read |
+| 64 | `0x322FF0` | `0x87F00000` | code the minigames share: their countdown, and more (*by usage*) |
 | 79 | `0x36FC10` | `0x84100000` | battle effect engine ([effects.md](effects.md)) |
 
 To find module N: search the code region for `FRAGMENT` (at +8 of every
@@ -107,3 +109,8 @@ module) and take the Nth hit. Its size is the u32 at +0x18.
 | `0x8004D770` | show background picture `a0` from `0x1E70000`. Eager Eevee passes 44 (its round rainbow field) and Egg Emergency 19 (its building) |
 | `0x8004CA70` | load image bank `a0` from `0x1898000` (`a1` = image, *by usage*); every minigame passes its HUD banks, e.g. 434 (player badges) |
 | `0x8004C9A0` | called with the same banks as `0x8004CA70`, presumably to free them (*unverified*) |
+| `0x800357EC` | random number: `x = x · 1664525 + 1013904223` (state at `0x80124EB0`) |
+| `0x8007B100` | random number: `x = ((4x + 2)(4x + 3) mod 2³²) / 4` (state at `0x800A1590`) |
+| `0x80001FC0` | the TV's rate: 50 on PAL, 60 on NTSC (from `osTvType`); the minigames scale their speeds by 1.2 on PAL |
+| `0x800279B4`, `0x80027764`, `0x80027A18` | play sound effect `a0` (centred; with pan `a1`; panned to player `a1`) ([audio.md](audio.md)) |
+| `0x80021EC8`, `0x800225B4` | play song `a0`; fade it out over `a0` frames ([audio.md](audio.md)) |

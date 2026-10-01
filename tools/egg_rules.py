@@ -6,7 +6,7 @@ the round), and a drop counts when it reaches the hands: caught (an egg) or a
 shock (a Voltorb) if the player's lean at that moment is the drop's column,
 unless an earlier shock is still stunning them. The game judges the seats it
 plays in the same way from the same leans (Game.takes() in
-web/egg-emergency/src/game.js), so an honest device and the server always
+web/minigames/src/egg/game.js), so an honest device and the server always
 agree, and a device can't count catches its player didn't make.
 """
 import bisect

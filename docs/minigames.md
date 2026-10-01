@@ -122,9 +122,177 @@ number (Topsy-Turvy 33, Gutsy Golbat 13, …): the song, which the game plays as
 sequence 45 + 39 = 84 ([audio.md](audio.md), with the sound effects the
 module plays).
 
-The browser remake in `web/egg-emergency/` is built on these findings,
+The browser remake in `web/minigames/src/egg/` is built on these findings,
 with the backdrop rebuilt in 3D to the picture's measurements
 ([web/README.md](../web/README.md)).
+
+## Clear Cut Challenge
+
+Module #53 (ROM `0x289830`, linked at `0x86500000`; 0xD9A0 bytes of code and
+data, then BSS to 0x119D0) was read instruction by instruction, so the remake
+(`web/minigames/src/clearcut/`) plays by its rules. Addresses below are the
+module's (EU); variables are in its data (`0x8650C4xx`–`0x8650C6xx`) and BSS
+(`0x8650D9xx`…). The instructions (text 50.8) agree: "cut falling logs at the
+white line. There are five logs in all. Time your cuts--cutting above the
+white line will cost you points."
+
+**Frames and speeds.** The logic runs once a frame and counts in frames. It
+asks the main program for the TV's rate (`0x80001FC0`: 50 on PAL, 60 on NTSC)
+and scales its speeds by 1.2 on PAL (`0x8650C508`), so a PAL console's 25
+frames a second play as NTSC's 30. The remake uses 30 (*assumed*: the
+scheduler's frame rate wasn't traced, but the 30 fps clips match it).
+
+**The fall** (`0x86501D6C`, `0x86502524`, `0x86503178`). A log's bottom is at
+`y = 285 − 4.9 (r f)²` f frames after its drop (`0x8650C4AC` = 285,
+the log 389 long, `0x8650C4CC`), with r (`0x8650C4B8`) set per level
+(`0x86502620`: 0.45, 0.4, 0.35, 0.3 for the level codes 1-4; code 0, no CPUs,
+falls as 2). Pressing A at frame f swings the blade, which meets the log at
+frame f + 2: it cuts if the log's bottom is then between `0x8650C4B4` = −307
+and `0x8650C498` = 92, i.e. the blade (at 90-92) is somewhere along the log.
+The window starts at w0 + 2 (`0x8650D9D4`, from the height difference and r)
+and lasts 11-16 frames (`0x8650C4D4`).
+
+**The target** (`0x86501EA0`, `0x86501FA0`). Each log gets a frame T = w0 +
+a random offset in the window, by the level code c (`0x8650C634`): c 0 and 2
+from 2 to size − 2, c 1 from 1 to size − 2, c 3 from 4 to size − 2, c 4 from 4
+to size − 3. The white line is where the log is at the blade 2 frames after T
+(`0x8650C4D8` = 90 − y(T + 2)); the log's callback (`0x86500020`) draws the
+band there.
+
+**The score** (`0x86503178`). d = T − the frame pressed: points by |d| from
+the table at `0x8650D0D4`: 20, 10, 5, 4, 3, 2, then 1 up to 15 frames off. If
+d < 0 (late: the cut is above the line) the player gets −|d| (at most −5)
+instead of the points; a swing outside the window,
+or none by frame 80 (`0x865098F4`), is −10. The points go onto the total one a
+frame after the log's show starts (`0x86507F9C`), and a penalty takes them off
+one a frame while the total is above 0. A does nothing until the log hangs
+ready, and a swing while it hangs is a miss.
+
+**Swinging again** (`0x86503C90`, `0x86503EB8`). A cut is the log's last
+swing (A stays off till the next log). A miss takes the player's points to 0
+and starts a counter (`0x20` of the player); A works again when it gets to 46,
+45 frames on, and the last swing is the one that counts (`0x80`, the result,
+is set again). But a miss while the log's still at or above the blade (its
+bottom at 92 or more: `0x3c` = 1) stops the counter once the log gets down to
+the blade (`0x3c` = 2): A's then off till the next log's show starts
+(`0x8650C610`). On Normal the log gets there 16 frames after the drop, so a
+swing 30 or more frames before the drop can be followed up, and one after
+that can't. That log then hits the scythes held out and is knocked away
+(`0x865048D0`): its object (198 above its bottom) goes to 388.4 − 5.88 (s −
+6)², s going up 0.6 a frame (till it's below −3000), and each frame it moves
+by y/100 outwards and towards the camera, at 60° for the outer lanes and 10°
+for the inner ones (in the game's rough radians, 6.14 a turn: sin `0x800740D0`
+for x, cos `0x8007EB20` for z). It would also spin if `0x8650C4F0` were 1
+(a debug switch, 0 in the game).
+
+**The deal** (`0x86502958`). A permutation of the five log slots (`0x8650D9E0`:
+0-4, then ten swaps of two random slots, skipping any swap with slot 0) picks
+each log's wait before its drop from `0x8650C480`: 100, 40, 0, 70, 150 frames.
+So the first log always waits 100. Random numbers come from the main
+program's two generators: `0x800357EC` (x · 1664525 + 1013904223) and
+`0x8007B100` ((4x + 2)(4x + 3) / 4, in 32 bits).
+
+**The level.** The COM level byte (`+0x2181` of the minigame's context; the
+menu, module #63, writes 1 for Easy, 2 Normal, 3 Hard) gives each CPU's code
+c = 4 − level (`0x8650C45C` per player; humans 0), and c also becomes the
+round's (`0x8650C634`): so the level sets the logs' speed and targets as well
+as how well the CPUs cut. Rooms with no CPU use c 0.
+
+**The CPUs** (`0x86501280`, when each log is set up). For each CPU, with s3 =
+(a random number mod 79 + a frame counter) mod 10 and s2 = its mood (random,
+0 or 1): c 1 (Hard) presses on T when s3 ≥ s2 + 6, else 1-3 frames off (late
+only 15% of the time, then pulled back to 1-2 early); c 2 (Normal) on T for s3
+≥ s2 + 8, else 1-4 off (late 20%); c 3 (Easy) never quite on T (one late at
+best), 1-4 off; c 4, 1-5 off (late 55%). Then: on the last log, if the cut
+would leave it at 0 or less, it moves to the early side; and a CPU whose total
+is over its cap (`0x8650C5CC`: 55, 40, 20, 12 for c 1-4) presses 2-7 frames
+late on purpose; on Hard and Normal, one about to cut a perfect one within 10
+of its cap cuts 1-2 frames early instead.
+
+**A log's round** (`0x8650952C`, `0x865040E4`, `0x86505604`): Spinarak (image
+bank 397 on a sprite quad, 2.4×) goes down its thread from 400-500 (under
+gravity, 30 frames), and hauls the next log up from below at 18 a frame to
+689, then it bounces (`0x8650D13C`) and settles at 674, the log's top when it
+hangs; meanwhile a 2D Spinarak comes down the screen with "1st CUT" … "FINAL
+CUT" (bank 399). The log waits, drops, and at frame 50 the crowd reacts to the
+best cut (0x1C07 for a perfect one, 0x1E09 for any points). At frame 80 the
+show starts (`0x8650C610`): a signpost (object 59, 0.6×) rises in front of
+each Scyther from −1500 at 20 a frame with the log's pieces stacked on it (or
+the whole log: it and the lower piece stand on the lane's line, the upper
+piece on top 20 to the left, `0x86505604`), settles (`0x8650D1B4`), the
+points drop from the cut to the
+score card and count in (71 frames), and the pieces fall away. Song 19 plays
+for the show; song 18 starts 30 frames into each log's haul. After the fifth,
+the winners play Scyther's clip 5 and the rest clip 6 (`0x86502B88`: a
+four-way tie has no winner); from frame 60 of clip 6, stars (object 190,
+0.15×, tilted `0x600`) go round 108 above each fallen Scyther, fading in by
+5/255 a frame (`0x86509318`).
+
+**Scene** (`0x86505EA8`, `0x865020D8`, the camera callback `0x86505858`): the
+camera looks straight ahead from (0, 110, 760), 45° up and down, over
+background picture 15. Scyther (object 122, 0.25×, z −35, not turned) stands
+at x = −288, −96, 96, 288 (`(i · 120 − 180) · 1.6`), right behind its log:
+its head, held forward to z 60 in its ready clip, goes into the log (7.6 to
+72.4), and the log's front hides it. The log is the module's own model
+(geo layout `0xC760`: a hexagonal prism, radius 125 and 2000 long, scaled 0.3
+across and 389/2060 along, z 40), with its pieces (`0xC884`…) and the thread
+(`0xCEE0`); its textures are at `0xA5E0` (bark, RGBA16 32×64, wrapping twice
+each way), `0xB5E0` (end rings, 32×32) and `0xBDE0` (the line, IA8 32×8); its
+lists cull back faces (`G_CULL_BACK`), and its faces go anticlockwise seen
+from outside. The cut's effects are objects 130 and 131 (a perfect cut) at
+the blade.
+
+**Scyther's clips** (35, 40, 39, 6, 44, 79, 90 and 30 frames; 0 and 1 loop,
+flag 1 in their headers, the others play once and hold): 0 waits, 1 holds
+ready, 2 gets ready, 3 the cut, 4 a swing that misses, 5 the winners' cheer,
+6 the others' fall at the end, 7 lowers its scythes after a log. The module
+changes clip when one gets to its last frame (`0x86503938`, by a jump table
+at `0x8650D70C`), looking at the log's bottom (`0x86511690`):
+
+| At the end of | Next |
+|---|---|
+| 0, waiting | 2 (and sound 0x1F0A) if Spinarak is hauling the log up (`0x8650C624` = 2) and its bottom is above the ground; after the last log, 5 for the winners, 6 for the rest (`0x84` of the player) |
+| 1, ready | 7 (and 0x1F0A) once the log's bottom is below 100 |
+| 2, getting ready | 1 |
+| 3, the cut | 1 |
+| 4, a miss | 7 (and 0x1F0A) if the log's bottom is below 100, else 1 |
+| 5, the cheer | 0 |
+| 6, the fall | nothing after the last log (it stays down), else 0 |
+| 7 | 0 |
+
+So after every log, cut or not, each Scyther lowers its scythes and waits,
+each at its own moment (a cut goes back to ready first, and lowers at the end
+of that loop). The code that plays clip 6 for everyone after each log
+(`0x86509A30`) only runs when `0x8650C4C8` is 1, and nothing sets it: it's 0
+in the game.
+
+**Sounds** (bank 1 of the effect table, [audio.md](audio.md)): 0x1F00 a cut,
+0x1F01 a miss, 0x1F0A getting ready and lowering the scythes, 0x1F0B the points in, 0x1F0C a perfect
+cut, 0x1F0D and 0x1F0E the count and GO, 0x1005 the crowd while a log hangs,
+0x1B06 as a log comes up, and 0x1C07-0x1E09 the crowd after a cut. 0x1F04
+plays at three frames of Pinsir's clips. The crowd's sounds repeat until
+they're stopped: 0x1005 stops when the game stops asking for it, 50 frames
+after the drop; 0x1B06 and the reactions share a channel, each taking over
+from the last, and nothing stops them in the round (the module stops every
+sound as it leaves, `0x80027ED0(0xFFE)`). The remake stops them at the
+finish.
+
+**Pinsir and Scizor.** The object comes from the player's Pokémon
+(`0x865059A0`): Pinsir (species 127) plays as object 55, Scyther (123) as 122,
+anything else as Scizor (179). The Game Pak's Pokémon decides (text 50.39);
+the remake is Scyther for everyone.
+
+**Left over from development:** a debug menu (`0x865064B0`, its labels in
+Japanese at `0x8650D490`) sets the log's height and length, the fall rate,
+the number of logs, the camera, the effects' scale, and a "game type"
+(`0x8650C470`: normal, logs that change length, very close, and the one
+shipped, 3, "ねらいうち": aiming), a spin for missed logs, and whether the
+drops' waits are random or dealt (dealt). The game types set up the logs
+(`0x865020D8`): type 1 takes each log's length, drop height and scale from a
+table at `0x8650C50C`, one row a log: 375, 297, 205, 127 and 65 long, from
+258, 231, 258, 289 and 361; type 2 hangs a 375-long log from 138, just above
+the blade, and drops it faster (r 0.6). Only type 3 plans the CPUs' cuts
+(`0x86501384`).
 
 ## How this was found
 

@@ -128,15 +128,18 @@ all here, but not the timeline.
 
 ## Play in the browser
 
-`web/egg-emergency/` is Egg Emergency remade in three.js with the game's own
-models, backdrop, sprites and HUD graphics. It adapts to phones (portrait) and
-PCs (landscape), runs as a Telegram Mini App, and plays online: up to four
-people in a room, invited with a link, with CPUs in the empty spots.
+`web/minigames/` remakes minigames in three.js with the game's own models,
+backdrops, sprites, HUD graphics, music and sound: **Egg Emergency** and
+**Clear Cut Challenge** (the second plays by the game's own rules, read from
+its code module: [docs/minigames.md](docs/minigames.md#clear-cut-challenge)).
+Pick one on the title screen, or in the lobby when playing online: up to four
+people in a room, invited with a link, with CPUs in the empty spots. It adapts
+to phones (portrait) and PCs (landscape) and runs as a Telegram Mini App.
 [web/README.md](web/README.md) covers running, online play and
 what's from the ROM.
 
 ```sh
-python3 tools/web_assets.py && python3 tools/serve_web.py   # http://localhost:8123/egg-emergency/
+python3 tools/web_assets.py && python3 tools/serve_web.py   # http://localhost:8123/
 ```
 
 ## Open in Blender (4.2+, tested on 4.5)

@@ -1,4 +1,4 @@
-"""Serve the web minigames: http://localhost:8123/egg-emergency/
+"""Serve the web minigames: http://localhost:8123/ (web/minigames/)
 
     python3 tools/serve_web.py [port] [folder]
 
@@ -45,9 +45,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         path, _, query = self.path.partition("?")
         if path == "/ws":
             return rooms.serve(self)
-        if path == "/" and len(games) == 1:  # straight to the only minigame, not a file listing
+        # straight to the minigames, not a file listing; and from where they used
+        # to be (an old invite, or a Mini App set up with that address)
+        if (path == "/" and len(games) == 1) or path.rstrip("/") == "/egg-emergency":
             self.send_response(302)
-            self.send_header("Location", "/%s/%s" % (games[0], "?" + query if query else ""))
+            self.send_header("Location", "/%s/%s" % (games[0] if len(games) == 1 else "minigames", "?" + query if query else ""))
             self.send_header("Content-Length", "0")
             self.end_headers()
             return None

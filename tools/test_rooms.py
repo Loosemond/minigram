@@ -1,11 +1,12 @@
-"""Tests for the rooms server (tools/rooms.py) and its rules (tools/egg_rules.py).
+"""Tests for the rooms server (tools/rooms.py) and its rules (tools/egg_rules.py,
+tools/clearcut_rules.py).
 
     python3 tools/test_rooms.py
 
 Runs a server in this process on a free port, with short rounds, and plays it
-with scripted clients: the protocol, the score kept from the leans (and the
-cheats that stops), rejoining a round, Telegram logins, name checks, limits.
-Standard library only; takes about half a minute.
+with scripted clients: the protocol, the score kept from the leans and the cuts
+(and the cheats that stops), picking the game, rejoining a round, Telegram
+logins, name checks, limits. Standard library only; takes about half a minute.
 """
 import base64
 import concurrent.futures
@@ -22,12 +23,16 @@ import time
 import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import clearcut_rules  # noqa: E402
 import egg_rules  # noqa: E402
 import rooms  # noqa: E402
 
-# makeSchedules() in web/egg-emergency/src/game.js, run in a browser: the
+# makeSchedules() in web/minigames/src/egg/game.js, run in a browser: the
 # first 16 hex digits of the SHA-256 of every drop (the bits of t and fall)
 JS_SCHEDULES = {1: "ba64e35664b2591f", 12345: "36b3b248013c25c9", 2 ** 31 - 1: "9812a4cb6c5a99c7"}
+# deal() in web/minigames/src/clearcut/rules.js, for every level code: each log's
+# target, wait and the bits of its line (web/minigames/tests.js has the same)
+JS_DEALS = {1: "845261658a294406", 12345: "dcaad7cc4c79a603", 2 ** 31 - 1: "8c853818348d493e"}
 
 # a short round, the same for every seat: (t, col, kind, fall); they reach the
 # hands at 0.5, 0.8, 1.1 (the Voltorb), 1.4 and 2.1
@@ -40,6 +45,18 @@ rooms.BOT_TOKEN = TOKEN
 rooms.checker = None  # no calls to TypeSafe from the tests
 real_schedules = egg_rules.schedules
 egg_rules.schedules = lambda seed: [list(SHORT) for _ in range(egg_rules.SEATS)]
+REAL_WAITS = clearcut_rules.WAITS
+# Clear Cut Challenge's rounds, short: no hauling up, no waits, a 30-frame fall and no show
+clearcut_rules.RISE, clearcut_rules.SHOW, clearcut_rules.FALL_FRAMES = 3, 3, 30
+clearcut_rules.WAITS = [0] * 5
+
+
+def real_deal(seed, c):
+    saved, clearcut_rules.WAITS = clearcut_rules.WAITS, REAL_WAITS
+    try:
+        return clearcut_rules.deal(seed, c)
+    finally:
+        clearcut_rules.WAITS = saved
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -169,6 +186,44 @@ def _():
     assert eggs == [egg_rules.EGGS] * 4, eggs
 
 
+@check("Clear Cut Challenge: the logs match the game's, bit for bit")
+def _():
+    for seed, want in JS_DEALS.items():
+        s = "".join("%d,%d,%s;" % (log["T"], log["wait"], struct.pack(">f", log["line"]).hex())
+                    for c in range(5) for log in real_deal(seed, c))
+        assert hashlib.sha256(s.encode()).hexdigest()[:16] == want, seed
+    fall = clearcut_rules.Fall(2)
+    got = [clearcut_rules.judge(fall, {"T": 20}, f) for f in (20, 19, 18, 13, 21, 25, 26, 0, None)]
+    assert got == [20, 10, 5, -10, -1, -5, -10, -10, -10], got
+
+
+@check("Clear Cut Challenge: after a miss a seat swings again 45 frames on, unless it swung too early")
+def _():
+    short = clearcut_rules.RISE, clearcut_rules.SHOW, clearcut_rules.FALL_FRAMES, clearcut_rules.WAITS
+    clearcut_rules.RISE, clearcut_rules.SHOW, clearcut_rules.FALL_FRAMES, clearcut_rules.WAITS = 117, 195, 80, REAL_WAITS
+    try:
+        g = clearcut_rules.Round(7, "normal")  # (the first log always hangs 100 frames; normal: reaches the blade at 16)
+        t, T = g.times[0], g.logs[0]["T"]
+        assert g.fall.reach == 16 and t["drop"] - t["ready"] == 100, (g.fall.reach, t)
+
+        def swing(s, f):
+            return g.cut(s, 0, f, (t["drop"] + f) / clearcut_rules.FPS)
+        # seat 0 swings as the log comes to hang: a miss, open; A works again 45 frames on, and the cut counts
+        assert swing(0, -100) == [(0, -100, -10, 0, True)]
+        assert swing(0, -60) is None, "A worked again too soon"
+        assert g.wire()["cuts"][0][0] == [-100, -10, 1]
+        assert swing(0, T) == [(0, T, 20, 20, False)] and swing(0, T + 50) is None
+        # seat 1 swings 20 frames before the drop: the log gets to the blade first, so A's locked for the log
+        assert swing(1, -20) == [(0, -20, -10, 0, False)] and swing(1, T) is None
+        # seat 2 misses early and doesn't swing again: the miss counts when the log's judged
+        assert swing(2, -100)[0][4] and g.settle(2, t["judged"] / clearcut_rules.FPS) == [(0, -100, -10, 0, False)]
+        # seat 3 misses late: it may swing again (another miss) till the log's judged
+        assert swing(3, 30) == [(0, 30, -10, 0, True)] and swing(3, 76) == [(0, 76, -10, 0, False)]
+        assert g.scores == [20, 0, 0, 0] and g.cuts[1][0] == (-20, -10), (g.scores, g.cuts)
+    finally:
+        clearcut_rules.RISE, clearcut_rules.SHOW, clearcut_rules.FALL_FRAMES, clearcut_rules.WAITS = short
+
+
 A = Client("A")
 A.send("hello", id="a1", name="Ann")
 w = A.wait("welcome")
@@ -202,6 +257,10 @@ def _():
     A.send("ping", c=123)
     pong = A.wait("pong")
     assert pong["c"] == 123 and pong["s"] > 0
+    A.send("ping", c=124, rtt=42.4)  # its round trip, for the others' delay ("start": rtt)
+    B.send("ping", c=125, rtt="slow")  # not a number: not kept
+    A.wait("pong")
+    B.wait("pong")
 
 
 @check("a round: the server keeps the score from the leans, and stops cheats")
@@ -213,6 +272,7 @@ def _():
     sa, sb = A.wait("start"), B.wait("start")
     assert sa["seed"] == sb["seed"] and sa["round"] == 1 and sa["go"] > rooms.clock() - 100
     assert sa["drops"][0][2] == [0.6, 1, "v", 0.5] and sa["settled"] == [0] * 4 and sa["leans"] == [None] * 4
+    assert sa["rtt"] == [42, None, 42, 42], sa["rtt"]  # each seat's device: Ann plays the CPUs
     go, r = sa["go"], sa["round"]
     # Ann (seat 0) plays well: leans right for the second egg, stays for the Voltorb, left for the last one
     A.send("lean", r=r, s=0, g=0.6, l=1)
@@ -324,6 +384,54 @@ def _():
     assert any(m["t"] == "left" for m in b.drain()), "no left after the grace period"
     for c in cs[1:] + [b]:
         c.close()
+
+
+@check("Clear Cut Challenge: the host picks it; the server judges the cuts and stops cheats")
+def _():
+    a, b = Client("CA"), Client("CB")
+    a.send("hello", id="ca", name="Cid", game="clearcut")  # a new room, with the game on Cid's title
+    ccode = a.wait("welcome")["room"]
+    assert a.wait("room")["game"] == "clearcut"
+    b.send("hello", id="cb", name="Dee", room=ccode, game="egg")  # joining doesn't change it
+    b.wait("welcome")
+    time.sleep(rooms.CHANGE_GAP)
+    b.send("game", game="egg")  # not the host: ignored
+    a.send("game", game="tetris")  # not a game: ignored
+    time.sleep(0.2)
+    assert rooms.rooms[ccode].minigame == "clearcut"
+    a.drain()
+    b.drain()
+    time.sleep(rooms.CHANGE_GAP)
+    a.send("start")
+    s = a.wait("start")
+    assert b.wait("start")["seed"] == s["seed"]
+    assert s["game"] == "clearcut" and s["c"] == 2 and s["scores"] == [0] * 4 and s["cuts"] == [[None] * 5] * 4, s
+    go, r = s["go"], s["round"]
+    logs = clearcut_rules.deal(s["seed"], 2)  # (the short round's: no waits)
+    times = clearcut_rules.timeline(logs)
+    t0 = logs[0]["T"]
+    fall = clearcut_rules.Fall(2)
+    late = next(d for d in (3, 2, 1) if clearcut_rules.judge(fall, logs[1], logs[1]["T"] + d) != clearcut_rules.MISS)  # (its top may be past the blade by 3)
+    b.send("cut", r=r, s=0, n=0, f=t0)  # someone else's player: ignored
+    b.send("cut", r=r, s=1, n=3, f=logs[3]["T"])  # a log that isn't up yet: ignored
+    a.send("cut", r=r, s=0, n=0, f=t0)  # on the target: 20
+    b.send("cut", r=r, s=1, n=0, f=t0 - 2)  # 2 frames early: 5
+    b.send("cut", r=r, s=1, n=0, f=t0)  # a second swing at it: ignored
+    a.send("cut", r=r, s=2, n=0, f=t0 + 1)  # the host plays the CPUs: late, -1 (and a total can't go under 0)
+    at(go, times[1]["ready"] / clearcut_rules.FPS)
+    b.send("cut", r=r, s=1, n=1, f=logs[1]["T"] + late)  # late: -3 (or -2, -1)
+    a.s.settimeout(12)  # (quiet stretches longer than the usual 3 s)
+    res = a.wait("results", timeout=12)
+    cuts = [(m["s"], m["n"], m["f"], m["p"], m["e"]) for m in b.drain() if m["t"] == "cut"]
+    assert (0, 0, t0, 20, 20) in cuts and (1, 0, t0 - 2, 5, 5) in cuts and (2, 0, t0 + 1, -1, 0) in cuts, cuts
+    assert (1, 1, logs[1]["T"] + late, -late, 5 - late) in cuts, cuts
+    assert (3, 0, None, -10, 0) in cuts, "seat 3 didn't cut: a miss"
+    assert sum(1 for c in cuts if c[:2] == (1, 0)) == 1 and sum(1 for c in cuts if c[:2] == (0, 3)) <= 1
+    g = rooms.rooms[ccode].game
+    assert res["scores"] == g.scores and g.cuts[0][0] == (t0, 20) and g.cuts[1][0] == (t0 - 2, 5), (res, g.cuts)
+    assert g.scores[0] == 0 and g.scores[1] == 0, g.scores  # the logs they didn't cut: -10 each, down to 0
+    a.close()
+    b.close()
 
 
 @check("Telegram logins: checked, and no one can pose as a Telegram player")

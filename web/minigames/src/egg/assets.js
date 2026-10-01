@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
-import { retry, attemptURL, fetchRetry } from "./retry.js";
+import { retry, attemptURL, fetchRetry } from "../retry.js";
 
 THREE.ColorManagement.enabled = false; // colours are the game's own values
 
@@ -65,20 +65,16 @@ function image(url) {
   }, url);
 }
 
-// the HUD's pictures during a round (the countdown, and digits for the eggs
-// and the drops left), loaded now so a round doesn't wait on the server: once
-// the page has an image, its <img> elements reuse it
-const ROUND_UI = ["count3", "count2", "count1", "go", ...Array.from({ length: 10 }, (_, i) => "n" + i)];
-
-export async function loadAssets(base, onProgress = () => {}) {
+// base: Egg Emergency's own files (assets/egg/), ui: the HUD's pictures
+// shared by the minigames (assets/ui/)
+export async function loadAssets(base, ui, onProgress = () => {}) {
   const jobs = [];
   let done = 0;
   const job = (p) => { jobs.push(p); return p.then((x) => { onProgress(++done / jobs.length); return x; }); };
   const frames = (name, n, pad) => Promise.all([...Array(n)].map((_, i) =>
     job(spriteTexture(base + name + String(i).padStart(pad, "0") + ".png"))));
-  const big = Promise.all([...Array(10)].map((_, i) => job(image(base + "ui/big" + i + ".png"))));
-  const ui = Promise.all(ROUND_UI.map((name) => job(image(base + "ui/" + name + ".png"))));
-  const [chansey, info, egg, voltorb, splash, smoke, burst, sparks, backdrop, digits, plus, minus, roundUI] = await Promise.all([
+  const big = Promise.all([...Array(10)].map((_, i) => job(image(ui + "big" + i + ".png"))));
+  const [chansey, info, egg, voltorb, splash, smoke, burst, sparks, backdrop, digits, plus, minus] = await Promise.all([
     job(gltf(base + "chansey.glb")),
     job(fetchRetry(base + "chansey.json").then((r) => r.json())),
     job(gltf(base + "egg.glb")),
@@ -89,9 +85,8 @@ export async function loadAssets(base, onProgress = () => {}) {
     job(spriteTexture(base + "fx_sparks.png")),
     job(spriteTexture(base + "backdrop.jpg")),
     big,
-    job(image(base + "ui/plus.png")),
-    job(image(base + "ui/minus.png")),
-    ui,
+    job(image(ui + "plus.png")),
+    job(image(ui + "minus.png")),
   ]);
   prepare(chansey.scene);
   prepare(egg.scene);
@@ -118,7 +113,6 @@ export async function loadAssets(base, onProgress = () => {}) {
     backdrop,
     fx: { smoke, burst, sparks, splash },
     digits: { big: digits, plus, minus },
-    roundUI, // kept, so the browser keeps them
   };
 }
 

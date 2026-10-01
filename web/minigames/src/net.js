@@ -78,9 +78,13 @@ export class Net {
     }
   }
 
-  // the clock: offset from the round trip with the least delay of the last few
+  // the clock: offset from the round trip with the least delay of the last
+  // few. Each ping also tells the server a round trip to count on (typical),
+  // which it passes on so the others know how far behind to show this
+  // device's players (src/lag.js)
   ping() {
-    this.send("ping", { c: performance.now() });
+    const rtt = this.typical;
+    this.send("ping", { c: performance.now(), rtt: rtt === undefined ? undefined : Math.round(rtt) });
     this.pinger = setTimeout(() => this.ping(), this.samples.length < 6 ? 1000 : 8000);
   }
   pong(m) {
@@ -90,5 +94,11 @@ export class Net {
     const best = this.samples.reduce((a, b) => (b.rtt < a.rtt ? b : a));
     this.offset = best.off;
     this.rtt = best.rtt;
+  }
+  // a round trip to count on (ms): three in four of the last few were quicker
+  get typical() {
+    if (!this.samples.length) return undefined;
+    const r = this.samples.map((s) => s.rtt).sort((a, b) => a - b);
+    return r[Math.floor(0.75 * (r.length - 1))];
   }
 }

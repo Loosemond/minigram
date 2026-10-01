@@ -2,15 +2,17 @@
 library only. tools/serve_web.py serves it at /ws, next to the pages.
 
 Up to four people share a room, found by a four-letter code. Whoever has been
-in the room longest is its host: they pick the level and start the rounds. A
-round is the same for everyone: the server deals the drops and a start time on
-its own clock (the clients sync to it with ping/pong). Each device plays its
-own player, and the host's device also plays the CPUs; they send their leans,
-which the server passes on to the others. The server keeps the score itself
-from those leans (tools/egg_rules.py), so a device can't claim catches its
-player didn't make, and announces the ranking at the end. A dropped connection
-keeps its seat for a few seconds, so a reload or a network blip rejoins the
-same seat (and the same round, with its eggs).
+in the room longest is its host: they pick the minigame and the level and
+start the rounds. A round is the same for everyone: the server deals it (Egg
+Emergency's drops, Clear Cut Challenge's logs) and a start time on its own
+clock (the clients sync to it with ping/pong). Each device plays its own
+player, and the host's device also plays the CPUs; they send what their players
+do (Egg Emergency: the leans; Clear Cut Challenge: the cuts), which the server
+passes on to the others. The server keeps the score itself from those
+(tools/egg_rules.py, tools/clearcut_rules.py), so a device can't claim points
+its player didn't make, and announces the ranking at the end. A dropped
+connection keeps its seat for a few seconds, so a reload or a network blip
+rejoins the same seat (and the same round, with its score).
 
 Set TELEGRAM_BOT_TOKEN to check Telegram logins (then no one can pose as a
 Telegram player), and TYPESAFE_API_KEY to check names before others see them.
@@ -33,9 +35,11 @@ import time
 import urllib.parse
 import urllib.request
 
+import clearcut_rules
 import egg_rules
 
 SEATS = egg_rules.SEATS
+GAMES = ("egg", "clearcut")  # the minigames, as web/minigames/src/games.js names them
 LETTERS = "BCDFGHJKLMNPQRSTVWXZ"  # no vowels, so no code spells a word
 LEVELS = ("easy", "normal", "hard")
 GRACE = 8  # s a dropped connection keeps its seat
@@ -48,7 +52,7 @@ ROUND_MAX = 300  # s: no round lasts longer (they take about two minutes)
 IDLE = 45  # s without a message: the connection is dead (clients ping every 8 s)
 MAX_MESSAGE = 8192
 RATE, BURST = 60, 400  # messages a second a connection may send, and in one go
-CHANGE_GAP = 0.5  # s between renames or level changes
+CHANGE_GAP = 0.5  # s between renames, or level or game changes
 MAX_ROOMS = 500
 AUTH_MAX_AGE = 86400  # s a Telegram login stays good
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -148,6 +152,7 @@ class Member:
         self.done = False  # finished the round
         self.changed = 0  # the last rename or level change
         self.asked = None  # a name waiting for the name check
+        self.rtt = None  # ms: its device's round trip to here, as it measures it (for how far behind the others show it)
 
     def send(self, msg):
         if self.ws:
@@ -161,9 +166,10 @@ class Room:
         self.state = "lobby"  # or "playing"
         self.round = 0
         self.level = "normal"
+        self.minigame = "egg"
         self.seed = self.at = self.go = 0
         self.lineup = {}  # seat -> {id, name}: who plays this round; the other seats are CPUs
-        self.game = None  # the round's drops, leans and scores (egg_rules.Round)
+        self.game = None  # the round's rules and scores (egg_rules.Round, clearcut_rules.Round)
         self.started = None
 
     def broadcast(self, msg, skip=None):
@@ -190,21 +196,31 @@ class Room:
         """Whose device plays the seat now: its person's, or the host's for a CPU."""
         return self.members.get(seat if self.playing(seat) else self.host())
 
+    def rtt(self, seat):
+        """The round trip (ms) of the device that plays the seat now, if it's said."""
+        m = self.player(seat)
+        return round(m.rtt) if m and m.rtt is not None else None
+
     def lineup_info(self):
         return [dict(seat=s, name=p["name"], here=self.playing(s)) for s, p in sorted(self.lineup.items())]
 
     def snapshot(self):
-        return dict(t="room", room=self.code, state=self.state, round=self.round, level=self.level, host=self.host(),
+        return dict(t="room", room=self.code, state=self.state, round=self.round, level=self.level, game=self.minigame,
+                    host=self.host(),
                     players=[dict(seat=s, name=m.name, away=m.away is not None) for s, m in sorted(self.members.items())],
                     lineup=self.lineup_info() if self.state == "playing" else None)
 
     def start_msg(self):
         """The round, as a device needs it to play (also to rejoin it midway)."""
         g = self.game
-        return dict(t="start", round=self.round, seed=self.seed, level=self.level, at=self.at, go=self.go,
-                    host=self.host(), lineup=self.lineup_info(), drops=g.wire(), scores=g.scores,
-                    leans=[g.last_lean(s) for s in range(SEATS)], settled=g.next,
-                    hits=[h if h > -math.inf else None for h in g.hit])
+        msg = dict(t="start", game=self.minigame, round=self.round, seed=self.seed, level=self.level, at=self.at,
+                   go=self.go, host=self.host(), lineup=self.lineup_info(), rtt=[self.rtt(s) for s in range(SEATS)])
+        if self.minigame == "clearcut":
+            msg.update(g.wire())
+        else:
+            msg.update(drops=g.wire(), scores=g.scores, leans=[g.last_lean(s) for s in range(SEATS)], settled=g.next,
+                       hits=[h if h > -math.inf else None for h in g.hit])
+        return msg
 
 
 def _number(v):
@@ -342,6 +358,8 @@ def join(ws, msg):
             if len(rooms) >= MAX_ROOMS:
                 return _error(ws, "busy")
             room = rooms[code] = Room(code)
+            if msg.get("game") in GAMES:  # the one on the title of whoever makes the room
+                room.minigame = msg["game"]
         m = next((m for m in room.members.values() if m.id == cid), None)
         if m:  # the same player again (a reload, a new connection): same seat
             if m.ws and m.ws is not ws:
@@ -368,8 +386,11 @@ def start(room):
     room.seed = random.getrandbits(31)
     room.at = clock() + LEAD
     room.go = room.at + GO_DELAY
-    room.game = egg_rules.Round(room.seed)
     room.lineup = {s: dict(id=m.id, name=m.name) for s, m in room.members.items() if m.away is None}
+    if room.minigame == "clearcut":
+        room.game = clearcut_rules.Round(room.seed, room.level, cpus=len(room.lineup) < SEATS)
+    else:
+        room.game = egg_rules.Round(room.seed)
     room.started = time.monotonic()
     for m in room.members.values():
         m.done = False
@@ -396,7 +417,7 @@ def judge(room, s, upto, claim=None):
 
 
 def relay(room, m, t, msg):
-    """A lean or a result for seat s, from the device that plays it."""
+    """A lean, a result or a cut for seat s, from the device that plays it."""
     s = msg.get("s")
     if room.state != "playing" or msg.get("r") != room.round or type(s) is not int or not 0 <= s < SEATS \
             or not room.playing(m.seat):
@@ -406,6 +427,13 @@ def relay(room, m, t, msg):
     if not room.playing(s) and m.seat != room.host():
         return  # the CPUs are the host's
     g = room.game
+    if room.minigame == "clearcut":
+        n, f = msg.get("n"), msg.get("f")
+        if t == "cut" and type(n) is int and type(f) is int:
+            tell_cuts(room, s, g.cut(s, n, f, room.now()) or [])
+        return
+    if t == "cut":
+        return
     if t == "lean":
         l = max(-1, min(1, int(_number(msg.get("l")))))
         at = g.lean(s, float(_number(msg.get("g"))), l)
@@ -415,6 +443,23 @@ def relay(room, m, t, msg):
         if type(n) is not int or not 0 <= n < len(g.drops[s]) or g.arrive[s][n] > room.now() + SLACK:
             return
         judge(room, s, g.arrive[s][n], (m, n, msg.get("k"), msg.get("e")))
+
+
+def tell_cuts(room, s, results):
+    """Clear Cut Challenge: what seat s's cuts (or misses) came to, to everyone."""
+    for n, f, p, e, a in results:
+        msg = dict(t="cut", r=room.round, s=s, n=n, f=f, p=p, e=e)
+        if a:
+            msg["a"] = 1  # a miss it may swing again after: it doesn't count yet
+        room.broadcast(msg)
+
+
+def settle(room, s, upto):
+    """Judge seat s's round up to round time upto: what hasn't been reported is missed."""
+    if room.minigame == "clearcut":
+        tell_cuts(room, s, room.game.settle(s, upto))
+    else:
+        judge(room, s, upto)
 
 
 def check_end(room):
@@ -427,7 +472,7 @@ def check_end(room):
     if players and not finished and now < g.end + END_WAIT and time.monotonic() - room.started < ROUND_MAX:
         return
     for s in range(SEATS):
-        judge(room, s, math.inf)
+        settle(room, s, math.inf)
     results = dict(t="results", round=room.round, scores=g.scores, lineup=room.lineup_info())
     room.state, room.lineup = "lobby", {}
     room.broadcast(results)
@@ -453,14 +498,17 @@ def handle(room, m, msg):
     """One message from a member. False: the connection should close."""
     t = msg.get("t")
     if t == "ping":
+        rtt = msg.get("rtt")
+        if type(rtt) in (int, float) and 0 <= rtt < 10000:
+            m.rtt = rtt
         m.send(dict(t="pong", c=msg.get("c"), s=clock()))
-    elif t in ("lean", "ev"):
+    elif t in ("lean", "ev", "cut"):
         relay(room, m, t, msg)
     elif t == "done":
         if room.state == "playing" and msg.get("r") == room.round and room.playing(m.seat):
             m.done = True
             check_end(room)
-    elif t in ("name", "level"):
+    elif t in ("name", "level", "game"):
         if time.monotonic() - m.changed < CHANGE_GAP:
             return True
         m.changed = time.monotonic()
@@ -468,6 +516,9 @@ def handle(room, m, msg):
             rename(room, m, msg.get("name"))
         elif t == "level" and room.state == "lobby" and m.seat == room.host() and msg.get("level") in LEVELS:
             room.level = msg["level"]
+            room.broadcast(room.snapshot())
+        elif t == "game" and room.state == "lobby" and m.seat == room.host() and msg.get("game") in GAMES:
+            room.minigame = msg["game"]
             room.broadcast(room.snapshot())
     elif t == "start":
         if room.state == "lobby" and m.seat == room.host():
@@ -488,11 +539,11 @@ def _reap():
                     if m.away is not None and now - m.away > GRACE:
                         remove(room, m)
                 if room.state == "playing":
-                    # the drops no one reported: missed, unless the leans say otherwise
+                    # what no one reported: missed (Egg Emergency: unless the leans say otherwise)
                     for s in range(SEATS):
                         p = room.player(s)
                         if p and p.ws:  # (not while its device is reconnecting)
-                            judge(room, s, room.now() - SETTLE_LAG)
+                            settle(room, s, room.now() - SETTLE_LAG)
                     check_end(room)
 
 

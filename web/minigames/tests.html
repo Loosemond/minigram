@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Egg Emergency: tests</title>
+<title>Minigames: tests</title>
 <link rel="icon" href="data:,">
 <style>
   html, body { margin: 0; height: 100%; background: #111; color: #ddd; font: 14px/1.4 system-ui, sans-serif; }
@@ -22,15 +22,14 @@
 </style>
 </head>
 <body>
-<!-- Regression tests for the game and online play, in the browser, against the
-     rooms server: run tools/serve_web.py and open this page, and keep it
-     showing (browsers pause hidden pages' games; the tests that play in real
-     time wait for it). They play real games in the frames and take about two
+<!-- Regression tests for the minigames and online play, in the browser,
+     against the rooms server: run tools/serve_web.py and open this page
+     (hidden, it steps the games itself, as browsers pause hidden pages'
+     animation). They play real games in the frames and take about three
      minutes. The results go in the title (PASS, FAIL or INCONCLUSIVE), the
      list, the console, and window.results (ok: true, false, or null for
      inconclusive). -->
-<div id="report"><h1>Egg Emergency tests</h1>
-  <p id="wait" hidden>Waiting for this page to show: hidden pages pause the games.</p>
+<div id="report"><h1>Minigames tests</h1>
   <ol id="list"></ol></div>
 <div id="frames"></div>
 <script type="module" src="tests.js"></script>

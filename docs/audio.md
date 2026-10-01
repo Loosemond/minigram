@@ -13,7 +13,7 @@ MIDI-like script of a few KB (a top level that starts up to 16 channels, each
 running up to 4 note layers), played on **soundfont** instruments whose
 samples are short **VADPCM** clips (9 bytes per 16 samples, about 4.5 bits a
 sample). The N64's RSP mixes the notes as they play. `tools/ps2tool/audio.py`
-reads all of it; `web/egg-emergency/src/n64audio.js` plays it in the browser.
+reads all of it; `web/minigames/src/n64audio.js` plays it in the browser.
 
 ## Where it is
 
@@ -69,7 +69,7 @@ What each minigame's code module asks for:
 | Minigame | Song | Sequence |
 |---|---|---|
 | Gutsy Golbat | 13 | 52 |
-| Clear Cut Challenge | 19, 18 | 58, 57 |
+| Clear Cut Challenge | 19, 18 | 58, 57 (18: while each log is hauled up; 19: when the pieces are shown) |
 | Pichu's Power Plant | 21 | 60 |
 | Streaming Stampede | 30, 31, 32 | 69, 70, 71 |
 | Topsy-Turvy | 33 | 72 |
@@ -133,6 +133,33 @@ uses:
 
 The finish whistle's script is shared by sounds `0x85`, `0x86`…: it writes
 its note (21 + the sound number − 133) into itself before playing it.
+
+An id's middle digit isn't always `F`: the game calls `0x80027764(id, pan)`
+too, and ids like `0x1005` or `0x1B06` are bank 1's entries 5 and 6 all the
+same (the low byte is the entry). Clear Cut Challenge's (module #53) are bank
+1's, and the shared ones it uses:
+
+| Id | Sound | Effects of font 12 | When (from the code) |
+|---|---|---|---|
+| `0x1F00` | `0x07` | | a cut |
+| `0x1F01` | `0x08` | | a swing that misses |
+| `0x1005` | `0x0C` | 11 (4.8 s: a crowd, *by context*) | every frame from a log hanging ready to 50 frames after its drop |
+| `0x1B06` | `0x0D` | 12 (3 s) | as each log comes up |
+| `0x1C07`, `0x1D08`, `0x1E09` | `0x0E`, `0x0F`, `0x10` | 13, 14, 15 (2-4 s: the crowd reacting, *by context*) | 50 frames after a drop, for the best cut: a perfect one, 14-19 points (a cut can't score that), any points |
+| `0x1F0A` | `0x11` | | a Scyther gets ready, or lowers its scythes after a log |
+| `0x1F0B` | `0x12` | | a player's points are in |
+| `0x1F0C` | `0x2D` | | a perfect cut |
+| `0x1F0D`, `0x1F0E` | second table `0x22`, `0x23` | | the count and GO |
+| `0x1F04` | `0x0B` | | at three frames of Pinsir's clips |
+| `0xCF0B` | `0x86` | 86 | the finish whistle (the song fades out for 40 frames with it) |
+
+These five share a script that picks the effect from the sound number as it
+plays (effect = sound − 1), so `tools/web_assets.py` lists them by hand. It
+repeats one long note until the sound is stopped (0 on port 0 of its
+channel): `0x0C` has channel 9 to itself, and the game's sound manager stops
+it once it's no longer asked for; `0x0D`-`0x10` share channel 14, each
+taking over from the last, and carry on until the module stops every sound as
+it leaves (`0x80027ED0(0xFFE)`).
 
 ## Timing
 

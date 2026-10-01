@@ -1,7 +1,7 @@
 <!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chansey clips</title>
+<title>Clips</title>
 <style>
   body { margin: 0; background: #4a5566; color: #fff; font: 12px system-ui, sans-serif; }
   #grid { display: grid; grid-template-columns: repeat(4, 1fr); }
@@ -17,31 +17,42 @@
                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }
 </script>
 <script type="module">
-// Dev page: every Chansey clip side by side, to name them. ?t=seconds freezes at that time.
+// Dev page: every clip of a model side by side, to name them.
+// ?model=assets/clearcut/scyther.glb (default: Chansey), ?t=seconds freezes at that time.
 import * as THREE from "three";
-import { loadAssets, makeChansey } from "./src/assets.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { clone } from "three/addons/utils/SkeletonUtils.js";
 
-const assets = await loadAssets("assets/");
+THREE.ColorManagement.enabled = false;
+const q = new URLSearchParams(location.search);
+const url = q.get("model") || "assets/egg/chansey.glb";
+const gltf = await new GLTFLoader().loadAsync(url);
+const box = new THREE.Box3().setFromObject(gltf.scene);
+const size = box.getSize(new THREE.Vector3()), mid = box.getCenter(new THREE.Vector3());
 const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById("c"), antialias: true });
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
 renderer.setPixelRatio(devicePixelRatio);
 renderer.setClearColor(0x4a5566);
 const grid = document.getElementById("grid");
-const freeze = new URLSearchParams(location.search).get("t");
-const views = assets.chansey.clips.map((clip, i) => {
+const freeze = q.get("t");
+const clips = gltf.animations.slice().sort((a, b) => a.name.localeCompare(b.name));
+const views = clips.map((clip, i) => {
   const cell = grid.appendChild(document.createElement("div"));
   cell.innerHTML = `<span>${i} ${clip.name} ${clip.duration.toFixed(2)}s</span>`;
   const scene = new THREE.Scene();
-  scene.add(new THREE.AmbientLight(0xffffff, 0.5 * Math.PI));
-  const sun = new THREE.DirectionalLight(0xffffff, 0.55 * Math.PI);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6 * Math.PI));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.5 * Math.PI);
   sun.position.set(0.4, 1, 0.8);
   scene.add(sun);
-  const ch = makeChansey(assets);
-  scene.add(ch.root);
-  ch.play(i, { loop: true });
-  const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
-  cam.position.set(0, 1.2, 4.2);
-  cam.lookAt(0, 0.6, 0);
-  return { cell, scene, cam, ch };
+  const model = clone(gltf.scene);
+  scene.add(model);
+  const mixer = new THREE.AnimationMixer(model);
+  mixer.clipAction(clip).play();
+  const d = Math.max(size.x, size.y) * 1.6;
+  const cam = new THREE.PerspectiveCamera(30, 1, d / 100, d * 10);
+  cam.position.set(mid.x, mid.y + size.y * 0.1, mid.z + d * 1.4);
+  cam.lookAt(mid.x, mid.y, mid.z);
+  return { cell, scene, cam, mixer, clip };
 });
 const clock = new THREE.Clock();
 function frame() {
@@ -51,7 +62,7 @@ function frame() {
   renderer.setScissorTest(true);
   renderer.clear();
   for (const v of views) {
-    if (freeze !== null) v.ch.seek(+freeze); else v.ch.update(dt);
+    if (freeze !== null) v.mixer.setTime(Math.min(+freeze, v.clip.duration)); else v.mixer.update(dt);
     const r = v.cell.getBoundingClientRect();
     if (r.bottom < 0 || r.top > H) continue;
     renderer.setViewport(r.left, H - r.bottom, r.width, r.height);
@@ -61,4 +72,5 @@ function frame() {
   requestAnimationFrame(frame);
 }
 frame();
+window.clips = { views, render: frame };
 </script>
