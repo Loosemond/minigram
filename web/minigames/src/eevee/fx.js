@@ -1,7 +1,8 @@
 // Eager Eevee's effects, from image bank 307 (the module's puffs, glows and
 // streaks) on sprites: a Pineco going off (0x86B052BC: a flash and smoke,
 // then sparks round it at its frames 25, 28, 31, 40 and 43: 0x86B04244) and
-// the sparkle of a prize got (0x86B04970). *By appearance*: the module's own
+// a sparkle as strawberries are got (made up: the game sends a strawberry off
+// the pile for each one eaten, 0x86B04970). *By appearance*: the module's own
 // effects are objects 203, 204 and 207 (flat shapes coloured as they're drawn).
 import * as THREE from "three";
 

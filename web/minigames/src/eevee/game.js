@@ -227,7 +227,9 @@ export class Game {
         if (A) this.act(z, "a", t); else if (B) this.act(z, "b", t);
       }
     }
+    this.gotIn = [];
     for (const e of this.eevees) this.move(e, t);
+    if (this.gotIn.length) this.taken(this.gotIn, t);
     // who gets the prize (solo; online the server says)
     if (!this.online && !this.verdict[n]) {
       const res = R.judge(rd, T, this.players.map((p) => p.runner.in[n]));
@@ -357,6 +359,7 @@ export class Game {
   arrived(e) {
     e.won = false;
     if (this.rounds[e.round].kind === R.PINECO) { this.blowUp(e); return; }
+    if (this.prize?.root.visible && this.contentsRound === e.round) this.gotIn.push(e);
     this.goMode(e, "grab");
     const v = this.verdict[e.round];
     if (v) this.heard(e, v);
@@ -397,11 +400,45 @@ export class Game {
     this.aipom.play(clip, { loop: clip === AIPOM.idle, restart: true, fade: 0.05 });
   }
   clearContents() {
+    if (this.flying) this.land();
     this.contents.clear();
     this.piles = null;
     this.pineco = null;
     this.prize = null;
     this.contentsRound = -1;
+  }
+  // The fruit's taken: it goes on the frame an Eevee gets in (0x86B03628), and
+  // a copy of it (clip 1, held) pops up and fades out, from 255 (0x86B04970,
+  // moved by 0x86B04870): for one Eevee straight up, 12, 12.5 or 13 a frame,
+  // less 1 a frame, fading 5 a frame, for 25 frames; for a tie, 24 up, less 2,
+  // fading 21, for 12 frames, and off away from them (-3/25 of where they are,
+  // added up, a frame).
+  taken(es, t) {
+    this.prize.root.visible = false;
+    const tie = es.length > 1, m = makeModel(this.prizeAsset, FRUIT_SCALE);
+    m.play(1, { loop: false, fade: 0, restart: true });
+    m.seek(0);
+    m.update(0);
+    m.root.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.transparent = true; } });
+    this.contents.add(m.root);
+    let vx = 0, vz = 0;
+    if (tie) for (const e of es) { vx -= (3 * e.m.root.position.x) / 25; vz -= (3 * e.m.root.position.z) / 25; }
+    this.flying = { m, t0: t / R.FPS, vx, vz, vy: tie ? 24 : [12, 12.5, 13][(Math.random() * 3) | 0],
+                    g: tie ? 2 : 1, fade: tie ? 21 : 5, life: tie ? 12 : 25 };
+    this.fly();
+  }
+  fly() {
+    const f = this.flying, k = Math.max(0, (this.time - f.t0) * R.FPS); // (frames since)
+    if (k >= f.life) { this.land(); return; }
+    f.m.root.position.set(f.vx * k, f.vy * k - (f.g * k * (k - 1)) / 2, f.vz * k);
+    const a = Math.max(0, 255 - f.fade * k) / 255;
+    f.m.root.traverse((o) => { if (o.isMesh) o.material.opacity = a; });
+  }
+  land() {
+    const f = this.flying;
+    this.flying = null;
+    this.contents.remove(f.m.root);
+    f.m.root.traverse((o) => { if (o.isMesh) o.material.dispose(); });
   }
   showContents(n) {
     this.clearContents();
@@ -409,7 +446,10 @@ export class Game {
     const rd = this.rounds[n], a = this.assets;
     const add = (asset, s) => { const m = makeModel(asset, s); m.play(0, { loop: true, restart: true, fade: 0 }); this.contents.add(m.root); return m; };
     if (rd.kind === R.PINECO) this.pineco = add(a.pineco, PINECO_SCALE);
-    else if (rd.kind === R.FRUIT) this.prize = add(rd.fruit === R.MELON ? a.melon : a.grapes, FRUIT_SCALE);
+    else if (rd.kind === R.FRUIT) {
+      this.prizeAsset = rd.fruit === R.MELON ? a.melon : a.grapes;
+      this.prize = add(this.prizeAsset, FRUIT_SCALE);
+    }
     else {
       this.piles = [];
       for (let k = 0; k < rd.piles; k++) {
@@ -423,9 +463,9 @@ export class Game {
   drawContents(n, t) {
     if (this.contentsRound !== n) return;
     const v = this.verdict[n], rd = this.rounds[n];
-    if (this.prize) { // gone once the winner's in the middle and eating
-      this.prize.root.visible = !(v && this.eevees.some((e) => v.got[e.z] && e.round === n && e.mode === "eat"));
-    }
+    // (the fruit goes as an Eevee gets in: taken; this for a winner online whose
+    // dash never got here)
+    if (this.prize && v?.got.some(Boolean) && t >= v.decided + R.FPS) this.prize.root.visible = false;
     if (this.piles) { // the piles go down as they're eaten
       const left = v && t > v.decided ? this.piles.map(() => 0) : R.eat(rd, this.players.map((p) => p.runner.in[n]), t);
       this.piles.forEach((m, k) => {
@@ -452,6 +492,7 @@ export class Game {
     } else if (this.aipomClip === AIPOM.call && this.aipomT >= CALL_FRAMES) this.setAipom(AIPOM.idle);
     this.aipom.update(dt);
     for (const m of [this.prize, this.pineco, ...(this.piles || [])]) m?.update(dt);
+    if (this.flying) this.fly();
   }
   setClip(e, c) {
     e.clip = c;

@@ -100,7 +100,7 @@ export async function create(shell, onProgress) {
     shell.sound("got", z);
     if (mine(z)) { shell.haptic("success"); shell.flash(z, "bump"); }
     showPoints(z, pts);
-    fx.sparkle(centre);
+    if (game.now.rd.kind !== R.FRUIT) fx.sparkle(centre); // (the fruit pops up instead: game.js taken)
   });
   let boomed = -1;
   game.on("blown", (z) => { // (0xAF06, the flash and smoke for the first: 0x86B03C40; 0xAF0B for each)

@@ -412,9 +412,16 @@ image bank 389: grapes, Pineco, melon, strawberries); "Points" (430).
 
 **The fruit and the effects**: the basket's contents are at the middle,
 0.355556× (the Pineco 0.5×; `0x86B04500`), the final round's three piles at
-(0, 0, 0), (−4.46, −10, 0) and (4.46, −10, 0) in the contents' own units. One
-strawberry (object 211) is what an effect started for each one eaten uses
-(`0x86B04970`, `0x86B05010`: *not read further*); objects 203, 204 and 207 are
+(0, 0, 0), (−4.46, −10, 0) and (4.46, −10, 0) in the contents' own units. The
+fruit goes on the frame an Eevee gets in (the contents object is removed:
+`0x86B05548` counts the Eevee within 45 and makes a mask of them), and a pile
+of strawberries when it's empty. What was got flies off as a copy
+(`0x86B04970`, moved by `0x86B04870`): the melon or grapes (clip 1, held;
+0.355556×), a strawberry for each one eaten (object 211, 0.248889×, off to
+its Eevee over 25 frames) or the Pineco (0.5×, clip 2). It goes up 12, 12.5
+or 13 a frame, less 1 a frame, and fades from 255, 5 a frame, for 25 frames;
+in a tie at the fruit 24 up, less 2, fading 21, for 12 frames, and off away
+from the winners (−3/25 of their positions, added up, a frame). Objects 203, 204 and 207 are
 the Pineco's smoke and sparks (`0x86B052BC`, `0x86B05484`), with image bank
 307 (puffs, glows, streaks).
 

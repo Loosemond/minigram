@@ -291,7 +291,7 @@ What comes from the ROM and what is made up:
 | From the game | Made for the remake |
 |---|---|
 | the rules, the timings, the scoring, the rounds' scripts, the presses and the CPUs (module #61's code) | each round's length, fixed (the race goes on 150 frames after the basket's up; the game's ends once every Eevee's back), so every device agrees; after a Pineco round the next basket always waits 70-120 frames (the game does when an Eevee's still away) |
-| Eevee (object 143) and which clip it plays for what, Aipom and its basket (150), the fruit (209, 213, 216), Pineco (151) | the effects (the game's are objects 203, 204 and 207, drawn by its code, and image bank 307; these use bank 307), a strawberry flying off a pile isn't shown, the piles shrink instead |
+| Eevee (object 143) and which clip it plays for what, Aipom and its basket (150), the fruit (209, 213, 216), Pineco (151); the fruit going as an Eevee gets in, a copy of it popping up | the effects (the game's are objects 203, 204 and 207, drawn by its code, and image bank 307; these use bank 307), a strawberry flying off a pile isn't shown, the piles shrink instead, and a sparkle as they're got |
 | the camera, the field (background picture 44: its ring, ground and trees, measured), the Eevee's places, the prize slots (bank 389), "ROUND 1" … (392), the ". sec." box (393, 394) | the field in 3D (the forest round the front of the clearing, which the game's camera never sees, is made up), the rope's top, the portrait camera, the arrow over your Eevee, the Dash and Feint pads |
 | songs 53, 54 and 101, the effects (bank 10 of the effect table) | |
 
