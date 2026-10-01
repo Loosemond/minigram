@@ -1,5 +1,5 @@
 """Tests for the rooms server (tools/rooms.py) and its rules (tools/egg_rules.py,
-tools/clearcut_rules.py).
+tools/clearcut_rules.py, tools/eevee_rules.py).
 
     python3 tools/test_rooms.py
 
@@ -24,6 +24,7 @@ import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import clearcut_rules  # noqa: E402
+import eevee_rules  # noqa: E402
 import egg_rules  # noqa: E402
 import rooms  # noqa: E402
 
@@ -33,6 +34,9 @@ JS_SCHEDULES = {1: "ba64e35664b2591f", 12345: "36b3b248013c25c9", 2 ** 31 - 1: "
 # deal() in web/minigames/src/clearcut/rules.js, for every level code: each log's
 # target, wait and the bits of its line (web/minigames/tests.js has the same)
 JS_DEALS = {1: "845261658a294406", 12345: "dcaad7cc4c79a603", 2 ** 31 - 1: "8c853818348d493e"}
+# deal() in web/minigames/src/eevee/rules.js, for levels 1-3: each round's
+# kind, fruit, piles, open and fakes (web/minigames/tests.js has the same)
+JS_EEVEE = {1: "d54a9e4e6d7d05ec", 12345: "e4663aef5698855e", 2 ** 31 - 1: "60c971ff1eb41fe2"}
 
 # a short round, the same for every seat: (t, col, kind, fall); they reach the
 # hands at 0.5, 0.8, 1.1 (the Voltorb), 1.4 and 2.1
@@ -195,6 +199,42 @@ def _():
     fall = clearcut_rules.Fall(2)
     got = [clearcut_rules.judge(fall, {"T": 20}, f) for f in (20, 19, 18, 13, 21, 25, 26, 0, None)]
     assert got == [20, 10, 5, -10, -1, -5, -10, -10, -10], got
+
+
+@check("Eager Eevee: the rounds match the game's, bit for bit")
+def _():
+    for seed, want in JS_EEVEE.items():
+        s = "".join("%d,%d,%d,%d,%s;" % (rd["kind"], rd["fruit"], rd["piles"], rd["open"], "/".join(map(str, rd["fakes"])))
+                    for level in (1, 2, 3) for rd in eevee_rules.deal(seed, level))
+        assert hashlib.sha256(s.encode()).hexdigest()[:16] == want, seed
+    rs = eevee_rules.deal(12345, 2)
+    assert [(r["kind"], r["open"], r["fakes"]) for r in rs][:2] == [(1, 165, [29, 70, 145]), (0, 132, [])], rs
+    assert all(r["kind"] != eevee_rules.PINECO for s in range(50) for r in eevee_rules.deal(s, 1)[:1])  # (none first on Easy)
+
+
+@check("Eager Eevee: a dash, a feint, the basket and a Pineco; who gets the prize")
+def _():
+    rs = eevee_rules.deal(12345, 2)
+    times = eevee_rules.timeline(rs)
+    t1 = times[1]
+    r = eevee_rules.Runner(times, rs)
+    assert r.press("a", t1["play"] - 1) is None  # (in Aipom's call: A doesn't work yet)
+    assert r.press("b", t1["play"] + 5) == (1, False, None) and r.ready == t1["play"] + 16  # a feint: 11 frames
+    assert r.press("a", t1["play"] + 10) is None
+    assert r.press("a", t1["play"] + 16) == (1, True, None) and r.ready == t1["play"] + 16 + 87  # into the basket
+    o = t1["open"]
+    assert r.press("a", o + 4) == (1, False, o + 8)  # the basket's up: in 4 frames later
+    assert r.press("b", o + 20) is None  # (in: done this round)
+    t3 = times[3]  # a Pineco: blown away, back once the ring's been round
+    r3 = eevee_rules.Runner(times, rs)
+    assert r3.press("a", t3["open"] + 6)[2] == t3["open"] + 10 and r3.ready == r3.blown_back(t3["open"] + 6) > t3["end"] + 200
+    melon = dict(kind=eevee_rules.FRUIT, fruit=eevee_rules.MELON, piles=1)
+    assert eevee_rules.judge(melon, [30, 30, 31, None]) == ([1000, 1000, 0, 0], 30)  # a tie shares it
+    berries = dict(kind=eevee_rules.BERRIES, fruit=0, piles=1)
+    assert eevee_rules.judge(berries, [40, 42, None, None]) == ([600, 400, 0, 0], 45)  # 2 alone, then 4 each
+    three = dict(kind=eevee_rules.BERRIES, fruit=0, piles=3)
+    assert eevee_rules.judge(three, [None, 50, None, None]) == ([0, 3000, 0, 0], 59)  # three a frame, ten frames
+    assert eevee_rules.judge(melon, [None] * 4) is None
 
 
 @check("Clear Cut Challenge: after a miss a seat swings again 45 frames on, unless it swung too early")
@@ -432,6 +472,74 @@ def _():
     assert g.scores[0] == 0 and g.scores[1] == 0, g.scores  # the logs they didn't cut: -10 each, down to 0
     a.close()
     b.close()
+
+
+@check("Eager Eevee: the server judges the races and stops cheats")
+def _():
+    short = [dict(n=n, kind=k, fruit=f, piles=p, open=12, fakes=[], final=n == 4)
+             for n, (k, f, p) in enumerate([(eevee_rules.FRUIT, eevee_rules.MELON, 1), (eevee_rules.BERRIES, 0, 1),
+                                            (eevee_rules.PINECO, 0, 1), (eevee_rules.FRUIT, eevee_rules.GRAPES, 1),
+                                            (eevee_rules.BERRIES, 0, 3)])]
+    saved = eevee_rules.deal, eevee_rules.INTRO, eevee_rules.AFTER
+    eevee_rules.deal, eevee_rules.INTRO, eevee_rules.AFTER = (lambda seed, level: [dict(r) for r in short]), 3, 30
+    try:
+        a, b = Client("EA"), Client("EB")
+        a.send("hello", id="ea", name="Eve", game="eevee")
+        code = a.wait("welcome")["room"]
+        b.send("hello", id="eb", name="Fay", room=code)
+        b.wait("welcome")
+        time.sleep(rooms.CHANGE_GAP)
+        a.drain()
+        b.drain()
+        a.send("start")
+        st = a.wait("start")
+        assert st["game"] == "eevee" and st["ee"] == dict(level=2, scores=[0] * 4, prizes=[[None] * 5] * 4), st
+        go, r = st["go"], st["round"]
+        times = eevee_rules.timeline(short)  # (rounds of 45 frames: the open at 15)
+
+        def dash(c, seat, f, k="a"):
+            at(go, (f + 0.2) / eevee_rules.FPS)
+            c.send("dash", r=r, s=seat, k=k, f=f)
+
+        o = times[0]["open"]
+        dash(b, 1, o + 5)  # in at o + 9
+        dash(a, 2, o + 5)  # the host plays the CPUs: a tie
+        dash(a, 0, o + 6)  # a frame late
+        b.send("dash", r=r, s=0, k="a", f=o + 6)  # someone else's player: ignored
+        b.send("dash", r=r, s=1, k="a", f=o + 7)  # in already: ignored
+        got = a.wait("got", timeout=4)
+        assert (got["n"], got["p"], got["e"]) == (0, [0, 1000, 1000, 0], [0, 1000, 1000, 0]), got
+        seen = [(m["s"], m["f"]) for m in b.drain() if m["t"] == "dash"]
+        assert sorted(seen) == [(0, o + 6), (2, o + 5)], seen  # (its own isn't sent back)
+        o = times[1]["open"]  # strawberries: seat 0 alone for 2 frames, then both
+        dash(a, 0, o + 4)
+        dash(b, 1, o + 6)
+        got = b.wait("got", timeout=4)
+        assert (got["n"], got["p"]) == (1, [600, 400, 0, 0]), got
+        o = times[2]["open"]  # a Pineco: no prize, and blown away for a good while
+        dash(a, 3, o + 4)
+        dash(a, 0, o + 5)
+        o = times[3]["open"]
+        dash(b, 1, o - 2)  # before the basket's up: into it
+        dash(b, 1, o + 5)  # ...and not back yet
+        dash(a, 0, o + 5)  # still blown away
+        dash(a, 2, o + 7)
+        at(go, (o + 20) / eevee_rules.FPS)
+        a.send("dash", r=r, s=3, k="a", f=o + 6)  # 13 frames old: counts as no earlier than the way here allows
+        got = a.wait("got", timeout=4)
+        while got["n"] < 3:
+            got = a.wait("got", timeout=4)
+        assert (got["n"], got["p"]) == (3, [0, 0, 500, 0]), got
+        a.s.settimeout(8)
+        res = a.wait("results", timeout=8)
+        g = rooms.rooms[code].game
+        assert res["scores"] == g.scores == [600, 1400, 1500, 0], (res, g.scores)
+        assert g.prizes[0][:4] == [None, "berries", "pineco", None] and g.prizes[3][2] == "pineco", g.prizes
+        assert g.runners[3].got_in[3] is None or g.runners[3].got_in[3] >= o + 20 - int(rooms.ALLOW_GUESS * eevee_rules.FPS) + 4
+        a.close()
+        b.close()
+    finally:
+        eevee_rules.deal, eevee_rules.INTRO, eevee_rules.AFTER = saved
 
 
 @check("Telegram logins: checked, and no one can pose as a Telegram player")

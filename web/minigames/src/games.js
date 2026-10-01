@@ -36,5 +36,22 @@ export const GAMES = {
     messages: ["cut"],
     load: () => import("./clearcut/index.js"),
   },
+  eevee: {
+    id: "eevee",
+    name: "Eager Eevee",
+    banner: "assets/ui/title_eevee.png", // image bank 388
+    art: "assets/eevee/backdrop.jpg",
+    color: "#2f4a24",
+    how: `When Aipom lifts the basket, tap to make Eevee <b>dash</b> to what's under it:
+      a melon (1000 points), grapes (500) or strawberries (100 each, shared). Tap <b>Feint</b>
+      to fake a dash. Dash too soon and Eevee runs into the basket; dash at a
+      <b class="volt">Pineco</b> and it blows up! Five races: the highest score wins.`,
+    keys: "Keyboard: <kbd>Space</kbd> dash, <kbd>B</kbd> feint",
+    unit: (n) => `${n}<small>pts</small>`,
+    invite: "Race to the fruit with me in Eager Eevee!",
+    store: "eevee_",
+    messages: ["dash", "got"],
+    load: () => import("./eevee/index.js"),
+  },
 };
-export const ORDER = ["egg", "clearcut"];
+export const ORDER = ["egg", "clearcut", "eevee"];

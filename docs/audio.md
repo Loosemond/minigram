@@ -78,7 +78,7 @@ What each minigame's code module asks for:
 | Tumbling Togepi | 46 | 85 |
 | Furret's Frolic | 47 | 86 |
 | Delibird's Delivery | 52 | 91 |
-| Eager Eevee | 53, 54 | 92, 93 |
+| Eager Eevee | 53, 54, 101 | 92 (a held roll, after each prize), 93 (as Aipom calls each round; 101 is 54, 40 beats a minute faster, for the final one) |
 
 Rampage Rollout passes its song in a register. After the finish, the
 minigame results (module #45) play songs 76 (sequence 115) and 55

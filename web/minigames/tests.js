@@ -13,6 +13,10 @@ const results = (window.results = []);
 const SCHEDULES = { 1: "ba64e35664b2591f", 12345: "36b3b248013c25c9", 2147483647: "9812a4cb6c5a99c7" };
 // Clear Cut Challenge's deal() for every level code: the same as JS_DEALS in tools/test_rooms.py
 const DEALS = { 1: "845261658a294406", 12345: "dcaad7cc4c79a603", 2147483647: "8c853818348d493e" };
+// Eager Eevee's deal() for levels 1-3: the same as JS_EEVEE in tools/test_rooms.py
+const EEVEE = { 1: "d54a9e4e6d7d05ec", 12345: "e4663aef5698855e", 2147483647: "60c971ff1eb41fe2" };
+// how soon after the basket comes up the CPUs dash (frames, on average), by level (rules.js cpuPlan)
+const DASH_TARGETS = { easy: [23.5, 26.5], normal: [18.5, 21.5], hard: [15.5, 18.5] };
 // what it takes to win a solo round: the best of the three CPUs, on average
 // over simulated rounds (Egg Emergency: the tuning in LEVELS in its game.js;
 // Clear Cut Challenge: the game's own CPUs, rules.js cpuPlan)
@@ -125,6 +129,20 @@ function autocut(w, early) {
     step.call(api, dt, on);
     const g = api.game, z = w.mg.me(), fr = g.time * 30, at = on && g.logAt(fr);
     if (at && !g.players[z].cuts[at.n] && fr >= at.t.drop + g.logs[at.n].T - early) g.press();
+  };
+  return () => { api.step = step; };
+}
+
+// a scripted Eager Eevee player: dashes `after` frames after the basket comes
+// up (not at a Pineco), from inside the game's steps
+function autodash(w, after) {
+  const api = w.mg.mini, step = api.step;
+  api.step = function (dt, on) {
+    step.call(api, dt, on);
+    const g = api.game, z = w.mg.me();
+    if (!on || g.state !== "play") return;
+    const { T, rd, t } = g.now;
+    if (rd.kind !== 2 && t >= T.open + after && g.players[z].runner.can(t)) g.press("a");
   };
   return () => { api.step = step; };
 }
@@ -339,6 +357,103 @@ await test("Clear Cut Challenge: its music and sound effects play from sound.bin
   return "the crowd stops";
 }));
 
+await test("Eager Eevee: the rounds are the same as the server's copy of them", async () => {
+  const R = await moduleOf(solo, "./src/eevee/rules.js");
+  for (const [seed, want] of Object.entries(EEVEE)) {
+    let s = "";
+    for (const level of [1, 2, 3]) for (const rd of R.deal(+seed, level)) s += `${rd.kind},${rd.fruit},${rd.piles},${rd.open},${rd.fakes.join("/")};`;
+    const got = await sha16(s);
+    assert(got === want, `seed ${seed}: ${got}; tools/eevee_rules.py expects ${want} (update both, and the digests)`);
+  }
+  for (let s = 0; s < 50; s++) assert(R.deal(s, 1)[0].kind !== R.PINECO, "a Pineco in the first round on Easy");
+  const last = R.deal(12345, 2)[4];
+  assert(last.kind === R.BERRIES && last.piles === 3, "the final round isn't three piles of strawberries");
+});
+
+await test("Eager Eevee: a dash, a feint, the basket and a Pineco, as in the game", async () => {
+  const R = await moduleOf(solo, "./src/eevee/rules.js");
+  const rs = R.deal(12345, 2), times = R.timeline(rs), T = times[1], r = new R.Runner(times, rs);
+  assert(!r.press("a", T.play - 1), "A works in Aipom's call");
+  assert(r.press("b", T.play + 5) && r.ready === T.play + 16, "a feint: back 11 frames on, got " + (r.ready - T.play - 5));
+  assert(!r.press("a", T.play + 10), "A works in a feint");
+  assert(r.press("a", T.play + 16).bonk && r.ready === T.play + 103, "into the basket: back 87 frames on");
+  const o = T.open, d = r.press("a", o + 4);
+  assert(d && !d.bonk && d.in === o + 8, "the basket's up 4 frames after it starts up, and in 4 frames later");
+  const r3 = new R.Runner(times, rs), P = times[3];
+  r3.press("a", P.open + 6);
+  assert(r3.ready > P.end + 200 && r3.ready === r3.blownBack(P.open + 6), "blown away: back at " + r3.ready);
+  const melon = { kind: R.FRUIT, fruit: R.MELON, piles: 1 };
+  const tie = R.judge(melon, null, [30, 30, 31, null]);
+  assert(tie.pts.join() === "1000,1000,0,0" && tie.decided === 30, "a tie: " + tie.pts);
+  const berries = R.judge({ kind: R.BERRIES, piles: 1 }, null, [40, 42, null, null]);
+  assert(berries.pts.join() === "600,400,0,0" && berries.decided === 45, "strawberries: " + berries.pts + " till " + berries.decided);
+  const three = R.judge({ kind: R.BERRIES, piles: 3 }, null, [null, 50, null, null]);
+  assert(three.pts.join() === "0,3000,0,0" && three.decided === 59, "three piles: " + three.pts);
+  assert(R.reaction(T, o + 10, 1) === 19, "the reaction time's 3 (f - O - 4) + its random 0-2");
+});
+
+await test("Eager Eevee: CPU levels, how soon after the basket's up they dash", async () => {
+  const R = await moduleOf(solo, "./src/eevee/rules.js");
+  const report = [];
+  for (const level of ["easy", "normal", "hard"]) {
+    const L = R.levelCode(level, true), after = [];
+    let fooled = 0, fakes = 0;
+    for (let s = 1; s <= 300; s++) {
+      const seed = s * 7717 + 3, rs = R.deal(seed, L), times = R.timeline(rs), Q = R.quad(seed ^ 0x6d2b79f5);
+      rs.forEach((rd, n) => {
+        const T = times[n], plan = R.cpuPlan(L, rd, Q), r = new R.Runner(times, rs);
+        r.ready = T.play;
+        fakes += rd.fakes.length ? 1 : 0;
+        let fell = false;
+        for (let f = 0; T.play + f < T.close; f++) {
+          const { A, B } = R.cpuInput(plan, rd, f), t = T.play + f;
+          const res = A ? r.press("a", t) : B ? r.press("b", t) : null;
+          if (res?.bonk) fell = true;
+          if (res?.in) { if (rd.kind !== R.PINECO) after.push(t - T.open); break; }
+          if (A && t >= T.open && t < T.open + 12) throw new Error(`${level}: a dash ${t - T.open} frames after the open`);
+        }
+        if (fell && rd.fakes.length) fooled++;
+      });
+    }
+    const mean = after.reduce((a, b) => a + b) / after.length, [lo, hi] = DASH_TARGETS[level];
+    report.push(`${level} ${mean.toFixed(1)} frames, ${Math.round((100 * fooled) / fakes)}% fooled`);
+    assert(mean >= lo && mean <= hi, `${level}: the CPUs dash ${mean.toFixed(1)} frames after the open, expected ${lo}-${hi}`);
+  }
+  return report.join(", ");
+});
+
+await test("Eager Eevee: its music and sound effects play from sound.bin", () => soundTest("assets/eevee/sound.bin", [
+  ["main", 4, (r) => assert(r.notes >= 2 && r.peak > 0.05 && r.peak < 1 && r.tail > 0.01, `song 53 (a held roll): ${r.notes} notes, peak ${r.peak.toFixed(2)}`)],
+  ["round", 4, (r) => assert(r.notes > 5 && r.peak > 0.05 && r.peak < 1, `song 54: ${r.notes} notes, peak ${r.peak.toFixed(2)}`)],
+]));
+
+await test("Eager Eevee: a solo game, played headless: a quick player beats the CPUs", async () => {
+  await solo.mg.show("eevee");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners;
+  solo.mg.paused = true;
+  g.listeners = {};
+  const tally = [0, 0, 0, 0];
+  try {
+    for (let s = 1; s <= 6; s++) {
+      g.reset("hard", s * 9973, { me: 0, control: ["local", "cpu", "cpu", "cpu"] });
+      g.start();
+      while (g.state === "play") {
+        g.update(1 / 30);
+        const { T, rd, t } = g.now;
+        if (rd.kind !== 2 && t >= T.open + 7 && g.players[0].runner.can(t)) g.press("a"); // (0.23 s: a good reaction)
+      }
+      g.players.forEach((p, z) => { tally[z] += p.total; });
+    }
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  assert(tally[0] > Math.max(...tally.slice(1)), "the quick player didn't win: " + tally);
+  return "totals over 6 games on Hard: " + tally.join(", ");
+});
+
 await test("online: another device's player is shown as far behind as its moves take to get here", async () => {
   const { Lag, LAG, startDelay } = await moduleOf(solo, "./src/lag.js");
   const start = startDelay(40, 120); // (80 ms each way, and the spare)
@@ -400,7 +515,7 @@ await test("online: Clear Cut Challenge's logs fall together, and a late cut goe
   }
 });
 
-await test("a solo round starts and plays, in both games", async () => {
+await test("a solo round starts and plays, in all three games", async () => {
   solo.document.querySelector("#play").click();
   await until(() => solo.mg.phase() === "play" && solo.mg.game.time > 4, "Egg Emergency's round to be under way");
   let g = solo.mg.game;
@@ -419,8 +534,19 @@ await test("a solo round starts and plays, in both games", async () => {
   assert(g.control.join() === "local,cpu,cpu,cpu", "seats " + g.control);
   assert(first[0] === 10, "cut a frame early, the first log gave " + first[0]);
   assert(first.every((x) => Number.isInteger(x)), "a seat's first log wasn't judged: " + first);
+  solo.mg.title();
+  await solo.mg.show("eevee");
+  solo.document.querySelector("#play").click();
+  const stopDash = autodash(solo, 6);
+  try {
+    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > solo.mg.game.times[0].open + 60,
+                "Eager Eevee's first race", 30000);
+  } finally { stopDash(); }
+  g = solo.mg.game;
+  const rd = g.rounds[0], v = g.verdict[0];
+  assert(rd.kind === 2 ? !v || v.pts.every((x) => x === 0) : v && v.got[0], `the first race (kind ${rd.kind}): ${JSON.stringify(v)}`);
   solo.frameElement.remove();
-  return "Clear Cut's first log: " + first.join(", ");
+  return "Clear Cut's first log: " + first.join(", ") + `; Eevee's first race: ${v ? v.pts.join(", ") : "no one"}`;
 }, { live: true });
 
 const code = Array.from({ length: 4 }, () => "BCDFGHJKLMNPQRSTVWXZ"[Math.floor(Math.random() * 20)]).join("");
@@ -540,6 +666,37 @@ await test("online: a Clear Cut Challenge round, the same on both devices, and c
     await sleep(3000);
     assert(totals(ann) === totals(bob), `totals: ${totals(ann)} / ${totals(bob)}`);
     return `after two logs: ${totals(ann)}`;
+  } finally {
+    stop.forEach((s) => s());
+  }
+}, { live: true });
+
+await test("online: an Eager Eevee game, the same on both devices, and cheating doesn't work", async () => {
+  await until(() => ann.mg.room()?.state === "lobby", "the Clear Cut Challenge round to end", 120000);
+  ann.document.querySelector("#menu").click(); // back to the lobby
+  bob.document.querySelector("#menu").click();
+  ann.document.querySelector(`#lobby .games button[data-game="eevee"]`).click();
+  await until(() => bob.mg.room()?.game === "eevee" && bob.document.title === "Eager Eevee", "Eager Eevee in the lobby");
+  const stop = [];
+  try {
+    ann.mg.net().send("start");
+    await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the round", 20000);
+    stop.push(autodash(ann, 6), autodash(bob, 9)); // Ann's quicker than Bob
+    const net = bob.mg.net(), r = ann.mg.room().round, g = bob.mg.game, T = g.times[0];
+    // Bob dashes for Ann's seat, and later says he dashed on the open's first frame
+    net.send("dash", { r, s: 0, k: "a", f: T.open + 4 });
+    await until(() => g.verdict[0] || g.lastFrame > T.end - 10, "the first race, judged on Bob's device", 30000);
+    net.send("dash", { r, s: 1, k: "a", f: T.open + 4 }); // (in already, or too old by far)
+    await until(() => [ann, bob].every((w) => w.mg.game.lastFrame > w.mg.game.times[1].open + 40), "the second race", 30000);
+    await sleep(1000);
+    const totals = (w) => w.mg.game.players.map((p) => p.total).join();
+    const prizes = (w) => w.mg.game.players.map((p) => p.prizes.slice(0, 2).join("/")).join(" ");
+    assert(totals(ann) === totals(bob), `totals: ${totals(ann)} / ${totals(bob)}`);
+    const rd = g.rounds[0], v = ann.mg.game.verdict[0];
+    // the fruit is Ann's; strawberries are shared, but Ann's had some before Bob got there
+    if (rd.kind === 0) assert(v && v.got[0] && !v.got[1], `the fruit should be Ann's: ${JSON.stringify(v)}; a claim got through?`);
+    if (rd.kind === 1) assert(v && v.pts[0] > v.pts[1] && v.pts[1] > 0, `Ann should have had more strawberries than Bob: ${JSON.stringify(v)}; a claim got through?`);
+    return `after two races: ${totals(ann)} (${prizes(ann)})`;
   } finally {
     stop.forEach((s) => s());
   }

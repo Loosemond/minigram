@@ -9,6 +9,7 @@ have a game picker; a game's code and files load the first time it's picked.
 |---|---|---|
 | Egg Emergency | [minigames/src/egg/](minigames/src/egg/) | made for the remake, from the game's text and Chansey's clips |
 | Clear Cut Challenge | [minigames/src/clearcut/](minigames/src/clearcut/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#clear-cut-challenge)) |
+| Eager Eevee | [minigames/src/eevee/](minigames/src/eevee/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#eager-eevee)) |
 
 ## Run it
 
@@ -26,13 +27,15 @@ on Windows, and browsers then refuse to load the modules; it also keeps
 connections open, since a game loads dozens of small files, and gzips scripts,
 pages, models and the sound files: a first visit to Egg Emergency downloads
 284 KB instead of 742 (the Chansey model goes from 446 KB to 96), one to Clear
-Cut Challenge about 180 KB (Scyther: 224 KB, 89 gzipped). It also runs the
+Cut Challenge about 180 KB (Scyther: 224 KB, 89 gzipped), one to Eager Eevee
+about 260 KB. It also runs the
 online rooms (`tools/rooms.py`) at `/ws`, and sends `/` and the old
 `/egg-emergency/` address to the app. Both are standard library only.
 
 Add `?debug` to the URL to get `window.mg` in the console: `mg.game` (the
 game's round), `mg.mini` (the game's module), `mg.paused = true`, `mg.tick(dt)`
 (one frame by hand, for a hidden page), `mg.lean(-1 | 0 | 1)`, `mg.cut()`,
+`mg.mini.debug.dash()` and `.feint()` (Eager Eevee),
 `mg.show("clearcut")`, `mg.title()`, `mg.net()`, `mg.room()`,
 `mg.sound.engine` (the audio engine, once it's loaded). It works on localhost
 only, unless `debug` is true in `src/config.js`. `clips.html` plays every clip
@@ -229,6 +232,75 @@ the server's copy, the deal and the judging), `src/clearcut/game.js` the round
 and its scene, `src/clearcut/assets.js` the models, the log and Spinarak,
 `src/clearcut/index.js` the cameras, the tap, its HUD and its online messages.
 
+## Eager Eevee
+
+Four Eevee walk round a ring of coloured stripes; in the middle Aipom hangs
+on its rope over a basket. When Aipom lifts the basket, tap (or Space) to
+dash to what's under it; the **Feint** pad (or B) fakes a dash. Five races:
+a melon is 1000 points, grapes 500, a pile of strawberries 100 each for
+everyone there while they last, and a Pineco blows up whoever gets to it.
+The last race is three piles of strawberries. The highest total wins. This
+one follows the game's own code too (module #61:
+[docs/minigames.md](../docs/minigames.md#eager-eevee) has where each number
+is):
+
+- **The race.** The basket comes up at a random moment, 2-7 s into the race
+  (1-2 s, now and then, on Normal and Hard), and before that Aipom may fake
+  it, lifting the basket a little and dropping it again. A dash goes in at
+  once and gets there 4 frames (0.13 s) later; the first there gets the prize,
+  and a tie gives it to both. Dash before the basket's up and Eevee runs into
+  it and bounces back: A works again 2.9 s later, after it's walked on to its
+  place on the ring. A feint costs 0.37 s. A Pineco costs no points, but the
+  Eevee it blows up waits outside the ring till its place comes round again,
+  about 13 s: it usually misses the next race.
+- **The reaction time** of each dash shows by the player's card, as the
+  game's ". sec." box has it: from the moment the basket's up.
+- **The CPUs** are the game's: each round they plan their reaction times and
+  whether they fall for Aipom's fakes (dashing into the basket, or feinting),
+  and they can be fooled into a dash by someone else's feint soon after a
+  fake. Simulated, they dash about 0.83 s after the basket starts up on Easy,
+  0.67 s on Normal and 0.57 s on Hard, and run into the basket
+  after a fake 24%, 22% and 10% of the time. A quick player (0.23 s) wins
+  most games on Hard.
+
+The camera is the game's (40°, from (0, 299, 339) looking down at the middle).
+Background picture 44 is that camera's view of the field; here the field is
+built in 3D from it (`src/eevee/field.js`), as Egg Emergency's stage is: the
+ring's bands and its 30 stripes, measured from the picture's pixels put back
+on the ground through that camera, the dirt, the grass and its flowers, and
+the trees, whose five trunks at the back are the picture's. The game draws
+the Eevee over its picture, and here they're drawn over the field the same
+way (the leaves hang low, and a blown-away Eevee waits under them). Portrait
+looks from the game's angle, further back, with the ring across the screen
+(from more above, the Eevee looked squashed), so the forest goes on round the
+front of the clearing and Aipom's rope goes on up out of sight (in the game it
+ends just above the screen). A small arrow in your colour marks
+your Eevee (the game's four look the same).
+
+**Sound**: the game's (`assets/eevee/sound.bin`, 350 KB): song 54 as Aipom
+calls each round (song 101, the same 40 beats a minute faster, for the final
+one), song 53 (a held roll) after each prize, the effects of bank 10 (the
+dash, the basket, running into it, the prize, bouncing back, a Pineco, a
+blown-away Eevee coming down), the eating, the shared count, GO and finish
+whistle, and the fanfare when you win. As in the game, the basket's sound is
+for the real lift only (frame 5), when the song stops; for a fake the music
+and the effects hush, from 5 frames before it till the basket's back down.
+
+What comes from the ROM and what is made up:
+
+| From the game | Made for the remake |
+|---|---|
+| the rules, the timings, the scoring, the rounds' scripts, the presses and the CPUs (module #61's code) | each round's length, fixed (the race goes on 150 frames after the basket's up; the game's ends once every Eevee's back), so every device agrees; after a Pineco round the next basket always waits 70-120 frames (the game does when an Eevee's still away) |
+| Eevee (object 143) and which clip it plays for what, Aipom and its basket (150), the fruit (209, 213, 216), Pineco (151) | the effects (the game's are objects 203, 204 and 207, drawn by its code, and image bank 307; these use bank 307), a strawberry flying off a pile isn't shown, the piles shrink instead |
+| the camera, the field (background picture 44: its ring, ground and trees, measured), the Eevee's places, the prize slots (bank 389), "ROUND 1" … (392), the ". sec." box (393, 394) | the field in 3D (the forest round the front of the clearing, which the game's camera never sees, is made up), the rope's top, the portrait camera, the arrow over your Eevee, the Dash and Feint pads |
+| songs 53, 54 and 101, the effects (bank 10 of the effect table) | |
+
+Code: `src/eevee/rules.js` has the rules (and `tools/eevee_rules.py`, the
+server's copy: the rounds' scripts, the presses and the judging),
+`src/eevee/game.js` the round and its scene, `src/eevee/field.js` the field,
+`src/eevee/assets.js` the models, `src/eevee/fx.js` the effects and
+`src/eevee/index.js` the camera, the taps, its HUD and its online messages.
+
 ## Online play
 
 **Play with friends** on the title screen makes a room with a four-letter
@@ -266,6 +338,16 @@ How it works:
   followed up (it tells everyone with `a: 1`) till the log's judged. Swings
   count from the log's hanging to its end (with 2 s for clocks off), and a
   seat that doesn't cut scores the miss.
+- **Eager Eevee**: devices send each dash and feint, with the frame their
+  player pressed on, and the server checks it could have happened then (the
+  Eevee at its place, not bouncing back or blown away: `tools/eevee_rules.py`,
+  the same as `src/eevee/rules.js`, bit for bit) and passes it on. It gives
+  each prize itself, once no press still on its way could change who got
+  there first: a press may be at most as old as its device's way here (half
+  its round trip and 0.1 s, 0.2-0.5 s); an older one counts as that old. So
+  the prize's word comes about that long after the winner gets there, while
+  the Eevee are still grabbing at it, and a device can't claim a quicker dash
+  than its player made by more than that.
 - **Same round, same moment.** The server deals the drops (the game's own
   schedule, from a seed; `egg_rules.py` has a copy of `makeSchedules()` that
   matches it bit for bit) and a GO time on its own clock. Clients sync to it
@@ -282,6 +364,9 @@ How it works:
   0.05 s to 0.6 s. Their catches come from the server, not from what this
   device sees; if one is late, the egg falls on and the catch shows when it
   arrives.
+- **Eager Eevee shows the others' dashes as they get here**, a little after
+  they happened; who gets the prize is the server's word, and an Eevee that's
+  got there grabs at it till then (as the game's do, for a second and a half).
 - **Clear Cut Challenge shows every lane on the round's clock**, so the four
   logs come up and fall together, as on the game's one screen. The others'
   swings are shown as they get here, a little after they happened: a late
@@ -337,13 +422,14 @@ which are kept on each device.
 each in a frame, all in one room (`&room=CODE` picks it, `&game=clearcut` the
 game). The first frame is the host. The frames stack on a tall window and sit
 side by side on a wide one. `python3 tools/test_rooms.py` tests the server:
-the protocol, both games' scoring (Clear Cut Challenge's deal against the
-browser's, bit for bit) and the cheats it stops, picking the game, rejoining,
+the protocol, the games' scoring (Clear Cut Challenge's deal and Eager
+Eevee's rounds against the browser's, bit for bit) and the cheats it stops, picking the game, rejoining,
 Telegram logins, names and limits (about half a minute, no network).
 `tests.html`, with `serve_web.py` running, tests the games with it, in real
 games in frames: each game's deal against the server's copy, the catching
-rule (the same short round `test_rooms.py` plays) and the cut scoring, the
-CPU levels (what it takes to win, simulated), each game's sound (every song
+rule (the same short round `test_rooms.py` plays), the cut scoring and
+Eager Eevee's dashes, feints and prizes, the CPU levels (what it takes to win,
+simulated; how soon Eager Eevee's dash), a headless game of Eager Eevee, each game's sound (every song
 and effect rendered offline: they play, and nothing they need is missing from
 the file), a solo round of each, the lobby, the invite link and the game
 picker (only the host's counts), and an online round of each with two
@@ -352,7 +438,9 @@ partway through: he claims an egg he missed, with a made-up count, claims a
 catch for the other player and leans for her, claims a drop still to come,
 says he's done and tries to start the next round, then reloads mid-round. In
 Clear Cut Challenge he claims a perfect cut for the other player, a cut for a
-log that isn't up yet, and a second swing at one. Both devices have to agree
+log that isn't up yet, and a second swing at one. In Eager Eevee he dashes
+for the other player, and says he dashed on the first frame the basket was
+up, after seeing her go. Both devices have to agree
 with each other throughout and end with the same ranking, and the server
 must never correct an honest device. It takes about three minutes. A hidden
 page steps the games itself (browsers pause hidden pages' animation), and a
@@ -366,15 +454,16 @@ Messages are JSON objects with their type in `t`. From the client:
 
 | `t` | Fields | |
 |---|---|---|
-| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`) |
+| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`, `eevee`) |
 | `ping` | `c`, `rtt` | the client's clock; answered with `pong`. `rtt`: a round trip it can count on, ms (from the last pongs) |
 | `name` | `name` | rename |
 | `level` | `level` | host, in the lobby: `easy`, `normal` or `hard` |
-| `game` | `game` | host, in the lobby: `egg` or `clearcut` |
+| `game` | `game` | host, in the lobby: `egg`, `clearcut` or `eevee` |
 | `start` | | host, in the lobby |
 | `lean` | `r`, `s`, `g`, `l` | in round `r`, seat `s` leans `l` (−1, 0, 1) from round time `g` (s) |
 | `ev` | `r`, `s`, `g`, `n`, `k`, `e` | seat `s` caught its drop `n` (`k: "c"`) or was shocked by it (`"h"`), as this device judged it; `e` is its egg count after. The server answers only if it disagrees |
 | `cut` | `r`, `s`, `n`, `f` | Clear Cut Challenge: seat `s` pressed `f` frames after log `n`'s drop (negative: while it hung) |
+| `dash` | `r`, `s`, `k`, `f` | Eager Eevee: seat `s` pressed A (`k: "a"`, a dash) or B (`"b"`, a feint) on frame `f` from GO |
 | `done` | `r` | this device's round is over |
 | `leave` | | |
 
@@ -389,11 +478,17 @@ seat's `[t, col, "e" or "v", fall]`; and, to rejoin midway, `scores`, each
 seat's last lean `leans` `[g, l]`, last shock `hits` and how many of its
 drops are judged, `settled`, in the order they arrive. Clear Cut Challenge:
 `c`, the level code the logs are dealt for (the devices deal them from the
-seed), and to rejoin, `scores` and `cuts`, each seat's `[f, points]` by log, `[f, points, 1]` for a miss it may still follow up);
+seed), and to rejoin, `scores` and `cuts`, each seat's `[f, points]` by log, `[f, points, 1]` for a miss it may still follow up.
+Eager Eevee: `ee`, with `level` (the level code the rounds are dealt for) and,
+to rejoin, `scores` and `prizes`, each seat's by round);
 `pong` (`c`, `s`); `cut` (`r`, `s`, `n`, `f`, `p`, `e`), the server's word on
 a seat's swing at a log: the frame (null: no swing), the points and the
 total after, and `a: 1` for a miss that doesn't count yet (the seat may swing
-again; the total leaves it out);
+again; the total leaves it out); `dash` as above, passed on to the others
+(back to its own device too if it counts on a later frame than it said);
+`got` (`r`, `n`, `p`, `e`, `d`), Eager Eevee's prize for round `n`: the
+points by seat, the totals after, and the frame it was decided (A stops
+working after it);
 `lean` as above (with the time the server kept: never before the seat's last
 lean); `ev` (`r`, `s`, `n`, `k`, `e`, `g`), the server's verdict on a drop:
 `c` caught, `h` a shock, or `m`, not a catch after all, with the egg count
@@ -451,6 +546,8 @@ a closed room's code, and a device claiming an egg its player missed (the
 server corrected it within half a second, and no one else saw it).
 Clear Cut Challenge: solo rounds at 1280×720 and 375×812, and an online round
 with two players (both devices showed the same cuts, totals and ranking, the
-CPUs played by the host's). `tools/test_rooms.py` passes its 12 checks and
-`tests.html` its 13. It hasn't been tried inside the real Telegram apps or
+CPUs played by the host's). Eager Eevee: solo games at 960×640 and 375×812,
+headless games against the CPUs, and an online game with two players (both
+devices showed the same prizes and totals). `tools/test_rooms.py` passes its
+16 checks and `tests.html` its 22. It hasn't been tried inside the real Telegram apps or
 over a mobile network yet.

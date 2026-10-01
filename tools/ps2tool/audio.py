@@ -518,6 +518,10 @@ def web_pack(audio, songs, sounds, sound_seq):
                 if n < len(font.sfx) and font.sfx[n] and out["sfx"][n] is None:
                     out["sfx"][n] = sample(font.sfx[n])
 
+    # a song is a sequence, or [sequence, tempo]: the game plays some faster
+    # (0x80021EC8: song 101 is 54 at +40 beats a minute)
+    tempo = {name: i[1] for name, i in songs.items() if isinstance(i, (list, tuple))}
+    songs = {name: i[0] if isinstance(i, (list, tuple)) else i for name, i in songs.items()}
     for name, i in songs.items():
         add_seq(i, Uses(audio.seq(i)))
     if sounds:
@@ -525,7 +529,7 @@ def web_pack(audio, songs, sounds, sound_seq):
         data = audio.seq(sound_seq)
         starts = [sound_start(data, s["n"]) for s in sounds.values() if "sfx" not in s]
         add_seq(sound_seq, Uses(data, starts, large=True), [x for s in sounds.values() for x in s.get("sfx", ())])
-    head = json.dumps({"songs": songs, "sounds": sounds, "soundSeq": sound_seq, "seqs": seqs, "fonts": fonts,
+    head = json.dumps({"songs": songs, "tempo": tempo, "sounds": sounds, "soundSeq": sound_seq, "seqs": seqs, "fonts": fonts,
                        "envelopes": envs, "samples": samples}, separators=(",", ":")).encode()
     head += b" " * (-len(head) % 4)
     return b"N64A" + struct.pack("<I", len(head)) + head + bytes(blob)
@@ -550,7 +554,7 @@ def sound_start(data, n):
 MINIGAME_SONGS = {
     "Topsy-Turvy": [33], "Gutsy Golbat": [13], "Furret's Frolic": [47], "Barrier Ball": [35],
     "Clear Cut Challenge": [19, 18], "Pichu's Power Plant": [21], "Tumbling Togepi": [46], "Egg Emergency": [45],
-    "Streaming Stampede": [30, 31, 32], "Delibird's Delivery": [52], "Eager Eevee": [53, 54],
+    "Streaming Stampede": [30, 31, 32], "Delibird's Delivery": [52], "Eager Eevee": [53, 54],  # (and 101: 54, faster)
 }
 SEQ_NAMES = {0: "menu sound effects", 6: "stadium sound effects", 9: "sound effects (minigames and more)",
              94: "minigame results fanfare (song 55)", 96: "fanfare (song 57)", 115: "minigame results (song 76)"}

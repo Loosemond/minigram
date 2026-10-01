@@ -97,7 +97,9 @@ function playSong(name) {
 
 export function startSong(engine, name) {
   engine.play(MUSIC, engine.bank.songs[name]);
-  engine.players[MUSIC].fadeVolumeScale = MUSIC_VOLUME;
+  const p = engine.players[MUSIC];
+  p.fadeVolumeScale = MUSIC_VOLUME;
+  if (engine.bank.tempo?.[name]) p.tempoChange = engine.bank.tempo[name] * 48; // (a song the game plays faster)
 }
 
 // ---- sound effects ----
@@ -126,9 +128,32 @@ export function trigger(engine, name, seat) {
 
 // Stop a sound that plays until it's stopped (a crowd, say), as the game's
 // sound manager does once the sound's no longer asked for: 0 on its channel's
-// port 0 (port 2 is 1 while it plays). No name: every sound still playing.
+// port 0 (port 2 is 1 while it plays). No name: every sound still playing
+// (and the effects back on after a hush).
 export function stopSound(name) {
-  if (pack?.engine) stopEffect(pack.engine, name);
+  if (!pack?.engine) return;
+  if (!name) hush(false);
+  stopEffect(pack.engine, name);
+}
+
+// A hush (Eager Eevee's, before each of Aipom's fakes: 0x800280B0, sound
+// 0xFFE): the song goes quiet at once (command 0x4B: its volume scaled to 0 in
+// an update) and the effects fade out over 20 updates and stop (0x83); what the
+// game asks to play meanwhile isn't heard. hush(false) (0x800280DC, 0xFFF)
+// starts the effects again (0x80027E20) and puts the song back at its volume (0x4C).
+export function hush(on) {
+  const e = pack?.engine;
+  if (!e || !on === !e.hushed) return;
+  const m = e.players[MUSIC];
+  if (on) {
+    e.hushed = { script: m.script, volume: m.fadeVolume };
+    if (m.enabled && m.state !== 2) { m.fadeVolume = 0; m.recalculateVolume = true; }
+    e.stop(EFFECTS, 20);
+    return;
+  }
+  const h = e.hushed;
+  startEffects(e);
+  if (m.enabled && m.state !== 2 && m.script === h.script) { m.fadeVolume = h.volume; m.recalculateVolume = true; }
 }
 export function stopEffect(engine, name) {
   for (const c of engine.players[EFFECTS].channels) {
@@ -143,6 +168,7 @@ export function stopEffect(engine, name) {
 // the effects sequence running, as the game starts it
 export function startEffects(engine) {
   engine.onCustom = custom;
+  engine.hushed = null;
   engine.play(EFFECTS, engine.bank.soundSeq);
   engine.players[EFFECTS].fadeVolumeScale = EFFECTS_VOLUME;
 }
@@ -160,7 +186,8 @@ function custom(index, value, channel) {
 // one of the game's sounds by name; seat: whose it is (panned to their column)
 export function sound(name, seat) {
   if (!ctx || muted || !pack) return;
-  if (pack.engine && trigger(pack.engine, name, seat)) return;
+  const e = pack.engine;
+  if (e && (e.hushed ? name in e.bank.sounds : trigger(e, name, seat))) return;
   pack.standIns[name]?.(tone, noise);
 }
 

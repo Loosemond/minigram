@@ -294,6 +294,134 @@ table at `0x8650C50C`, one row a log: 375, 297, 205, 127 and 65 long, from
 the blade, and drops it faster (r 0.6). Only type 3 plans the CPUs' cuts
 (`0x86501384`).
 
+## Eager Eevee
+
+Module #61 (ROM `0x2F32D0`, linked at `0x86B00000`; code to `0xD158`, data to
+0xE070, BSS to 0x18220) was read the same way, and the remake
+(`web/minigames/src/eevee/`) plays by its rules. Its variables are a block at
+`0x86B17A78` (G below), set up from a copy at `0x86B0D384`. The instructions
+(text 50.5): "When AIPOM opens the lid, dash to the fruit with the A Button.
+Press the B Button to fake a dash. The race is run five times."
+
+**The field.** Background picture 44 is the field from the game's camera
+(`0x86B00020`: 40° up and down, 39.9991, from (0, 298.6, 338.9) looking at
+(0, 20, 0)): a ring of coloured stripes in a clearing. Aipom (object 150,
+0.5×) hangs on its rope in the middle over a basket. The four Eevee (object
+143, 1/6×) walk round the ring at radius 130, each at its own place
+(`0x86B0D1FC`: 3.92699, 5.49779, 2.35619, 0.785398 radians, so 1P back left,
+2P back right, 3P front left, 4P front right, as their badges are on the
+screen), and the places go round: G+0xF8 goes down 0.016 a frame (0.0191111
+in the final round). An Eevee that's fallen behind its place catches up 0.032
+a frame (`0x86B05C84`). Object 149, a field, is loaded, but the module never
+gets its model (no `0x8004DFF8` for it), so presumably it isn't drawn
+(*unverified*); it's the clearing from above, without the ring (24 tiles of
+64 × 32). Measured from the picture (its pixels put back on the ground
+through that camera): dirt in the middle to radius 63, 30 stripes of 12°
+(mauve, blue, green, red, yellow, over and over; green faces the camera) to
+108, a pale band to 131, a yellow one to 151 and a rim in the stripes'
+colours, darker, to 157; five trunks at the back, 184-224 from the middle,
+under leaves that come down to 20-35 over the ground there. The remake builds
+the field in 3D from these (`web/minigames/src/eevee/field.js`).
+
+**A round's script** (`0x86B0B04C`, from the main program's random numbers
+`0x8007B100`). What's under the basket, G+0xC: in rounds 1-4 a draw of four,
+fruit (two in four), strawberries or a Pineco, never three of a kind in a row
+(no Pineco in the first round on Easy, a draw of three); fruit is a melon
+(object 209) one time in three, grapes (213) otherwise; strawberries are a
+pile of ten (216). The final round is three piles (`0x86B0B1FC`). The basket
+comes up at frame O of the race: 60-200 (`Q % 141 + 60`), but on Normal and
+Hard one time in five 30-50; after a round in which an Eevee isn't back at its
+place yet (blown away by a Pineco), 70-120. If O is 60 or more, Aipom may fake
+it first: on Easy one fake 25% of the time, two 5%; on Normal and Hard one
+25%, two 10%, three 5%; fake k at `Q % (v − 14) + v k + 10`, v = (O − 10) / N.
+A fake lifts the basket to frame 5 of Aipom's clip 1 and plays it back down
+(`0x86B03404`, `0x86B0346C`), without a sound: 5 frames before it the game
+hushes (`0x800280B0`, sound 0xFFE: the song's volume to 0, command `0x4B`,
+and the effects' sequence faded out over 20 updates and stopped, `0x83`), and
+once the clip's back below its frame 0 it starts the effects again and puts
+the song back (`0x800280DC`, 0xFFF: `0x80027E20` and `0x4C`). The real thing
+plays clip 1 to its end: the song fades out over 2 frames as it starts
+(`0x86B03308`), and the basket's clear of the ground from its frame 5 (0xAF01
+then). Clip 2 brings
+the basket down over the next round's prize, with Aipom's call (0xAF08, 0xAF00
+and song 54, or 101 in the final round) and "ROUND 1" … "FINAL ROUND" (image
+bank 392).
+
+**A and B** (`0x86B057B0`) work while an Eevee's at its place (radius 130,
+within 0.032 of its place's angle), till frame O + 99 or the race is decided.
+A: the dash (state 6), in at 28 a frame to 75, where the basket is, then 14 a
+frame to 45 (`0x86B0632C`, `0x86B063D8`). If the basket's not up yet (G+0x33C,
+set on frame O + 4) the Eevee runs into it (0xAF04) and bounces back (clip 8,
+then it walks on to its place): A works again 87 frames later (109 in the final
+round). B: the feint (state 12), out to 100 and back in 8 frames (`0x86B06484`,
+`0x86B06674`): A works again 11 frames later (12). A dash on frame f gets in
+(radius 45 or less, `0x86B05548`) on frame f + 4. The reaction time shown in
+the ". sec." box (banks 393, 394) is 3 (f + 1 − O − 5) + a random 0-2
+hundredths (NTSC; 4 (…) + 0-3 on PAL).
+
+**Who gets it** (`0x86B03628`, the basket's contents, every frame). Fruit: the
+Eevee that get in on the first frame anyone does get it, each the whole prize:
+1000 for the melon, 500 for the grapes (in a tie, each gets the whole prize). One
+winner on its own goes in to the middle (state 11) and eats (clip 7); the
+others still dashing bounce back (0xAF03). Strawberries: every frame, every
+Eevee there gets one from each pile, 100 points (the pile one less for each,
+`0x86B03A30`), till they're gone; a pile can go a little over ten that way.
+A Pineco blows up whoever gets in (state 16, clip 10, 0xAF06 and 0xAF0B): no
+points lost, but the Eevee is thrown out to radius 180 and comes round (clips
+11 and 12), then waits outside the ring till its place comes round again
+(`0x86B05A78`: about 13 s) and walks back in. So it usually misses the next
+race. A Pineco closes the race 24 frames after it goes off (`0x86B04244`). A
+race ends from O + 100, once every Eevee's back at its place or blown away,
+and the Pineco's done (G+0x344 at 141).
+
+**The CPUs** (`0x86B0BF2C`, for all four seats each round) plan their
+presses: two reaction times each for the fakes and the real thing (Easy 17-27
+frames, Normal 14-22, Hard 13-19 after it; level 0, not in the menu, 23-33),
+and one draw of 100 for how they take the fakes: on the last fake they dash
+(Easy 30%, Normal 20%, Hard 10%) or feint (up to 60%), on the others less
+often; with no fakes, Easy feints 10% of the time instead of dashing, and at a
+Pineco Easy dashes 30% (and feints 10%), Normal 20%, Hard 10%. From O + 28
+(Easy), 23 (Normal), 20 (Hard) plus 0-3 a CPU presses A every frame till it's
+in (not at a Pineco), and never sooner than 17, 14 or 13 frames after the
+open (`0x86B0BB24`). When another Eevee feints soon after one of Aipom's
+fakes, a CPU may fall for it and dash (`0x86B0CB1C`): on the last fake 60%,
+40%, 20%, within 24, 18, 14 frames of it. Simulated, the CPUs get in about
+25 frames after the open on Easy, 20 on Normal and 17 on Hard, and run into
+the basket after a fake 24%, 22% and 10% of the time.
+
+**Eevee's clips** (object 143, 15; the module plays one per state,
+`0x86B023FC`): 0 waiting outside the ring, 2 walking, 5 the dash and the
+feint, 6 grabbing, 7 eating (and the winners at the end), 8 bouncing back, 10
+blown away, 11 and 12 coming round, 13 and 14 the others at the end
+(`0x86B08F20`; a four-way tie has no winner).
+
+**Sounds**, bank 10 of the effect table: 0xAF00 Aipom's call (sound 0x68),
+0xAF01 the basket coming up (0x69), 0xAF02 a dash or a feint (0x6A), 0xAF03
+bouncing back without the prize (0x6B), 0xAF04 into the basket (0x6C), 0xAF05
+the prize (0x6D), 0xAF06 a Pineco going off (0x6F), 0xAF07 a blown-away Eevee
+coming down (0x70), 0xAF08 the call starting (0x71), 0xAF0B for each Eevee a
+Pineco blows up (0x6E, at half pitch); and 0xCA0F (bank 12) while an Eevee
+eats. Song 53 (sequence 92, 64 bytes: two held notes, about 5 s) plays 70
+frames after each prize goes, before the next round; song 54 (sequence 93) as
+Aipom calls each round, and 101 (54 again, 40 beats a minute faster) for the
+final one.
+
+**The HUD**: each player's badge in its corner (22, 16), (270, 16), (22,
+203), (270, 203); five slots by each for its prizes so far (`0x86B0DB74`,
+image bank 389: grapes, Pineco, melon, strawberries); "Points" (430).
+
+**The fruit and the effects**: the basket's contents are at the middle,
+0.355556× (the Pineco 0.5×; `0x86B04500`), the final round's three piles at
+(0, 0, 0), (−4.46, −10, 0) and (4.46, −10, 0) in the contents' own units. One
+strawberry (object 211) is what an effect started for each one eaten uses
+(`0x86B04970`, `0x86B05010`: *not read further*); objects 203, 204 and 207 are
+the Pineco's smoke and sparks (`0x86B052BC`, `0x86B05484`), with image bank
+307 (puffs, glows, streaks).
+
+The PAL timings (`0x86B0E0A0`, set when the TV's at 50 Hz) are numbers of their
+own for 25 frames a second, rather than Clear Cut Challenge's 1.2× scaling;
+the remake uses the NTSC ones.
+
 ## How this was found
 
 1. **Find the loader.** Scanning the code modules for `jal` targets that

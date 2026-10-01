@@ -101,6 +101,28 @@ input { -webkit-user-select: text; user-select: text; }
 .cc-flash.mini { width: 40px; }
 @keyframes flashpop { 0% { opacity: 0; transform: translate(-50%, -50%) scale(0.3); } 25% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.6); } }
 
+/* Eager Eevee: each player's prizes (image bank 389), the reaction time's box
+   (393, digits 394), "ROUND 1" ... (392), and the Dash and Feint pads */
+.ee-prizes { position: absolute; display: flex; gap: 2px; }
+.ee-prizes i { width: 27px; height: 27px; border-radius: 6px; background: rgba(20, 14, 10, 0.45); display: grid; place-items: center; }
+.ee-prizes img { width: 24px; height: 24px; image-rendering: pixelated; }
+.ee-secs { --k: 1.5; position: absolute; width: calc(72px * var(--k)); height: calc(17px * var(--k)); }
+.ee-secs img { position: absolute; image-rendering: pixelated; }
+.ee-secs .box { left: 0; top: 0; width: 100%; height: 100%; }
+.ee-secs .d { width: calc(8px * var(--k)); height: calc(11px * var(--k)); }
+.ee-round { position: absolute; left: 50%; top: 16%; transform: translateX(-50%); height: clamp(48px, 11vh, 96px); image-rendering: pixelated; filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.5)); }
+.ee-pads { position: absolute; left: 50%; bottom: calc(var(--safe-b) + 14px); transform: translateX(-50%); display: flex; gap: 12px; pointer-events: none; }
+.ee-pads .pad { pointer-events: auto; }
+/* landscape: at the sides, where the thumbs are, clear of the ring */
+#app:not(.portrait) .ee-pads { left: calc(var(--safe-l) + 14px); right: calc(var(--safe-r) + 14px); bottom: auto; top: 50%; transform: translateY(-50%); justify-content: space-between; }
+.ee-pads .pad { width: 84px; height: 52px; font-size: 18px; }
+.ee-pads .ee-feint { background: rgba(40, 140, 60, 0.45); }
+.ee-pads .ee-dash { width: 108px; background: rgba(50, 90, 210, 0.5); }
+.ee-points img { height: clamp(22px, 5vh, 36px); }
+.game-hud.off .ee-pads { display: none; }
+.ee-me { position: absolute; width: 0; height: 0; transform: translate(-50%, -100%); border: 9px solid transparent; border-top: 12px solid var(--c); border-bottom: 0; filter: drop-shadow(0 0 1px #fff) drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6)); animation: bob 0.9s ease-in-out infinite alternate; }
+@keyframes bob { to { margin-top: -5px; } }
+
 #banner img { height: clamp(90px, 22vh, 200px); display: inline-block; }
 #banner {
   position: absolute; left: 0; right: 0; top: 34%; text-align: center; pointer-events: none;

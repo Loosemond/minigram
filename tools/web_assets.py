@@ -84,8 +84,35 @@ CLEARCUT = {
 CLEARCUT.update({"spinarak%d.png" % i: bank(397, i) for i in range(3)})
 CLEARCUT.update({"cut%d.png" % (i + 1): bank(399, i) for i in range(5)})
 
+# Eager Eevee is code module #61. It loads objects 143 (Eevee), 149 (a
+# field, not drawn: the remake's is src/eevee/field.js, built from background
+# picture 44), 150 (Aipom on its rope, with the basket), 151 (Pineco), the
+# fruit 209 (melon), 213 (grapes), 216 (a pile of strawberries) and 211 (one
+# strawberry), the effects 203, 204 and 207, background picture 44 and image
+# banks 307 (sparkles and puffs), 389 (each round's prize, for the tally:
+# grapes, Pineco, melon, strawberries), 390 and 394 (digits), 392 ("ROUND 1"
+# ... "FINAL ROUND"), 393 (the reaction time's ". sec." box) and 430 ("Points").
+EEVEE = {
+    "backdrop.jpg": "images/backgrounds/44.jpg",  # the field from the game's camera (for the title and lobby)
+    "eevee.glb": "objects/143_eevee/143_eevee.glb",
+    "aipom.glb": "objects/150_aipom_on_a_rope/150_aipom_on_a_rope.glb",
+    "pineco.glb": "objects/151_pineco/151_pineco.glb",
+    "melon.glb": "objects/209_melon/209_melon.glb",
+    "grapes.glb": "objects/213_grapes/213_grapes.glb",
+    "strawberries.glb": "objects/216_strawberries/216_strawberries.glb",
+    "secs.png": bank(393, 0),
+    "points.png": bank(430, 1),
+    "dot.png": bank(430, 0),
+}
+EEVEE.update({"prize%d.png" % i: bank(389, i) for i in range(4)})
+EEVEE.update({"round%d.png" % (i + 1): bank(392, i) for i in range(5)})
+EEVEE.update({"t%d.png" % i: bank(394, i) for i in range(10)})
+EEVEE.update({"s%d.png" % i: bank(390, i) for i in range(10)})
+EEVEE.update({"fx%d.png" % i: bank(307, i) for i in range(10)})
+UI["title_eevee.png"] = bank(388, 0)
+
 # folder -> {asset name: file under out/}
-FILES = {"ui": UI, "egg": EGG, "clearcut": CLEARCUT}
+FILES = {"ui": UI, "egg": EGG, "clearcut": CLEARCUT, "eevee": EEVEE}
 
 # Sound (docs/audio.md). A game asks for song n, which the game plays as
 # sequence n + 39. The effects are sounds of sequence 9, the one the game runs
@@ -135,6 +162,23 @@ SOUNDS = {
         **SHARED,
         "count": _sound(0xA2, 127, 5, 0x1000),
         "go": _sound(0xA3, 127, 5, 0x1000),
+    }),
+    # Eager Eevee asks for song 53 (sequence 92) for the races, 54 (93) as
+    # Aipom calls each round and 101 for the final one (54 again, 40 beats a
+    # minute faster: docs/audio.md). Its effects are bank 10's (0xAFxx):
+    "eevee": ({"main": 92, "round": 93, "final": [93, 40], "win": 94}, {
+        "aipom": _sound(0x68, 100, 2, 0x0010),  # 0xAF00, frame 5 of Aipom's call
+        "lid": _sound(0x69, 100, 2, 0x0010),  # 0xAF01, frame 5 of Aipom's lift (the basket's up)
+        "dash": _sound(0x6A, 127, 2, 0x0001),  # 0xAF02, a dash or a feint
+        "back": _sound(0x6B, 100, 2, 0x0001),  # 0xAF03, bouncing back without the prize
+        "bonk": _sound(0x6C, 100, 2, 0x0001),  # 0xAF04, into the basket before it's up
+        "got": _sound(0x6D, 100, 2, 0x0001),  # 0xAF05, got the prize
+        "boom": _sound(0x6F, 100, 2, 0x0010),  # 0xAF06, a Pineco goes off
+        "blown": _sound(0x70, 100, 2, 0x0001),  # 0xAF07, a blown-up Eevee comes down
+        "call": _sound(0x71, 110, 2, 0x0020),  # 0xAF08, Aipom's call starts
+        "dazed": dict(_sound(0x6E, 127, 3, 0x0020), pitch=0.5),  # 0xAF0B, for each Eevee a Pineco blows up
+        "munch": _sound(0x8A, 107, 7, 0x8000),  # 0xCA0F (bank 12), while an Eevee eats
+        **SHARED,
     }),
 }
 

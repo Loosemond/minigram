@@ -5,7 +5,7 @@
 // controls, HUD and online messages; it's loaded the first time it's picked.
 import * as THREE from "three";
 import { GAMES, ORDER } from "./games.js";
-import { sfx, music, sound, stopSound, unlock, useSounds, setMuted, isMuted, SHARED_STAND_INS, debug as audioDebug } from "./audio.js";
+import { sfx, music, sound, stopSound, hush, unlock, useSounds, setMuted, isMuted, SHARED_STAND_INS, debug as audioDebug } from "./audio.js";
 import { telegram } from "./telegram.js";
 import { Net } from "./net.js";
 import { startDelay } from "./lag.js";
@@ -130,6 +130,7 @@ function render() {
 // The game on show (picked on the title, or the room's), loaded on first use.
 
 let gameId = null, game = null; // game: the loaded game's module instance, see src/egg/index.js
+let gameOn = null; // the id whose instance game is (gameId is the one picked: it may still be loading)
 const loaded = new Map(); // id -> Promise of its instance
 const hudOf = new Map(); // id -> its HUD element
 
@@ -144,6 +145,7 @@ const shell = {
   sound: (name, seat) => { if (!catchingUp) sound(name, seat); },
   music: (name, fade, once) => { if (!catchingUp) music(name, fade, once); },
   stopSound,
+  hush: (on) => { if (!on || !catchingUp) hush(on); },
   // online: a message for the round, to the others (kept while offline, sent on reconnecting)
   send: (t, data) => { if (current?.online) net.send(t, { r: current.round, ...data }, true); },
   get seats() { return seats; },
@@ -174,7 +176,7 @@ function loadGame(id) {
 // Show game id (loading it first if need be). Resolves once it's on.
 async function showGame(id) {
   if (!GAMES[id]) id = "egg";
-  if (gameId === id && game) return game;
+  if (gameId === id && game && gameOn === id) return game;
   gameId = id;
   const info = GAMES[id];
   telegram.color(info.color);
@@ -197,6 +199,7 @@ async function showGame(id) {
   if (gameId !== id) return g; // picked another meanwhile
   $("#loading").hidden = true;
   game = g;
+  gameOn = id;
   if (!playing() && phase !== "finish" && phase !== "results") g.idle(); // on show, not playing yet
   for (const [k, el] of hudOf) el.hidden = k !== id;
   const label = g.label;
