@@ -52,7 +52,8 @@ export async function create(shell, onProgress) {
   // ---- its HUD ----
   const hud = document.createElement("div");
   hud.className = "game-hud ee";
-  hud.innerHTML = `<img class="ee-round" alt="" hidden><i class="ee-me" hidden></i>
+  hud.innerHTML = `<img class="ee-round" alt="" hidden><i class="ee-me" hidden><svg viewBox="0 0 22 17" aria-hidden="true">
+      <path d="M2 3.5h18l-9 12z" fill="rgba(0,0,0,0.45)"/><path class="fill" d="M2 2h18l-9 12z" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg></i>
     <div class="ee-pads"><div class="pad ee-feint" data-pad="b">Feint</div><div class="pad ee-dash" data-pad="a">Dash</div></div>`;
   shell.hud.append(hud);
   const roundBanner = hud.querySelector(".ee-round"), meMark = hud.querySelector(".ee-me");
@@ -128,6 +129,10 @@ export async function create(shell, onProgress) {
 
   let view = null;
   let portrait = false, cardRects = [];
+  // the cards' places, again whenever one changes size (its points get another digit)
+  const measure = () => { cardRects = cardEls.map((c) => c.getBoundingClientRect()); placeRows(); };
+  const sizes = new ResizeObserver(measure);
+  let cardEls = [];
   const api = {
     game, scene, assets,
     get views() { return view ? [view] : []; },
@@ -150,7 +155,10 @@ export async function create(shell, onProgress) {
           ...(top ? { top: safe.top + m + "px" } : { bottom: H - safe.bottom + m + lift + "px" }),
         });
       });
-      requestAnimationFrame(() => { cardRects = cards.map((c) => c.getBoundingClientRect()); placeRows(); });
+      cardEls = cards;
+      sizes.disconnect();
+      cards.forEach((c) => sizes.observe(c));
+      requestAnimationFrame(measure);
       return portrait;
     },
 
@@ -223,7 +231,12 @@ export async function create(shell, onProgress) {
         top: top ? r.bottom + 4 + "px" : "auto", bottom: top ? "auto" : innerHeight - r.top + 4 + "px",
         flexDirection: left ? "row" : "row-reverse",
       });
-      Object.assign(secs[i].style, {
+      // its reaction time: beside the card, or in portrait (no room for two
+      // cards and two times across) past the prizes, away from the corner
+      Object.assign(secs[i].style, portrait ? {
+        left: left ? r.left + "px" : "auto", right: left ? "auto" : innerWidth - r.right + "px",
+        top: top ? r.bottom + 4 + 27 + 4 + "px" : r.top - 4 - 27 - 4 - 17 * 1.5 + "px",
+      } : {
         left: left ? r.right + 6 + "px" : "auto", right: left ? "auto" : innerWidth - r.left + 6 + "px",
         top: r.top + (r.height - 17 * 1.5) / 2 + "px",
       });
@@ -272,8 +285,8 @@ export async function create(shell, onProgress) {
     if (!meMark.hidden) {
       const e = game.eevees[shell.me()].m.root.position;
       tmp.set(e.x, 62, e.z).project(view.cam);
-      meMark.style.left = ((tmp.x + 1) / 2) * view.w + "px";
-      meMark.style.top = ((1 - tmp.y) / 2) * view.h + "px";
+      // (its tip, at 11, 15 of its 22 x 17, on the spot)
+      meMark.style.transform = `translate3d(${((tmp.x + 1) / 2) * view.w - 11}px, ${((1 - tmp.y) / 2) * view.h - 15}px, 0)`;
       meMark.style.setProperty("--c", ["#2f5de0", "#23a043", "#dc3030", "#e8a412"][shell.me()]);
     }
   }
