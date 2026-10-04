@@ -48,7 +48,7 @@ characters' models.
 | Barrier Ball | Mr. Mime 129, 218 | court pieces 120 (7 layouts), mesh panels 141, 146, Poké Balls 154 |
 | Pichu's Power Plant | Pichu 107, Pikachu 201 | window 056, red orb lamp 057, wall pieces 190 |
 | Rampage Rollout | Donphan 108 (walking, rolling) | track 113 (2 layouts) |
-| Streaming Stampede | Cleffa 114, Igglybuff 119 and 205 | Hoppip 186, Game Paks 080 and 100–102, ramp 116, circus backdrop 117, books 118 |
+| Streaming Stampede | Cleffa 114 (186 shiny), Igglybuff 119 (205 shiny) | the players' booths 080 and 100–102 (named Game Paks by appearance before), ramp 116, circus backdrop 117, books 118; the Pokémon that go by are sprites (image banks 201–220) |
 | Tumbling Togepi | Togepi 109, Omanyte 206 | platform 060, flower patch 062, rocks 063–064, logs 065–067, pillars 068–070, course pieces 132–140, ice block 188, water 202 |
 | Delibird's Delivery | Delibird 127 | Swinub 082 and 103, gift boxes 092 and 096, factory 147 and 148, gifts 169, 170, 174–177, 180, 181, 184 |
 | Egg Emergency | Chansey 144 | egg 145, 185 |
@@ -58,15 +58,19 @@ Worth knowing:
 
 - Several names came out of this: object 053, first named Zubat, is
   Golbat; "Striped Shell" 082/103 is Swinub; "Green Spiky Head" 151 is
-  Pineco; and 145 is the egg.
+  Pineco; 145 is the egg; and 186, named Hoppip by appearance, is a shiny
+  Cleffa (green ears), as 205 is a shiny Igglybuff: Streaming Stampede's code
+  loads them for a Game Pak's shiny Cleffa or Igglybuff.
 - The appearance-based guesses before this were partly wrong. The grass/hill
   course pieces 132–140 are Tumbling Togepi's, not Furret's Frolic's. The
   "Lab Room" (189/214) isn't a minigame's. Only two of the twelve gift boxes
   are Delibird's.
 - Other Pokémon in the minigames (per Serebii: Magnemite, Spinarak, Electrode,
-  Diglett, Voltorb) are not in the objects table. Egg Emergency's Voltorb is a
-  2D sprite (image bank 227, below); the others may be sprites too, or their
-  battle models (*unverified*).
+  Diglett, Voltorb) are not in the objects table. They're 2D sprites in the
+  image banks: Egg Emergency's Voltorb (bank 227, below), Clear Cut
+  Challenge's Spinarak (397), and the Pokémon that go by in Streaming
+  Stampede (201–220). The extractor names the banks whose use is known
+  (`BANKS` in `tools/ps2tool/names.py`: `images/banks/bank_NNN_<name>/`).
 - Why Gutsy Golbat loads Jynx is *unknown*.
 
 ## Egg Emergency: Chansey's clips
@@ -428,6 +432,191 @@ the Pineco's smoke and sparks (`0x86B052BC`, `0x86B05484`), with image bank
 The PAL timings (`0x86B0E0A0`, set when the TV's at 50 Hz) are numbers of their
 own for 25 frames a second, rather than Clear Cut Challenge's 1.2× scaling;
 the remake uses the NTSC ones.
+
+## Streaming Stampede
+
+Module #59 (ROM `0x2CD730`, linked at `0x86900000`; code to `0xE0A0`, data
+to 0xF920, BSS to 0x1ADC0) was read instruction by instruction, and the
+remake (`web/minigames/src/stampede/`) plays by its rules. Its variables are
+two blocks in BSS: G at `0x8691A2A0` (reset from `0x8690E990` at the start
+of each game, `0x869001AC`) and Q at `0x8691A448`, the question being played
+(reset from `0x8691A7D8` before each one, keeping what's been asked). The
+minigame's context is at `*0x8691AD58`: +0 its state, +0xC the menu's data
+(`+0x2180` the mode, 4 = the COM plays alone; `+0x2181` the COM level, 1
+Easy, 2 Normal, 3 Hard; `+0x2182` a bit per human seat). The instructions
+(text 50.4): "Press the A Button and count the POKéMON visiting the studio.
+There are five questions. Even if you don't get the right answer, you could
+still earn points for getting close."
+
+**The states** (`0x86901AA8`, switch at `0x8690F04C`; the drawing
+`0x86901414`): 0-2 the instructions (`0xCF0B` as you start), 4 the opening
+camera move (136 frames, song 29 at frame 25), 5 a question's card (85
+frames, `0x8690581C`), 6 the counting (`0x86901640`), 7 the answer
+(`0x8690941C`), 8-10 the last answer, the results and the menu
+(`0x86909FAC`). The logic runs once a frame and counts in frames; on PAL
+(`0x8690F998` = 0) the speeds are 1.2× and the CPUs' gaps their own. The
+remake uses 30 frames a second (*assumed*, as for the others).
+
+**The level** (G+0x78) is the COM level byte; with four people (all four bits
+of `+0x2182`, G+0x7C = 1) it starts at 1. It sets how many Pokémon (×0.6,
+0.8, 1, 1 for levels 0-3: `0x8690241C`), how spread out and fast they are
+(×0.7, 0.85, 1, 1.2: `0x8690F098`, `0x8690F770`), the chance that the 3rd or
+4th question is a "special" one (70, 50, 30, 10%) and how fast the CPUs press.
+After each question (`0x86909C14`) the game counts the players whose total is
+perfect so far (10, 20, 40, 60): at least 3, 3, 2, 1 of them (after the 1st,
+2nd, 3rd, 4th) and the later streams get 2 more Pokémon each (G+0x74); all
+four, with four people, after the 1st or the 3rd, and the level goes up by 1.
+
+**The question** (`0x86902640`, made on the card's first frame). The 17 kinds
+that go by (`0x8690E438`: image bank, frame list, frame count) form 7
+families of look-alikes, each asked at most once a game (a flag each at
+`0x8691A79C`), some only from a level up:
+
+| Family | Kinds (image bank) | From level |
+|---|---|---|
+| A | Pikachu (218), Pichu (217), Psyduck (210) | 0 |
+| B | Diglett (205), Dugtrio (208): they pop up out of the ground where they are | 0 |
+| C | Voltorb (202), Electrode (211), Poké Ball (212) | 2 |
+| D | Doduo (206), Dodrio (207) | 1 |
+| E | Slugma (213), Magcargo (203), Omanyte (216) | 0 |
+| F | Togepi (220), Togepi egg (209) | 2 |
+| G | Magnemite (204), Magneton (219) | 3 |
+
+- Question 1: one kind of eight (`0x8690E8CC`: Pikachu, Pichu, Psyduck,
+  Slugma, Magcargo, Omanyte, Togepi, Magnemite), all of the stream; count them.
+- Question 2: the same, of 15 (`0x8690E8EC`: all but the Poké Ball and the egg).
+- Question 3: a family's first two kinds (`0x8690E928`), each Pokémon one or
+  the other at random; count the first, the second or both (Togepi's family:
+  always Togepi, the eggs are decoys).
+- Question 4: family A, B, C or D (`0x8690E944`), all its kinds; A asks for
+  Pikachu, Pichu, Psyduck or all three, the others the first, the second or
+  both (in C the Poké Balls are decoys).
+- The last question: a mix of the 15 kinds; count all of them.
+- A special 3rd or 4th question (`0x8691A7D0`; each of the six once a game)
+  mixes kinds that aren't alike: Pichu and Togepi, Voltorb and Magneton, or
+  Pikachu and Omanyte; Pikachu, Electrode and Dodrio, Psyduck, Magcargo and
+  Magnemite, or Togepi, Doduo and Slugma.
+- How many (`0x8690241C`): 5-10, then 5-15, 10-20, 10-25 and 20-30 (plus G+0x74
+  from the 2nd on), times the level's factor. What's counted is a code
+  (`0x86904D48`: the roles it adds up); if the answer would be 0, or a "both"
+  question lacks one of them, the stream is made again.
+
+**The stream** (`0x869033C8`-`0x869049E0`, 20 bytes a Pokémon at Q): each
+starts at x = 300 + rand % R × the level's spread (R the kind's own range, or
+the family's widest, or 1440 in the last question) and z = z0 + rand % zr
+(`0x8690E558`: 36 bytes a kind: scale, picture size, speed a + 0..b, z0, zr,
+x0, xr), and t2 = rand % 197. Diglett and Dugtrio stand at x −103..103 and
+pop up at t2 (in the last question t2 < 12). A Pokémon closer than 32 to one
+before it, or too close in depth (13, 13, 13, 10, 7 by question,
+`0x8690EB28`) within 640 across, is placed again; 201 tries and the question
+starts over. In the counting each moves left by its speed every frame
+(`0x8690ABCC`: rand % (b + 1) + a, times the level's factor, at least 4) and
+is gone once x < −250; a pop-up is gone 25 frames after its t2 (its age, from
+−25 − t2). Each is an upright quad of its picture's size and its kind's scale
+at (x, 0, z), facing the camera's way, with a shadow (image bank 201, grey at
+half strength, flat) at (x − dx, −depth, z) (`0x8690E7BC`: its scale, dx and
+depth; some have none). Its picture changes every 2 frames (`0x8690B2A8`:
+((frame + t2) / 2) mod n of its frame list; Magcargo's is 0, 1, 2, 3, 2, 3);
+Voltorb, Electrode, the Poké Ball, Magnemite and Magneton play theirs
+backwards for odd t2s, so they roll both ways; Diglett and Dugtrio show
+`0x8690E264` / `0x8690E2DC` (0 0 1 1 … 5 5 5 5 … 1 1 0 0: up in 12 frames,
+down in 12) from t2, and their picture 0, empty, otherwise. Xatu and Natu
+(banks 214, 215) have pictures and names but are never loaded.
+
+**Counting** (state 6). A new A press (`0x800CE1C0` + 0x28 i, +8 bit `0x8000`)
+adds 1 up to 99, plays `0x3F02` panned to the player and lights its booth's
+lamp for the frame; B does nothing, and there's no wait between presses. The
+player dips 3, then 1, then 0.5 on the frames after. The counts aren't shown
+while counting (the booths show the totals). The players turn towards the
+middle of the Pokémon on show (`0x8691AB78`), 273/65536 of a turn a frame at
+most (the code subtracts the player's x from both averages: its z is off).
+Once none are left: 50 frames on, `0x3F08` ("Stop!"), and at 60 the answer
+(state 7). Presses count till then.
+
+**The points** (`0x869053B4`), by how far off the count is: 10, 5, 1 on the
+1st and 2nd questions, 20, 10, 5 on the 3rd and 4th, 40, 20, 10 on the last;
+3 or more off, nothing, and a count of 0 scores nothing. The most is 100.
+
+**The answer** (state 7, 190 frames): the booths show the counts in gold
+(G+0x70, `0x8690D000`: prim `FFC800FF`); at 30 "The answer is …" (UI layout
+131's PP6C); `0x3000` at 59; at 60 `0x3F01` and the answer's digits (image
+bank 414) with "Pokémon"; at 90 the points: `0x3F05` if anyone's count is
+right, `0x3F04` if no one scored, and each player, after a random 0-5 frames
+(`0x8691AD80`), cheers (clip 2 from frame 11) if right or is let down (clip 3,
+an Igglybuff with face 2) if 3 or more off. The points go in one every other
+frame, the lamp lit, with `0x3F06`; the crowd (`0x1D08` if anyone was right,
+else `0x1E09`) is asked for every frame from 90 to 189. At 190 the next card.
+The last question's answer: 29 frames, then state 8: song 31, the camera
+eases to the results view over 120 frames while the booths go up 0.61 a point
+to the totals so far (`0x3209`); from 120 the counts and "Who is correct?"
+(layout 126); song 32 at 180 with the answer's digits; at 210 the points,
+going up a point every other frame (`0x310A`, `0x3209`), the crowd `0x1C07`;
+at 290 the winners: everyone on the top total (`0x8690B89C`). From 340 their
+booths go up to the height of 100 points, their lamps flashing every 3 frames,
+cheering (clip 2 from frame 10); the others' sink, faster and faster, and spin
+8° a frame (`0x869004AC`), let down (clip 1, face 1).
+
+**The CPUs.** Their answer is set when the question's made (`0x8690C20C`):
+the right one plus an error of 0, −1, +1, −2, +2, −3, +3 (`0x8690EF78`) drawn
+with rand % 200 against a row of `0x8690ECD8` by COM level and question; a CPU
+on 60 before the last question (perfect so far) uses a row that's never right:
+
+| Level | Questions 1-2 right | 3-4 | The last |
+|---|---|---|---|
+| Easy | 60% | 20% | 10% |
+| Normal | 80% | 40% | 20% |
+| Hard | 95% | 60% | 30% |
+
+Their presses (`0x8690B984`): nothing till a Pokémon has gone; while some are
+left, one when more than 21, 18, 14 frames (Easy, Normal, Hard; 25 at level
+0) have passed since the last and rand % D is 0 (D 20 for an answer under 5,
+10 under 15, 5 under 25, else 3); once none are left, one straight away if at
+0, then when 4 or more frames have passed and rand % D < 2; never past its
+answer. A CPU with a big answer can run out of time and end lower, so on the
+whole the best of three CPUs makes about 58 of 100 on Easy, 60 on Normal and
+71 on Hard (simulated).
+
+**The scene** (`0x8690073C`, geo layout `0x8690EBC0`). The camera
+(`0x86900020`) is three presets at `0x8690EB4C` (distance d, angle a, height
+h, fov): the eye at (0, d sin a + 400 + h, d cos a) looking at (0, h, 0).
+Preset 0 (1110, −0.48, 100, 15.4°) is the opening close-up, 1 (1030, −0.17,
+−40, 23.9°) the game's view, 2 (890, −0.42, 140, 25°) the results'; the moves
+ease all four numbers by (1 − cos)/2. The props stand at the origin at 0.1×:
+the circus backdrop (117, a wall at z −99 up to 357), the ramp (116: the floor
+at y −48 from z 60 to 810, a wooden stage at the back) and the books (118:
+steps at the stage's front, and four hanging over the booths). The booths
+(80, 100, 101, 102: blue, green, purple, yellow) stand at x −157.5, −52.5,
+52.5, 157.5, y 10, 0.1×; each has a lamp (its face clip: dark and bright
+blue, green, red and yellow for 1P-4P, so the purple booth's is red), three
+digit places on bones 1-3 (the screen: the total in white, 16×16 digits of
+image bank 415, or the count in gold) and its player's spot on bone 4. The
+players stand in them at 0.075×: Cleffa (114, or 186 if shiny) or Igglybuff
+(119, or 205) by the Game Pak's Pokémon (species 173, 174; which one a player
+gets without one is decided outside the module, *unknown*); their clips are 0
+idle, 1 let down, 2 a cheer, 3 off. A 1-in-300 chance a frame of a blink
+(`0x8003F028`, *by appearance*).
+
+**The words.** The cards are UI layouts (`0x1E40000` records 125-133, loaded
+by `0x8004DD4C`; see [images-and-text.md](images-and-text.md)): a board hung on
+two chains (133), the question about one, two or three kinds (127, 130, 128)
+or all of them (129: the ALL picture, bank 412), each box showing the
+Pokémon's icon (the icons archive, by dex number: the module asks for 25,
+172, 54…) and its name (bank 413), "Question 1"-"4" or "Last Question", "10",
+"20" or "40" "pts. for perfect" and "Press the A Button to count!" (bank 416).
+"Let's count …" (bank 416) slides in from the right over frames 12-36 of the
+card and out to the left over 60-84 (`0x869090A0`, y 76 on the 320 × 240
+screen); "Stop!" pops up to twice its size over 10 frames, 50 frames after the
+last Pokémon's gone, and shrinks away 20-30 frames into the answer
+(`0x8690DC88`). How the board comes and goes is in the layouts' own animation
+(*not read*), as is when each card shows.
+
+**Sounds** (bank 3 of the effect table: [audio.md](audio.md)): `0x3F02` a
+press, `0x3F07` a card (`0x3F0B` the last one's), `0x3F03` 36 frames into it,
+`0x3F08` "Stop!", `0x3000` and `0x3F01` the answer, `0x3F05` someone's right,
+`0x3F04` no one scored, `0x3F06` the points going in (`0x310A` on the last
+question), `0x3209` a booth going up; the crowd is bank 1's (Clear Cut
+Challenge's). Songs 29 (the opening), 30 (from the first card), 31 (the
+results) and 32 (before the last answer).
 
 ## How this was found
 

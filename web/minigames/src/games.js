@@ -53,5 +53,22 @@ export const GAMES = {
     messages: ["dash", "got"],
     load: () => import("./eevee/index.js"),
   },
+  stampede: {
+    id: "stampede",
+    name: "Streaming Stampede",
+    banner: "assets/ui/title_stampede.png", // image bank 411
+    art: "assets/stampede/backdrop.png", // (its circus backdrop, drawn flat: tools/web_assets.py)
+    color: "#3a2a5a",
+    how: `Count the Pokémon that go by! The board says which to count: tap (or the
+      <b>Count</b> pad) once for each one. You won't see your count till the answer. Exact
+      scores 10 points (20 on questions 3 and 4, 40 on the last); one or two off still
+      scores. Five questions: the highest total wins!`,
+    keys: "Keyboard: <kbd>Space</kbd>",
+    unit: (n) => `${n}<small>pts</small>`,
+    invite: "Count Pokémon with me in Streaming Stampede!",
+    store: "stampede_",
+    messages: ["count", "ans"],
+    load: () => import("./stampede/index.js"),
+  },
 };
-export const ORDER = ["egg", "clearcut", "eevee"];
+export const ORDER = ["egg", "clearcut", "eevee", "stampede"];

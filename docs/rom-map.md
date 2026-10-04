@@ -44,7 +44,7 @@ means the extractor reads it.
 | `0x1718000` | 279 | battle motion dispatch, one per species ([animation.md](animation.md)) | `clips.py` |
 | `0x1898000` | 456 | image banks: menus, HUD, minigame sprites | `images.py` |
 | `0x1D70000` | 331 | string tables ([images-and-text.md](images-and-text.md)) | `text.py` |
-| `0x1E40000` | 234 | UI layouts (records all start `000F0100`) | not converted |
+| `0x1E40000` | 234 | UI layouts: screens of images, boxes and windows on a 640 × 480 grid ([images-and-text.md](images-and-text.md#ui-layouts)) | not converted |
 | `0x1E70000` | 48 | `PRESJPEG` background pictures | `images.py` |
 | `0x2000000` | 227 | FRAGMENT: general 3D objects ([objects.md](objects.md)) | `objects.py` |
 | `0x2230000` | 59 | `PRESJPEG` Pokémon Academy screens | `images.py` |
@@ -100,11 +100,35 @@ module owns a 1 MB slot.
 To find module N: search the code region for `FRAGMENT` (at +8 of every
 module) and take the Nth hit. Its size is the u32 at +0x18.
 
+### Resources
+
+The main program finds its archives through a table of 19 ROM addresses (ROM
+`0x4379A0`, copied to `0x80124E60` at boot: `0x80035700`), and keeps the open
+ones at `*0x80097280` (+0x1C resource 3, +0x20 13, +0x24 12…). By index:
+
+| # | ROM | | # | ROM |
+|---|---|---|---|---|
+| 0 | `0x1718000` battle motion dispatch | | 10 | `0x3FED000` species metadata |
+| 1 | `0x1898000` image banks | | 11 | `0x1708000` |
+| 2 | `0x1D70000` string tables | | 12 | `0x2000000` objects |
+| 3 | `0x1E40000` UI layouts | | 13 | `0x2230000` Academy screens |
+| 4 | `0x258D000` Pokémon icons | | 14 | `0x3FD5000` shiny textures |
+| 5 | `0x267D000` battle effect resources | | 15 | `0x2268000` trainer faces |
+| 6 | `0x27ED000` Pokémon models | | 16 | `0x1638000` arenas |
+| 7 | `0x2D7D000` pose banks | | 17 | `0x266B000` |
+| 8 | `0x1E70000` background pictures | | 18 | `0x2675000` more icons |
+| 9 | `0x23A5000` | | | |
+
+The main program runs from ROM `0x1000` at `0x80000400` (so VRAM = ROM +
+`0x7FFFF400`).
+
 ### Known main-program functions
 
 | VRAM | Does |
 |---|---|
 | `0x8004DED4` | load an object from the objects table; `a0` = object number |
+| `0x8004DD4C` | load UI layout `a0` (`0x1E40000`); `0x8004DDDC` gets it ready to draw (Streaming Stampede passes 125-133) |
+| `0x800357AC` | the ROM address of resource `a0` (0-18), from a table the boot code copies from ROM `0x4379A0` (below) |
 | `0x8004DFF8` | used on the same objects right after it; `a1` = object number (*purpose unknown*) |
 | `0x8004D770` | show background picture `a0` from `0x1E70000`. Eager Eevee passes 44 (its round rainbow field) and Egg Emergency 19 (its building) |
 | `0x8004CA70` | load image bank `a0` from `0x1898000` (`a1` = image, *by usage*); every minigame passes its HUD banks, e.g. 434 (player badges) |

@@ -15,6 +15,10 @@ const SCHEDULES = { 1: "ba64e35664b2591f", 12345: "36b3b248013c25c9", 2147483647
 const DEALS = { 1: "845261658a294406", 12345: "dcaad7cc4c79a603", 2147483647: "8c853818348d493e" };
 // Eager Eevee's deal() for levels 1-3: the same as JS_EEVEE in tools/test_rooms.py
 const EEVEE = { 1: "d54a9e4e6d7d05ec", 12345: "e4663aef5698855e", 2147483647: "60c971ff1eb41fe2" };
+// Streaming Stampede's questions (and the CPUs' answers and presses) for levels 1-3: the same as JS_STAMPEDE in tools/test_rooms.py
+const STAMPEDE = { 1: "84a6cb28cd987d1d", 12345: "2a9b704b839d8309", 2147483647: "15649380292b011a" };
+// the best of the three CPUs' totals in a game, on average (Streaming Stampede: rules.js cpuPresses)
+const COUNT_TARGETS = { easy: [54, 62], normal: [56, 65], hard: [67, 76] };
 // how soon after the basket comes up the CPUs dash (frames, on average), by level (rules.js cpuPlan)
 const DASH_TARGETS = { easy: [23.5, 26.5], normal: [18.5, 21.5], hard: [15.5, 18.5] };
 // what it takes to win a solo round: the best of the three CPUs, on average
@@ -143,6 +147,20 @@ function autodash(w, after) {
     if (!on || g.state !== "play") return;
     const { T, rd, t } = g.now;
     if (rd.kind !== 2 && t >= T.open + after && g.players[z].runner.can(t)) g.press("a");
+  };
+  return () => { api.step = step; };
+}
+
+// a scripted Streaming Stampede player: counts each question's answer (and
+// `off` more), a press every 3 frames from the counting's start, from inside the game's steps
+function autocount(w, off = 0) {
+  const api = w.mg.mini, step = api.step;
+  api.step = function (dt, on) {
+    step.call(api, dt, on);
+    const g = api.game, z = w.mg.me();
+    if (!on || g.state !== "play") return;
+    const { q, Q, f, k } = g.now;
+    if (f >= 0 && k < 0 && f % 3 === 0 && g.players[z].presses[q].length < Q.answer + off) g.press();
   };
   return () => { api.step = step; };
 }
@@ -454,6 +472,91 @@ await test("Eager Eevee: a solo game, played headless: a quick player beats the 
   return "totals over 6 games on Hard: " + tally.join(", ");
 });
 
+await test("Streaming Stampede: the questions are the same as the server's copy of them", async () => {
+  const R = await moduleOf(solo, "./src/stampede/rules.js");
+  const hex = (x) => { const d = new DataView(new ArrayBuffer(8)); d.setFloat64(0, x); return [...new Uint8Array(d.buffer)].map((b) => b.toString(16).padStart(2, "0")).join(""); };
+  for (const [seed, want] of Object.entries(STAMPEDE)) {
+    let s = "";
+    for (const level of [1, 2, 3]) {
+      let st = R.setup(level);
+      const totals = [0, 0, 0, 0];
+      for (let q = 0; q < R.QUESTIONS; q++) {
+        const Q = R.question(+seed, q, st, totals, level), presses = [0, 1, 2, 3].map((z) => R.cpuPresses(Q, level, z));
+        s += `${Q.answer},${Q.frames},${Q.code},${Q.cpu.join("/")},${presses.map((p) => p.length).join("/")};`;
+        s += Q.stream.map((o) => `${o.kind},${o.role},${hex(o.x)},${o.z},${o.t2},${o.speed},${o.gone};`).join("");
+        presses.forEach((p, z) => { totals[z] += R.points(q, p.length, Q.answer); });
+        st = R.after(Q.state, q, totals, false);
+      }
+    }
+    const got = await sha16(s);
+    assert(got === want, `seed ${seed}: ${got}; tools/stampede_rules.py expects ${want} (update both, and the digests)`);
+  }
+});
+
+await test("Streaming Stampede: a count scores as in the game; CPU levels", async () => {
+  const R = await moduleOf(solo, "./src/stampede/rules.js");
+  const pts = [5, 4, 6, 3, 7, 2, 0].map((c) => R.points(0, c, 5)).join();
+  assert(pts === "10,5,5,1,1,0,0", "question 1, answer 5: " + pts);
+  assert(R.points(2, 9, 9) === 20 && R.points(4, 27, 25) === 10 && R.points(4, 0, 1) === 0, "questions 3 and 5");
+  // the questions: one kind, then look-alikes, then all of them; never a family twice
+  const Q = [];
+  let st = R.setup(2);
+  for (let q = 0; q < 5; q++) { Q.push(R.question(4242, q, st)); st = R.after(Q[q].state, q, [0, 0, 0, 0], false); }
+  assert(new Set(Q[0].stream.map((o) => o.kind)).size === 1 && Q[4].what === null && Q[4].answer === Q[4].stream.length, "question 1 or 5");
+  const report = [];
+  for (const level of ["easy", "normal", "hard"]) {
+    const L = R.LEVELS[level];
+    let best = 0;
+    for (let s = 1; s <= 300; s++) {
+      const seed = s * 7717 + 3, totals = [0, 0, 0, 0];
+      let state = R.setup(L);
+      for (let q = 0; q < 5; q++) {
+        const qq = R.question(seed, q, state, totals, L);
+        for (let z = 1; z < 4; z++) totals[z] += R.points(q, R.cpuPresses(qq, L, z).length, qq.answer);
+        state = R.after(qq.state, q, totals, false);
+      }
+      best += Math.max(totals[1], totals[2], totals[3]);
+    }
+    const mean = best / 300, [lo, hi] = COUNT_TARGETS[level];
+    report.push(`${level} ${mean.toFixed(1)}`);
+    assert(mean >= lo && mean <= hi, `${level}: the best CPU averages ${mean.toFixed(1)}, expected ${lo}-${hi}`);
+  }
+  return "the best CPU's total, on average: " + report.join(", ") + " (of 100)";
+});
+
+await test("Streaming Stampede: its music and sound effects play from sound.bin", () => soundTest("assets/stampede/sound.bin", [
+  ["main", 6, (r) => assert(r.notes > 10 && r.peak > 0.05 && r.peak < 1, `song 30: ${r.notes} notes, peak ${r.peak.toFixed(2)}`)],
+  ["results", 4, (r) => assert(r.notes > 5 && r.peak > 0.05 && r.peak < 1, `song 31: ${r.notes} notes, peak ${r.peak.toFixed(2)}`)],
+]));
+
+await test("Streaming Stampede: a solo game, played headless: a player who counts right beats the CPUs", async () => {
+  await solo.mg.show("stampede");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners;
+  solo.mg.paused = true;
+  g.listeners = {};
+  const tally = [0, 0, 0, 0];
+  try {
+    for (let s = 1; s <= 4; s++) {
+      g.reset("hard", s * 9973, { me: 0, control: ["local", "cpu", "cpu", "cpu"] });
+      g.start();
+      while (g.state === "play") {
+        g.update(1 / 30);
+        const { q, Q, f, k } = g.now;
+        if (f >= 0 && k < 0 && f % 3 === 0 && g.players[0].presses[q].length < Q.answer) g.press();
+      }
+      assert(g.players[0].total === 100, `counting right should make 100: ${g.players[0].total}`);
+      g.players.forEach((p, z) => { tally[z] += p.total; });
+    }
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  assert(tally[0] > Math.max(...tally.slice(1)), "the player who counted right didn't win: " + tally);
+  return "totals over 4 games on Hard: " + tally.join(", ");
+});
+
 await test("online: another device's player is shown as far behind as its moves take to get here", async () => {
   const { Lag, LAG, startDelay } = await moduleOf(solo, "./src/lag.js");
   const start = startDelay(40, 120); // (80 ms each way, and the spare)
@@ -515,7 +618,7 @@ await test("online: Clear Cut Challenge's logs fall together, and a late cut goe
   }
 });
 
-await test("a solo round starts and plays, in all three games", async () => {
+await test("a solo round starts and plays, in all four games", async () => {
   solo.document.querySelector("#play").click();
   await until(() => solo.mg.phase() === "play" && solo.mg.game.time > 4, "Egg Emergency's round to be under way");
   let g = solo.mg.game;
@@ -545,8 +648,21 @@ await test("a solo round starts and plays, in all three games", async () => {
   g = solo.mg.game;
   const rd = g.rounds[0], v = g.verdict[0];
   assert(rd.kind === 2 ? !v || v.pts.every((x) => x === 0) : v && v.got[0], `the first race (kind ${rd.kind}): ${JSON.stringify(v)}`);
+  solo.mg.title();
+  await solo.mg.show("stampede");
+  solo.document.querySelector("#play").click();
+  const stopCount = autocount(solo);
+  try {
+    await until(() => solo.mg.phase() === "play" && solo.mg.game.at && solo.mg.game.lastFrame > solo.mg.game.at[0].judged + 5,
+                "Streaming Stampede's first answer", 40000);
+  } finally { stopCount(); }
+  g = solo.mg.game;
+  const answer = g.verdicts[0];
+  assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
+  assert(answer && answer.counts[0] === g.qs[0].answer && answer.pts[0] === 10, "counting right, the first answer gave " + JSON.stringify(answer));
   solo.frameElement.remove();
-  return "Clear Cut's first log: " + first.join(", ") + `; Eevee's first race: ${v ? v.pts.join(", ") : "no one"}`;
+  return "Clear Cut's first log: " + first.join(", ") + `; Eevee's first race: ${v ? v.pts.join(", ") : "no one"}` +
+    `; Stampede's first answer: ${answer.pts.join(", ")}`;
 }, { live: true });
 
 const code = Array.from({ length: 4 }, () => "BCDFGHJKLMNPQRSTVWXZ"[Math.floor(Math.random() * 20)]).join("");
@@ -697,6 +813,34 @@ await test("online: an Eager Eevee game, the same on both devices, and cheating 
     if (rd.kind === 0) assert(v && v.got[0] && !v.got[1], `the fruit should be Ann's: ${JSON.stringify(v)}; a claim got through?`);
     if (rd.kind === 1) assert(v && v.pts[0] > v.pts[1] && v.pts[1] > 0, `Ann should have had more strawberries than Bob: ${JSON.stringify(v)}; a claim got through?`);
     return `after two races: ${totals(ann)} (${prizes(ann)})`;
+  } finally {
+    stop.forEach((s) => s());
+  }
+}, { live: true });
+
+await test("online: a Streaming Stampede game, the same on both devices, and cheating doesn't work", async () => {
+  await until(() => ann.mg.room()?.state === "lobby", "the Eager Eevee game to end", 120000);
+  ann.document.querySelector("#menu").click();
+  bob.document.querySelector("#menu").click();
+  ann.document.querySelector(`#lobby .games button[data-game="stampede"]`).click();
+  await until(() => bob.mg.room()?.game === "stampede" && bob.document.title === "Streaming Stampede", "Streaming Stampede in the lobby");
+  const stop = [];
+  try {
+    ann.mg.net().send("start");
+    await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the round", 20000);
+    stop.push(autocount(ann), autocount(bob, -1)); // Ann counts right, Bob one short
+    const net = bob.mg.net(), r = ann.mg.room().round, g = bob.mg.game;
+    // Bob counts for Ann's seat, and for a CPU's
+    await until(() => g.now.f > 5, "the counting", 30000);
+    net.send("count", { r, s: 0, n: 0, f: g.now.f });
+    net.send("count", { r, s: 2, n: 0, f: g.now.f });
+    await until(() => [ann, bob].every((w) => w.mg.game.verdicts[0]?.told), "the first answer, on both devices", 40000);
+    const v = (w) => JSON.stringify(w.mg.game.verdicts[0].counts) + " " + JSON.stringify(w.mg.game.verdicts[0].pts);
+    assert(v(ann) === v(bob), `the first answer: ${v(ann)} / ${v(bob)}`);
+    const a = ann.mg.game.verdicts[0], Q = ann.mg.game.qs[0];
+    assert(a.counts[0] === Q.answer && a.counts[1] === Q.answer - 1, `counts ${a.counts} for an answer of ${Q.answer}: a claim got through?`);
+    assert(a.pts[0] === 10 && a.pts[1] === (Q.answer - 1 ? 5 : 0), "points " + a.pts);
+    return `the first answer (${Q.answer}): counts ${a.counts}, points ${a.pts}`;
   } finally {
     stop.forEach((s) => s());
   }

@@ -1,5 +1,5 @@
 """Tests for the rooms server (tools/rooms.py) and its rules (tools/egg_rules.py,
-tools/clearcut_rules.py, tools/eevee_rules.py).
+tools/clearcut_rules.py, tools/eevee_rules.py, tools/stampede_rules.py).
 
     python3 tools/test_rooms.py
 
@@ -27,6 +27,7 @@ import clearcut_rules  # noqa: E402
 import eevee_rules  # noqa: E402
 import egg_rules  # noqa: E402
 import rooms  # noqa: E402
+import stampede_rules  # noqa: E402
 
 # makeSchedules() in web/minigames/src/egg/game.js, run in a browser: the
 # first 16 hex digits of the SHA-256 of every drop (the bits of t and fall)
@@ -37,6 +38,11 @@ JS_DEALS = {1: "845261658a294406", 12345: "dcaad7cc4c79a603", 2 ** 31 - 1: "8c85
 # deal() in web/minigames/src/eevee/rules.js, for levels 1-3: each round's
 # kind, fruit, piles, open and fakes (web/minigames/tests.js has the same)
 JS_EEVEE = {1: "d54a9e4e6d7d05ec", 12345: "e4663aef5698855e", 2 ** 31 - 1: "60c971ff1eb41fe2"}
+# question() and cpuPresses() in web/minigames/src/stampede/rules.js, for
+# levels 1-3, each question made from the totals the CPUs' counts give: its
+# answer, counting frames, code, the CPUs' answers and presses, and every
+# Pokemon in its stream (web/minigames/tests.js has the same)
+JS_STAMPEDE = {1: "84a6cb28cd987d1d", 12345: "2a9b704b839d8309", 2 ** 31 - 1: "15649380292b011a"}
 
 # a short round, the same for every seat: (t, col, kind, fall); they reach the
 # hands at 0.5, 0.8, 1.1 (the Voltorb), 1.4 and 2.1
@@ -210,6 +216,37 @@ def _():
     rs = eevee_rules.deal(12345, 2)
     assert [(r["kind"], r["open"], r["fakes"]) for r in rs][:2] == [(1, 165, [29, 70, 145]), (0, 132, [])], rs
     assert all(r["kind"] != eevee_rules.PINECO for s in range(50) for r in eevee_rules.deal(s, 1)[:1])  # (none first on Easy)
+
+
+def stampede_digest(seed):
+    s = ""
+    for level in (1, 2, 3):
+        st = stampede_rules.setup(level)
+        totals = [0] * 4
+        for q in range(stampede_rules.QUESTIONS):
+            Q = stampede_rules.question(seed, q, st, totals, level)
+            presses = [stampede_rules.cpu_presses(Q, level, z) for z in range(4)]
+            s += "%d,%d,%d,%s,%s;" % (Q["answer"], Q["frames"], Q["code"], "/".join(map(str, Q["cpu"])),
+                                      "/".join(str(len(p)) for p in presses))
+            s += "".join("%d,%d,%s,%d,%d,%d,%d;" % (o["kind"], o["role"], struct.pack(">d", o["x"]).hex(), o["z"], o["t2"],
+                                                    o["speed"], o["gone"]) for o in Q["stream"])
+            for z in range(4):
+                totals[z] += stampede_rules.points(q, len(presses[z]), Q["answer"])
+            st = stampede_rules.after(Q["state"], q, totals, False)
+    return hashlib.sha256(s.encode()).hexdigest()[:16]
+
+
+@check("Streaming Stampede: the questions match the browser's, bit for bit; the scoring")
+def _():
+    for seed, want in JS_STAMPEDE.items():
+        assert stampede_digest(seed) == want, seed
+    P = stampede_rules.points
+    assert [P(0, c, 5) for c in (5, 4, 6, 3, 7, 2, 0)] == [10, 5, 5, 1, 1, 0, 0]
+    assert [P(2, 9, 9), P(3, 8, 9), P(4, 27, 25), P(4, 0, 1)] == [20, 10, 10, 0]
+    st = stampede_rules.after(stampede_rules.setup(1), 0, [10, 10, 10, 10], True)  # four people, all perfect
+    assert (st["bonus"], st["level"]) == (2, 2), st
+    st = stampede_rules.after(st, 1, [20, 20, 15, 0], True)  # only two perfect: no more
+    assert (st["bonus"], st["level"]) == (2, 2), st
 
 
 @check("Eager Eevee: a dash, a feint, the basket and a Pineco; who gets the prize")
@@ -540,6 +577,67 @@ def _():
         b.close()
     finally:
         eevee_rules.deal, eevee_rules.INTRO, eevee_rules.AFTER = saved
+
+
+@check("Streaming Stampede: the server counts the presses, gives the answers and stops cheats")
+def _():
+    # short questions: 3 Pokemon that are gone by frame 10 of a 20-frame counting
+    def short(seed, q, state, totals=(0,) * 4, com=None):
+        stream = [dict(kind=0, role=0, x=300.0, z=300, t2=0, speed=60, gone=9) for _ in range(3)]
+        return dict(q=q, special=False, k=0, code=0, what=[0], members=[0], stream=stream, answer=3, last=9,
+                    frames=20, cpu=[3, 3, 2, 4], seed=seed, state=dict(state))
+    def presses(Q, level, seat):  # (the CPUs count to their answers once the stream's gone)
+        return list(range(10, 10 + Q["cpu"][seat]))
+    saved = (stampede_rules.question, stampede_rules.cpu_presses, stampede_rules.CARD, stampede_rules.ANSWER,
+             stampede_rules.LAST_ANSWER)
+    stampede_rules.question, stampede_rules.cpu_presses = short, presses
+    stampede_rules.CARD, stampede_rules.ANSWER, stampede_rules.LAST_ANSWER = 3, 12, 12
+    try:
+        a, b = Client("SA"), Client("SB")
+        a.send("hello", id="sa", name="Sam", game="stampede")
+        code = a.wait("welcome")["room"]
+        b.send("hello", id="sb", name="Sue", room=code)
+        b.wait("welcome")
+        time.sleep(rooms.CHANGE_GAP)
+        a.drain()
+        b.drain()
+        a.send("start")
+        st = a.wait("start")
+        assert st["game"] == "stampede" and st["ss"] == dict(told=[None] * 5), st
+        go, r = st["go"], st["round"]
+        g = rooms.rooms[code].game
+        assert g.cpus == [False, False, True, True]
+
+        def press(c, seat, f, n=0):
+            at(go, (g.at[n]["count"] + f + 0.3) / stampede_rules.FPS)
+            c.send("count", r=r, s=seat, n=n, f=f)
+
+        press(a, 0, 2)
+        press(a, 0, 4)
+        press(b, 1, 4)
+        b.send("count", r=r, s=1, n=0, f=4)  # the same frame again: one a frame
+        b.send("count", r=r, s=0, n=0, f=5)  # someone else's player: ignored
+        b.send("count", r=r, s=1, n=0, f=19)  # in the future: ignored
+        a.send("count", r=r, s=2, n=0, f=5)  # a CPU's: the server counts those itself
+        press(a, 0, 7)
+        press(b, 1, 8)
+        seen = [(m["s"], m["f"]) for m in b.drain() if m["t"] == "count"]
+        assert seen == [(0, 2), (0, 4), (0, 7)], seen  # (its own aren't sent back)
+        ans = a.wait("ans", timeout=4)
+        assert (ans["n"], ans["c"], ans["p"], ans["e"]) == (0, [3, 2, 2, 4], [10, 5, 5, 5], [10, 5, 5, 5]), ans
+        a.send("count", r=r, s=0, n=0, f=10)  # after the answer: too late
+        press(b, 1, 3, n=1)  # the next question: Sue counts one
+        a.s.settimeout(8)
+        res = a.wait("results", timeout=10)
+        assert g.verdicts[0][0] == [3, 2, 2, 4], g.verdicts[0]
+        assert res["scores"] == g.scores, (res, g.scores)
+        assert [v[0] for v in g.verdicts[1:]] == [[0, 1, 2, 4]] + [[0, 0, 2, 4]] * 3, g.verdicts
+        assert g.scores == [10, 5 + 1, 50, 50], g.scores  # (2 of 3 and 4 of 3 score too: 5, 5, 10, 10, 20)
+        b.close()
+        a.close()
+    finally:
+        (stampede_rules.question, stampede_rules.cpu_presses, stampede_rules.CARD, stampede_rules.ANSWER,
+         stampede_rules.LAST_ANSWER) = saved
 
 
 @check("Telegram logins: checked, and no one can pose as a Telegram player")

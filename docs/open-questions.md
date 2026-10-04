@@ -9,9 +9,15 @@ What isn't known yet, roughly by how useful it would be.
   programs' bytecode in code module #79 ([effects.md](effects.md)); only the
   particle-emitting opcodes are read.
 - **Undecoded archives:** `0x047D690` (598 small records), `0x0493410` (4
-  empty), `0x1708000` (72), `0x266B000` (279, mostly empty); and, known but
-  not converted, the UI layouts (`0x1E40000`) and fonts (`0x437AD0`)
+  empty), `0x1708000` (72), `0x266B000` (279, mostly empty), `0x23A5000`
+  (resource 9); and, known but not converted, the UI layouts (`0x1E40000`:
+  their elements are read, not their animation) and fonts (`0x437AD0`)
   ([rom-map.md](rom-map.md)).
+- **Streaming Stampede's loose ends** (its rules are read: [minigames.md](minigames.md#streaming-stampede)):
+  how its question board comes and goes, and when each card's words show
+  (the UI layouts' own animation); whether a player without a Game Pak is
+  Cleffa or Igglybuff (decided outside module #59; the remake has both, 1P
+  and 3P Cleffa).
 - **Audio:** the voices' codec (5, in sample banks 4–6), the reverb
   settings, the game's custom sequence function (`0x800275D8`), and the
   0x28-byte records at `0x49B780` ([audio.md](audio.md)).

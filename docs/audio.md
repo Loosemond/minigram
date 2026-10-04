@@ -71,7 +71,7 @@ What each minigame's code module asks for:
 | Gutsy Golbat | 13 | 52 |
 | Clear Cut Challenge | 19, 18 | 58, 57 (18: while each log is hauled up; 19: when the pieces are shown) |
 | Pichu's Power Plant | 21 | 60 |
-| Streaming Stampede | 30, 31, 32 | 69, 70, 71 |
+| Streaming Stampede | 29, 30, 31, 32 | 68 (its opening), 69 (from the first question), 70 (the results), 71 (before the last answer) |
 | Topsy-Turvy | 33 | 72 |
 | Barrier Ball | 35 | 74 |
 | Egg Emergency | 45 | 84 (122 BPM, a 23.6 s loop, font 49) |
@@ -160,6 +160,28 @@ channel): `0x0C` has channel 9 to itself, and the game's sound manager stops
 it once it's no longer asked for; `0x0D`-`0x10` share channel 14, each
 taking over from the last, and carry on until the module stops every sound as
 it leaves (`0x80027ED0(0xFFE)`).
+
+Streaming Stampede's (module #59) are bank 3's, the minigame's own
+(entries 0-8 are sounds `0x20`-`0x28`, 9 `0x5E`, 10 `0x5F`, 11 `0x73`):
+
+| Id | Sound | Effects of font 12 | When (from the code) |
+|---|---|---|---|
+| `0x3F02` | `0x22` | 27 | a count (an A press), panned to the player (`0x80027A18`) |
+| `0x3F07`, `0x3F0B` | `0x27`, `0x73` | 32; instrument 43 | a question's card; the last question's |
+| `0x3F03` | `0x23` | 28 | 36 frames into the card |
+| `0x3F08` | `0x28` | 33 | "Stop!", 50 frames after the last Pokémon's gone |
+| `0x3000`, `0x3F01` | `0x20`, `0x21` | 25, 26 | the frame before the answer shows, and as it does |
+| `0x3F05`, `0x3F04` | `0x25`, `0x24` | 30, 29 | someone's count is right; no one scored |
+| `0x3F06`, `0x310A` | `0x26`, `0x5F` | 31, 30 | the points going in (the last question's) |
+| `0x3209` | `0x5E` | 66 | a booth going up a point |
+
+Sounds `0x21`-`0x28` share a script (at `0x43F` of sequence 9) that reads
+the sound number from its channel's IO port 5 and writes its note into itself
+(effect = sound − 0x21 + 0x1A, `c7 1a 04 53`): the effects above are read off
+that, and `tools/web_assets.py` lists them by hand. The crowd after an answer
+is bank 1's (`0x1C07`-`0x1E09`, above). A channel that never sets an
+instrument plays drums (it starts on them: instOrWave 0); song 30 (sequence 69)
+has five such channels, so the web pack takes their notes as drums.
 
 ## Timing
 

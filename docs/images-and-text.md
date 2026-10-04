@@ -10,7 +10,7 @@ Code: `ps2tool/images.py`, `ps2tool/text.py`.
 | `0x1E70000` | 48 | **backgrounds**: `"PRESJPEG"`, a 16-byte header, then a normal JPEG |
 | `0x2230000` | 59 | **Pokémon Academy screens**, the same `PRESJPEG` format |
 | `0x2268000` | 67 | **trainer faces**: u32 count + count offsets per record, with the same 8-byte descriptor before each image (158 faces) |
-| `0x258D000` | 279 | **Pokémon icons**, 40×40 RGBA16 |
+| `0x258D000` | 279 | **Pokémon icons**, 40×40 RGBA16: record i is species i + 1 (0 Bulbasaur … 250 Celebi; the game asks for one by national dex number), then eggs; extracted as `icon_NNN_<name>` by species |
 | `0x2675000` | 9 | more 40×40 RGBA16 icons |
 
 Texture formats are the N64 ones listed in [fragments.md](fragments.md).
@@ -23,6 +23,24 @@ Egg Emergency HUD digits (banks 404 and 429) came out combed. Undoing the swap
 made rows smoother in all 1,742 bank images and 158 faces where it makes any
 difference (76 bank images look the same either way; none looked better
 unswapped). The 40×40 icons are stored plainly and are left alone.
+
+## UI layouts
+
+The archive at `0x1E40000` (234 records, not Yay0) holds screens built from
+pieces: each record is a `ROOT` and a 640 × 480 container, then elements
+(0001 and 0002 push and pop a level; a child's x and y are relative to its
+parent), each with a four-letter name the game's code finds it by
+(`0x87F0A688` sets an image element's picture, `0x87F0A6C8` its colours):
+
+| Type | Element |
+|---|---|
+| `0x12` | an image: name, x, y, w, h, image bank, image |
+| `0x11` | a box (52 bytes): x, y, w, h, a border, four corner images, border and fill colours |
+| `0x13` | a window (36 bytes) |
+
+Streaming Stampede's question board and cards are records 125-133
+([minigames.md](minigames.md#streaming-stampede)). The layouts aren't
+converted; their animation (how a board comes and goes) isn't read.
 
 ## Text
 

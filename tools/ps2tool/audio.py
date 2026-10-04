@@ -430,7 +430,8 @@ class Uses:
                 f = need.setdefault(font.index, {"font": font, "inst": set(), "drums": set(), "sfx": set(sfx)})
                 for lay in ch["layers"]:
                     for li, lt, n in lay["notes"]:
-                        for inst in ch["inst"] if li is None else {li}:
+                        # (a channel that never sets an instrument plays drums: it starts on them, instOrWave 0)
+                        for inst in (ch["inst"] or {127}) if li is None else {li}:
                             for ct in ch["trans"]:
                                 if inst == 127:
                                     f["drums"].add((n + ct + lt) & 0xFF)

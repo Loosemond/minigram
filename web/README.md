@@ -10,6 +10,7 @@ have a game picker; a game's code and files load the first time it's picked.
 | Egg Emergency | [minigames/src/egg/](minigames/src/egg/) | made for the remake, from the game's text and Chansey's clips |
 | Clear Cut Challenge | [minigames/src/clearcut/](minigames/src/clearcut/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#clear-cut-challenge)) |
 | Eager Eevee | [minigames/src/eevee/](minigames/src/eevee/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#eager-eevee)) |
+| Streaming Stampede | [minigames/src/stampede/](minigames/src/stampede/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#streaming-stampede)) |
 
 ## Run it
 
@@ -35,7 +36,7 @@ online rooms (`tools/rooms.py`) at `/ws`, and sends `/` and the old
 Add `?debug` to the URL to get `window.mg` in the console: `mg.game` (the
 game's round), `mg.mini` (the game's module), `mg.paused = true`, `mg.tick(dt)`
 (one frame by hand, for a hidden page), `mg.lean(-1 | 0 | 1)`, `mg.cut()`,
-`mg.mini.debug.dash()` and `.feint()` (Eager Eevee),
+`mg.mini.debug.dash()` and `.feint()` (Eager Eevee), `mg.mini.debug.count()` (Streaming Stampede),
 `mg.show("clearcut")`, `mg.title()`, `mg.net()`, `mg.room()`,
 `mg.sound.engine` (the audio engine, once it's loaded). It works on localhost
 only, unless `debug` is true in `src/config.js`. `clips.html` plays every clip
@@ -301,6 +302,79 @@ server's copy: the rounds' scripts, the presses and the judging),
 `src/eevee/assets.js` the models, `src/eevee/fx.js` the effects and
 `src/eevee/index.js` the camera, the taps, its HUD and its online messages.
 
+## Streaming Stampede
+
+Four players stand in their booths at the back of a TV studio, under a
+circus backdrop, and Pokémon go by on the floor in front of them. Before each
+question a board says what to count; tap (or the **Count** pad, Space) once
+for each one that goes by. Your count isn't shown till the answer, when every
+booth's screen shows its count in gold and the board gives the right one.
+Exact is 10 points on the 1st and 2nd questions, 20 on the 3rd and 4th and 40
+on the last; one or two off still score (5, 1; 10, 5; 20, 10). Five
+questions, 100 points at most; the highest total wins, and the winners'
+booths go up to the top. This one follows the game's own code too (module
+#59: [docs/minigames.md](../docs/minigames.md#streaming-stampede) has where
+each number is):
+
+- **The questions.** The first two are one kind (Pikachu, Pichu, Psyduck,
+  Slugma, Magcargo, Omanyte, Togepi, Magnemite, and on the 2nd also Diglett,
+  Dugtrio, Voltorb, Electrode, Doduo, Dodrio, Magneton); the 3rd and 4th mix
+  look-alikes (Voltorb, Electrode and Poké Balls; Togepi and Togepi eggs;
+  Doduo and Dodrio…) or, more often on Easy, kinds that aren't alike, and ask
+  for one of them, two or three; the last is a mix of everything, and you
+  count them all. Diglett and Dugtrio don't walk past: they pop up out of the
+  ground. A family of look-alikes comes up once a game, some only on Normal
+  or Hard.
+- **Harder as it goes.** If enough players are perfect after a question, the
+  next ones have two more Pokémon (and with four people all perfect, the
+  level goes up), as the game does: so a question is made only when it comes
+  up, from the totals so far (on every device the same, and on the server).
+- **The CPUs** are the game's: each question they get the right answer, or
+  one to three off (on Normal, right 80% of the time on the first two
+  questions, 40% on the 3rd and 4th, 20% on the last), and press as the
+  Pokémon leave the screen, catching up after the last one; with a big
+  answer they can run out of time. The best of three makes about 58 points
+  of 100 on Easy, 60 on Normal and 71 on Hard.
+
+The camera is the game's (preset 1 of three: 24°, from (0, 186, 1015)
+looking down at the stage), and the last answer eases to its results view,
+where the booths go up a little a point to show the totals. Portrait looks
+down more, so the stream fills the middle of the screen, and sees as far
+across at the back as the game's screen (the Pokémon go at its edge there, so
+none goes before it's out of sight); the board goes below the stream.
+
+**Sound**: the game's (`assets/stampede/sound.bin`, 640 KB): song 29 over
+the countdown (the game's opening), song 30 from the first question, 31 for
+the results and 32 before the last answer; the effects of bank 3 (a count,
+the cards, "Stop!", the answer, right, no one, the points, a booth going up)
+and the crowd of bank 1.
+
+What comes from the ROM and what is made up:
+
+| From the game | Made for the remake |
+|---|---|
+| the questions, the streams (every Pokémon's kind, place, speed and timing), the counting, the scoring, how it gets harder, the CPUs' answers and presses (module #59's code) | each answer's points are given 90 frames into it whatever happens online (the server's word, by then), and the game's opening camera move isn't played (song 29 plays over the countdown instead) |
+| the studio (objects 116, 117, 118), the booths (80, 100-102) and their lamps, Cleffa and Igglybuff (114, 119) and their clips and faces, the sprites (image banks 201-220) with their shadows, the camera's presets | Cleffa in 1P and 3P and Igglybuff in 2P and 4P (the game's comes from the Game Pak), the portrait camera, more of the studio's floor and a dark wall past its edges, the title's art (the circus backdrop drawn flat), the backdrop's textures at up to 4 times their size (below) |
+| the board's words and pictures (banks 412-416, the icons, layouts 125-133), the booths' digits (bank 415, gold at the answer), "Let's count …" and "Stop!" and their timing | how the board comes and goes (the layouts' own animation isn't read), its panel (drawn here), the answer's smaller panel, the counts over the booths in portrait, the Count pad |
+| songs 29-32, the effects of bank 3 and the crowd (bank 1) | |
+
+**Textures.** All are the game's. The circus backdrop's are resampled bigger
+when the assets are made (`tools/ps2tool/upscale.py`): xBR at 2x (the
+edge-directed filter emulators use for textures: stepped colour edges come out
+smooth, the rest as it is), then bicubic, up to 4 times and 128 texels a side,
+with each texture's own wrap at its edges so the tiles still meet; and
+mipmaps. Its painted rings are where the original's texels show as stair steps
+up close on a phone; the floor, stage, books and booths looked the same
+upscaled, for several times the memory, so they're left as they are. The
+backdrop's costs about 90 KB more to download and 0.75 MB of GPU memory.
+The floor, the stage and the books repeat as the game's do (the tile's area,
+`G_SETTILESIZE`: [docs/fragments.md](../docs/fragments.md)).
+
+Code: `src/stampede/rules.js` has the rules (and `tools/stampede_rules.py`, the
+server's copy: the questions, the CPUs and the scoring), `src/stampede/game.js`
+the game and its scene, `src/stampede/assets.js` the models and pictures and
+`src/stampede/index.js` the camera, the taps, its HUD and its online messages.
+
 ## Online play
 
 **Play with friends** on the title screen makes a room with a four-letter
@@ -339,6 +413,14 @@ How it works:
   followed up (it tells everyone with `a: 1`) till the log's judged. Swings
   count from the log's hanging to its end (with 2 s for clocks off), and a
   seat that doesn't cut scores the miss.
+- **Streaming Stampede**: devices send each press, with the question and
+  the frame of its counting it was on; the server passes them on, checks
+  each could have happened then (in the counting, not in the future, not
+  older than the way here allows, one a frame, 99 at most), counts the CPUs'
+  itself (from the seed, as every device does), and gives each answer's
+  counts and points (`ans`) once no press still on its way could change them:
+  the devices show its word at the answer, and make the next question from
+  its totals.
 - **Eager Eevee**: devices send each dash and feint, with the frame their
   player pressed on, and the server checks it could have happened then (the
   Eevee at its place, not bouncing back or blown away: `tools/eevee_rules.py`,
@@ -415,7 +497,7 @@ How it works:
 - `?debug` and `?server=` work on localhost only.
 
 What it can't stop: a script that plays perfectly by the rules (it can know
-the drops, or the frame to cut on), which looks just like a flawless player; a modified host making
+the drops, or the frame to cut on, or count the stream it's dealt), which looks just like a flawless player; a modified host making
 the CPUs play badly (it can't make them score, though); and best scores,
 which are kept on each device.
 
@@ -423,14 +505,17 @@ which are kept on each device.
 each in a frame, all in one room (`&room=CODE` picks it, `&game=clearcut` the
 game). The first frame is the host. The frames stack on a tall window and sit
 side by side on a wide one. `python3 tools/test_rooms.py` tests the server:
-the protocol, the games' scoring (Clear Cut Challenge's deal and Eager
-Eevee's rounds against the browser's, bit for bit) and the cheats it stops, picking the game, rejoining,
+the protocol, the games' scoring (Clear Cut Challenge's deal, Eager
+Eevee's rounds and Streaming Stampede's questions against the browser's, bit
+for bit) and the cheats it stops, picking the game, rejoining,
 Telegram logins, names and limits (about half a minute, no network).
 `tests.html`, with `serve_web.py` running, tests the games with it, in real
 games in frames: each game's deal against the server's copy, the catching
 rule (the same short round `test_rooms.py` plays), the cut scoring and
-Eager Eevee's dashes, feints and prizes, the CPU levels (what it takes to win,
-simulated; how soon Eager Eevee's dash), a headless game of Eager Eevee, each game's sound (every song
+Eager Eevee's dashes, feints and prizes, Streaming Stampede's questions and
+scoring, the CPU levels (what it takes to win, simulated; how soon Eager Eevee's
+dash; Streaming Stampede's CPUs' totals), headless games of Eager Eevee and
+Streaming Stampede, each game's sound (every song
 and effect rendered offline: they play, and nothing they need is missing from
 the file), a solo round of each, the lobby, the invite link and the game
 picker (only the host's counts), and an online round of each with two
@@ -441,7 +526,8 @@ says he's done and tries to start the next round, then reloads mid-round. In
 Clear Cut Challenge he claims a perfect cut for the other player, a cut for a
 log that isn't up yet, and a second swing at one. In Eager Eevee he dashes
 for the other player, and says he dashed on the first frame the basket was
-up, after seeing her go. Both devices have to agree
+up, after seeing her go. In Streaming Stampede he counts for the other
+player and for a CPU. Both devices have to agree
 with each other throughout and end with the same ranking, and the server
 must never correct an honest device. It takes about three minutes. A hidden
 page steps the games itself (browsers pause hidden pages' animation), and a
@@ -455,16 +541,17 @@ Messages are JSON objects with their type in `t`. From the client:
 
 | `t` | Fields | |
 |---|---|---|
-| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`, `eevee`) |
+| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`, `eevee`, `stampede`) |
 | `ping` | `c`, `rtt` | the client's clock; answered with `pong`. `rtt`: a round trip it can count on, ms (from the last pongs) |
 | `name` | `name` | rename |
 | `level` | `level` | host, in the lobby: `easy`, `normal` or `hard` |
-| `game` | `game` | host, in the lobby: `egg`, `clearcut` or `eevee` |
+| `game` | `game` | host, in the lobby: `egg`, `clearcut`, `eevee` or `stampede` |
 | `start` | | host, in the lobby |
 | `lean` | `r`, `s`, `g`, `l` | in round `r`, seat `s` leans `l` (−1, 0, 1) from round time `g` (s) |
 | `ev` | `r`, `s`, `g`, `n`, `k`, `e` | seat `s` caught its drop `n` (`k: "c"`) or was shocked by it (`"h"`), as this device judged it; `e` is its egg count after. The server answers only if it disagrees |
 | `cut` | `r`, `s`, `n`, `f` | Clear Cut Challenge: seat `s` pressed `f` frames after log `n`'s drop (negative: while it hung) |
 | `dash` | `r`, `s`, `k`, `f` | Eager Eevee: seat `s` pressed A (`k: "a"`, a dash) or B (`"b"`, a feint) on frame `f` from GO |
+| `count` | `r`, `s`, `n`, `f` | Streaming Stampede: seat `s` pressed (counted one) on frame `f` of question `n`'s counting |
 | `done` | `r` | this device's round is over |
 | `leave` | | |
 
@@ -481,7 +568,8 @@ drops are judged, `settled`, in the order they arrive. Clear Cut Challenge:
 `c`, the level code the logs are dealt for (the devices deal them from the
 seed), and to rejoin, `scores` and `cuts`, each seat's `[f, points]` by log, `[f, points, 1]` for a miss it may still follow up.
 Eager Eevee: `ee`, with `level` (the level code the rounds are dealt for) and,
-to rejoin, `scores` and `prizes`, each seat's by round);
+to rejoin, `scores` and `prizes`, each seat's by round. Streaming Stampede:
+`ss`, with `told`, the answers so far as `ans` gives them, to rejoin);
 `pong` (`c`, `s`); `cut` (`r`, `s`, `n`, `f`, `p`, `e`), the server's word on
 a seat's swing at a log: the frame (null: no swing), the points and the
 total after, and `a: 1` for a miss that doesn't count yet (the seat may swing
@@ -489,7 +577,9 @@ again; the total leaves it out); `dash` as above, passed on to the others
 (back to its own device too if it counts on a later frame than it said);
 `got` (`r`, `n`, `p`, `e`, `d`), Eager Eevee's prize for round `n`: the
 points by seat, the totals after, and the frame it was decided (A stops
-working after it);
+working after it); `count` as above, passed on to the others; `ans` (`r`,
+`n`, `c`, `p`, `e`), Streaming Stampede's answer to question `n`: each seat's
+count, points and total after;
 `lean` as above (with the time the server kept: never before the seat's last
 lean); `ev` (`r`, `s`, `n`, `k`, `e`, `g`), the server's verdict on a drop:
 `c` caught, `h` a shock, or `m`, not a catch after all, with the egg count
@@ -506,7 +596,7 @@ opens it (and nothing in a normal browser):
   swipe down doesn't close the game mid-round).
 - Header, background and bottom-bar colours matched to the game on show.
 - The Telegram **back button** leaves a round.
-- **Haptics** on a catch, a Voltorb hit, a cut, GO and FINISH.
+- **Haptics** on a catch, a Voltorb hit, a cut, a count, GO and FINISH.
 - **CloudStorage** keeps the best score per game and level, the last game,
   the level and the sound setting, so they follow the player across devices; localStorage is the
   fallback. Reads time out after 1.5 s, so a slow answer can't block loading.
