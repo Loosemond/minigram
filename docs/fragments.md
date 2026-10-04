@@ -86,8 +86,20 @@ F3DEX2 microcode. The subset the models use:
 | 0xDF | G_ENDDL | end |
 | 0xF0 | G_LOADTLUT | palette size = `((w1 >> 14) & 0x3FF) + 1` |
 | 0xF5 | G_SETTILE | tile 0: palette `(w1 >> 20) & 0xF`, clamp/mirror, mask, shift per axis |
+| 0xF2 | G_SETTILESIZE | tile 0's area: uls, ult in w0 and lrs, lrt in w1, 10.2 fixed point (below) |
 | 0xFC | G_SETCOMBINE | colour combiner (materials) |
 | 0xFD | G_SETTIMG | image / palette address |
+
+**Wrapping.** The RDP clamps a tile at the edges of its area (the last
+`G_SETTILESIZE` for tile 0, not the texture's size) and wraps by the mask
+inside it. Materials often set the size twice: the texture's (for the load),
+then the tile's. A clamped tile whose area spans several periods of its mask
+therefore repeats: Streaming Stampede's floor is a 32 × 32 texture on a 320 ×
+320 tile, ten times each way, and its hanging books' spines (4 × 32) are on 8
+× 64 tiles. The exporter makes such an axis REPEAT (MIRROR with the mirror
+bit) when the geometry stays on the tile, CLAMP otherwise; 57 objects and 24
+Pokémon (Onix's rock texture among them) were smeared before this was
+read.
 
 Each model starts in geometry mode `G_LIGHTING | G_CULL_BACK` (`0x20400`),
 and the mode carries over between display lists. A draw with `G_CULL_FRONT`

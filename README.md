@@ -89,7 +89,7 @@ Names are the game's own (text table 57). Details and method:
 | Barrier Ball | Mr. Mime `129`/`218`, court pieces `120`, mesh panels `141`, `146`, Poké Balls `154` |
 | Pichu's Power Plant | Pichu `107`, Pikachu `201`, window `056`, red orb lamp `057`, wall pieces `190` |
 | Rampage Rollout | Donphan `108` (walking and rolling), track `113` |
-| Streaming Stampede | Cleffa `114`, Igglybuff `119`/`205`, Hoppip `186`, Game Paks `080`/`100`–`102`, ramp `116`, circus backdrop `117`, books `118` |
+| Streaming Stampede | Cleffa `114` (shiny `186`), Igglybuff `119` (shiny `205`), the players' booths `080`/`100`–`102`, ramp `116`, circus backdrop `117`, books `118` |
 | Tumbling Togepi | Togepi `109`, Omanyte `206`, course pieces `060`, `062`–`070`, `132`–`140`, ice block `188`, water `202` |
 | Delibird's Delivery | Delibird `127`, Swinub `082`/`103`, gift boxes `092`/`096`, factory `147`/`148`, the gifts (`169`, `170`, `174`–`177`, `180`, `181`, `184`) |
 | Egg Emergency | Chansey `144`, egg `145`, `185` |
@@ -97,14 +97,17 @@ Names are the game's own (text table 57). Details and method:
 
 The other two Hitmontop models and four of the fruit are grouped by
 appearance: no minigame code loads them by number. The other Pokémon of the
-minigames (Magnemite, Voltorb, Electrode, Spinarak, Diglett, …) are the
-normal battle models in `pokemon/`. Numbers without a name draw effects
+minigames (Voltorb, Spinarak, Diglett, Magnemite, …) are 2D sprites in the
+image banks (below). Numbers without a name draw effects
 (sparkles, smoke, glows). Room decorations (dolls, beds, posters, plants,
 consoles, carpets) are `000`–`058`, and TV screens showing N64/NES games are
 `156`–`165` and `224`–`226`.
 
 Minigame 2D graphics (e.g. "GO!", "BLOCKED!", "FACE OFF", "DRAW", "Mini-game
-Champion") are in `images/banks/`; `previews/image_banks_*.png` shows every bank.
+Champion", the minigames' sprites) are in `images/banks/`, a folder per bank:
+`bank_NNN_<name>` for the ones whose use is known (`BANKS` in
+`tools/ps2tool/names.py`), e.g. `bank_202_streaming_stampede_voltorb`;
+`previews/image_banks_*.png` shows every bank.
 Minigame instructions are text table 50.
 
 ### Battle effects

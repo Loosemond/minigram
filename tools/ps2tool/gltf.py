@@ -116,6 +116,7 @@ class Gltf:
                   "accessors": [], "bufferViews": [], "buffers": [], "skins": [], "animations": []}
         self.bin = bytearray()
         self._samplers = {}
+        self._images = {}  # PNG bytes -> image index
 
     def view(self, data, target=None):
         while len(self.bin) % 4:
@@ -166,9 +167,14 @@ class Gltf:
         return self._samplers[key]
 
     def image(self, png, name):
+        # (the same picture again, e.g. one texture drawn both repeating and
+        # clamped: one image, two textures with their own samplers)
+        if png in self._images:
+            return self._images[png]
         bvi = self.view(png)
         self.j["images"].append({"bufferView": bvi, "mimeType": "image/png", "name": name})
-        return len(self.j["images"]) - 1
+        self._images[png] = len(self.j["images"]) - 1
+        return self._images[png]
 
     def glb(self):
         j = {k: v for k, v in self.j.items() if v != []}
@@ -346,6 +352,23 @@ def _wrap(mode):
     return WRAP_REPEAT, False
 
 
+def _wrap_axis(sampler, axis, lo, hi):
+    """(glTF wrap, bake a mirror) for one axis of a draw whose geometry
+    reaches texels lo..hi. The RDP clamps at the tile's edges (G_SETTILESIZE)
+    and wraps by the mask inside them: a clamped tile that spans several
+    periods repeats (Streaming Stampede's floor: a 32-texel texture on a
+    320-texel tile), which is REPEAT (or MIRROR) as long as the geometry stays
+    on the tile."""
+    cm, mk = ("cms", "masks") if axis == 0 else ("cmt", "maskt")
+    mode, mask, size = sampler[cm], sampler.get(mk, 0), sampler.get("size")
+    if mode & 2 and mask and size:
+        first, last = size[axis], size[axis + 2] + 1
+        period = (1 << mask) * (2 if mode & 1 else 1)
+        if last - first > period + 0.5 and first - 1 <= lo and hi <= last + 1:
+            return (WRAP_MIRROR if mode & 1 else WRAP_REPEAT), False
+    return _wrap(mode)
+
+
 def _classify_normals(verts):
     ok = 0
     for v in verts:
@@ -516,8 +539,10 @@ def build_gltf(model, name, clips=(), scale=0.01, bone_names=None, face_sets=Non
         elif not isinstance(src, tuple) and src not in m.virtual:
             inherited_cb = None  # an authored texture ends the inheritance
         has_tex = src is not None
-        ws, mir_s = _wrap(sampler["cms"])
-        wt, mir_t = _wrap(sampler["cmt"])
+        reach = [[v[3 + a] / 32.0 * tex_scale[a] * _shift_factor(sampler.get("shifts" if a == 0 else "shiftt", 0))
+                  for v in p.verts] for a in (0, 1)]  # (the texels the draw reaches, by axis)
+        ws, mir_s = _wrap_axis(sampler, 0, min(reach[0]), max(reach[0]))
+        wt, mir_t = _wrap_axis(sampler, 1, min(reach[1]), max(reach[1]))
         lit = _classify_normals(p.verts)
         if m.stage and not isinstance(src, tuple) and src is not None and src not in m.virtual \
                 and p.callback is not None:

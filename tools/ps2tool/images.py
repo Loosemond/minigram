@@ -20,6 +20,7 @@ import re
 import struct
 
 from .fragment import decode_texture
+from .names import bank_folder
 from .png import encode_rgba
 
 BANKS = 0x1898000
@@ -70,26 +71,36 @@ def _described(d, off):
     return w, h, fmt, siz
 
 
+def bank_images(rom, i, arc=None):
+    """Image bank i: [(k, w, h, RGBA bytes)] for each image it holds."""
+    d = (arc or rom.archive(BANKS)).get(i)
+    if len(d) < 8:
+        return []
+    cnt = struct.unpack_from(">I", d, 0)[0]
+    if not 0 < cnt < 1024:
+        return []
+    out = []
+    for k, p in enumerate(struct.unpack_from(">%dI" % cnt, d, 4)):
+        off = p - 0x8FF00000
+        desc = _described(d, off) if 8 <= off < len(d) else None
+        if desc is None:
+            continue
+        w, h, fmt, siz = desc
+        out.append((k,) + _decode(_unswap(d, off, w, h, siz), off, w, h, fmt, siz))
+    return out
+
+
 def export_banks(rom, outdir):
     arc = rom.archive(BANKS)
     n = 0
     for i in range(arc.count):
-        d = arc.get(i)
-        if len(d) < 8:
+        images = bank_images(rom, i, arc)
+        if not images:
             continue
-        cnt = struct.unpack_from(">I", d, 0)[0]
-        if not 0 < cnt < 1024:
-            continue
-        sub = os.path.join(outdir, "images", "banks", "bank_%03d" % i)
+        sub = os.path.join(outdir, "images", "banks", bank_folder(i))
         os.makedirs(sub, exist_ok=True)
-        for k, p in enumerate(struct.unpack_from(">%dI" % cnt, d, 4)):
-            off = p - 0x8FF00000
-            desc = _described(d, off) if 8 <= off < len(d) else None
-            if desc is None:
-                continue
-            w, h, fmt, siz = desc
-            w_, h_, rgba = _decode(_unswap(d, off, w, h, siz), off, w, h, fmt, siz)
-            _write_png(os.path.join(sub, "%02d.png" % k), w_, h_, rgba)
+        for k, w, h, rgba in images:
+            _write_png(os.path.join(sub, "%02d.png" % k), w, h, rgba)
             n += 1
     return n
 
@@ -133,7 +144,9 @@ def export_icons(rom, outdir, names=None):
     sub = os.path.join(outdir, "images", "icons")
     os.makedirs(sub, exist_ok=True)
     n = 0
-    for table, first in ((ICONS, 0), (ICONS_EXTRA, 1000)):
+    # (the main table's record i is species i + 1: record 0 is Bulbasaur, 24
+    # Pikachu, 250 Celebi; the game asks for an icon by national dex number)
+    for table, first in ((ICONS, 1), (ICONS_EXTRA, 1000)):
         arc = rom.archive(table)
         for i in range(arc.count):
             d = arc.get(i)
@@ -141,8 +154,8 @@ def export_icons(rom, outdir, names=None):
                 continue
             w, h, rgba = _decode(d, 0, 40, 40, 0, 2)
             label = ""
-            if first == 0 and names and 1 <= i <= len(names):
-                name = re.sub(r'[<>:"/\\|?*]', "", names[i - 1].lower().replace(" ", "_"))  # Windows-safe ("???")
+            if first == 1 and names and i < len(names):
+                name = re.sub(r'[<>:"/\\|?*]', "", names[i].lower().replace(" ", "_"))  # Windows-safe ("???")
                 label = "_" + name if name else ""
             _write_png(os.path.join(sub, "icon_%03d%s.png" % (first + i, label)), w, h, rgba)
             n += 1

@@ -676,8 +676,11 @@ class Model:
         return 0 <= t < len(self.textures) or t in self.virtual
 
     def tile_state(self, mat):
-        """(palette, sampler) of render tile 0 in a material display list."""
-        f, pal, sampler = self.f, 0, None
+        """(palette, sampler) of render tile 0 in a material display list.
+        The sampler's "size" is the tile's (uls, ult, lrs, lrt) in texels, from
+        its last G_SETTILESIZE: the RDP clamps at those edges, and wraps by the
+        mask inside them."""
+        f, pal, sampler, size = self.f, 0, None, None
         if mat is None:
             return pal, sampler
         for _ in range(16):
@@ -690,9 +693,13 @@ class Model:
                 sampler = dict(cms=(w1 >> 8) & 3, cmt=(w1 >> 18) & 3,
                                masks=(w1 >> 4) & 0xF, maskt=(w1 >> 14) & 0xF,
                                shifts=w1 & 0xF, shiftt=(w1 >> 10) & 0xF)
+            elif op == 0xF2 and (w1 >> 24) & 7 == 0:  # G_SETTILESIZE, tile 0 (10.2 fixed point)
+                size = (((w0 >> 12) & 0xFFF) / 4, (w0 & 0xFFF) / 4, ((w1 >> 12) & 0xFFF) / 4, (w1 & 0xFFF) / 4)
             elif op == 0xDF:
                 break
             mat += 8
+        if sampler is not None and size is not None:
+            sampler["size"] = size
         return pal, sampler
 
 
