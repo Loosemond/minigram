@@ -39,6 +39,12 @@ const STARS = { at: 60, y: 108, scale: 0.15, tilt: (0x600 / 0x10000) * Math.PI *
 const BOUNCE = [698, 705, 710, 714, 717, 718, 717, 716, 715, 713, 710, 706, 702, 698, 693, 687, 680, 674];
 const HANG_TOP = R.Y0 + R.LENGTH; // 674: the log's top while it hangs ready
 const SIGN_BOUNCE = [-99, -95, -90, -86, -83, -83, -86, -90, -99]; // the signpost settling (0x8650D1B4)
+// a table of a value a frame, at frame x: between two frames, part of the way
+// to the next (the screen shows 60 or more a second, the game's frames are 30)
+const tableAt = (T, x) => {
+  const i = Math.min(T.length - 1, Math.max(0, Math.floor(x))), j = Math.min(T.length - 1, i + 1);
+  return T[i] + (T[j] - T[i]) * Math.min(1, Math.max(0, x - i));
+};
 // the show after a log's fall (frames): the signpost comes up at 20 a frame
 // from -1500 (0x86505324), settles, the points count up (71 frames,
 // 0x8650549C; from frame 21 of it, one a frame: 0x86507AFC), and the pieces fall away
@@ -363,7 +369,7 @@ export class Game {
     const sk = fr - t.judged, settled = SHOW.up + SHOW.settle, over = settled + SHOW.tally;
     let sy;
     if (sk < SHOW.up) sy = -1500 + sk * 20;
-    else if (sk < settled) sy = SIGN_BOUNCE[Math.floor(sk - SHOW.up)];
+    else if (sk < settled) sy = tableAt(SIGN_BOUNCE, sk - SHOW.up);
     else sy = -100;
     const away = sk > over ? 4.9 * (0.25 * (sk - over)) ** 2 : 0; // then it falls away (0x865054D4)
     l.sign.root.position.y = sy - away;
@@ -410,7 +416,7 @@ export class Game {
     if (k < F.down) return this.spinarakStart(i) - 4.9 * (0.45 * k) ** 2;
     if (k < F.down + F.wait) return -460;
     if (k < F.down + F.wait + F.up) return -460 + ((k - F.down - F.wait) / F.up) * (689 + 460);
-    if (k < R.RISE) return BOUNCE[Math.min(BOUNCE.length - 1, Math.floor(k - F.down - F.wait - F.up))];
+    if (k < R.RISE) return tableAt(BOUNCE, k - F.down - F.wait - F.up);
     return HANG_TOP;
   }
 
