@@ -38,7 +38,7 @@ OBJECTS = {
     0: "White Boards", 2: "Wooden Pole", 3: "Room Wall", 12: "Potted Plant (bushy)",
     13: "Purple Crystal", 24: "Potted Plant (berries)", 26: "Purple Crystal", 36: "Stand",
     45: "Stand", 51: "Room Wall", 52: "Hitmontop", 53: "Golbat", 54: "Room (miniature)",
-    55: "Pinsir", 56: "Window", 57: "Red Orb on Stand", 58: "Round Face on a Stick",
+    55: "Pinsir", 56: "Power Plant Frame", 57: "Electrode Lamp", 58: "Round Face on a Stick",
     59: "Signpost", 60: "Platform", 62: "Flower Patch", 63: "Blue Rock", 64: "Blue Rock",
     65: "Log", 66: "Log", 67: "Log", 68: "Pillar", 69: "Pillar", 70: "Pillar", 71: "Bird",
     72: "Trophy (egg)", 73: "Trophy (N)", 74: "Trophy (laurel)", 75: "Trophy (small)",
@@ -62,7 +62,7 @@ OBJECTS = {
     174: "Christmas Stocking", 175: "Diamond Ring", 176: "Grand Piano", 177: "Game Boy Advance",
     178: "Bag of Chips", 179: "Scizor", 180: "Game Boy", 181: "Snorlax", 182: "Trainer Doll",
     183: "Bush", 184: "Candy", 186: "Cleffa (shiny)", 187: "Pole", 188: "Ice Block", 189: "Lab Room",
-    190: "Wall Pieces", 195: "White Ring", 196: "White Ring", 197: "White Ring", 198: "White Ring",
+    190: "Dizzy Stars", 195: "White Ring", 196: "White Ring", 197: "White Ring", 198: "White Ring",
     201: "Pikachu", 202: "Water Plane", 205: "Igglybuff (shiny)", 206: "Omanyte", 208: "Orange",
     209: "Melon", 210: "Bananas", 211: "Strawberry", 212: "Apple", 213: "Grapes", 214: "Lab Room",
     215: "Peach", 216: "Strawberries", 217: "Green Glow Panel", 218: "Mr. Mime", 219: "Grey Panel",
@@ -131,6 +131,9 @@ BANKS = {
     216: "Streaming Stampede Omanyte", 217: "Streaming Stampede Pichu", 218: "Streaming Stampede Pikachu",
     219: "Streaming Stampede Magneton", 220: "Streaming Stampede Togepi",
     415: "Streaming Stampede digits", 416: "Streaming Stampede words",
+    # Pichu's Power Plant (module #54): its effects and charge gauges
+    224: "Pichu's Power Plant spark", 225: "Pichu's Power Plant lightning",
+    409: "Pichu's Power Plant gauge fill", 410: "Pichu's Power Plant gauge frame",
     412: "Streaming Stampede all", 413: "Streaming Stampede names", 414: "Streaming Stampede answer digits",
     # shared by menus and boards (by appearance, and Streaming Stampede's question board)
     51: "buttons", 165: "board rod and chain", 345: "arrows",

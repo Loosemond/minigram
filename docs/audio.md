@@ -161,6 +161,24 @@ it once it's no longer asked for; `0x0D`-`0x10` share channel 14, each
 taking over from the last, and carry on until the module stops every sound as
 it leaves (`0x80027ED0(0xFFE)`).
 
+Pichu's Power Plant's (module #54) are bank 2's, the minigame's own:
+
+| Id | Sound | Effects of font 12 | When (from the code) |
+|---|---|---|---|
+| `0x2F00`, `0x2F01` | `0x13`, `0x14` | 16, 17 | each count tick; GO (with song 21) |
+| `0x2F03` | `0x16` | 19 | an Electrode pops out |
+| `0x2F04`-`0x2F07` | `0x17`-`0x1A` | 20-23 | player 1-4 turns to a new direction, panned |
+| `0x2F08` | `0x1B` | 24 | a shock (a miss) starts |
+| `0x200B` + 0x100 × player | `0x1E` (volume 70) | its own script | every frame a player charges (the hum: it goes on until it's no longer asked for) |
+| `0x2F09`, `0x2F0A` | `0x1C`, `0x1D` | instruments | a loser zapped, 50 frames after the finish (1P and 4P; 2P and 3P) |
+| `0x2F0C`, `0x2F0D` | `0x1F`, `0x29` | instruments | 50 frames after the finish, unless all four won |
+| `0x2F0E`-`0x2F10` | `0x2A`-`0x2C` | instruments | 70, 90 and 110 frames after it |
+| `0x2F11` | `0x15` | 82 | a Pichu winner's cry |
+
+Sounds `0x13`-`0x1B` share a script that writes its note into itself from the
+sound number (effect = sound − 3), so `tools/web_assets.py` lists their
+effects by hand. `0x2F02` (sound `0x15`) isn't used.
+
 Streaming Stampede's (module #59) are bank 3's, the minigame's own
 (entries 0-8 are sounds `0x20`-`0x28`, 9 `0x5E`, 10 `0x5F`, 11 `0x73`):
 

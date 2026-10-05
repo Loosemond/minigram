@@ -11,6 +11,7 @@ have a game picker; a game's code and files load the first time it's picked.
 | Clear Cut Challenge | [minigames/src/clearcut/](minigames/src/clearcut/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#clear-cut-challenge)) |
 | Eager Eevee | [minigames/src/eevee/](minigames/src/eevee/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#eager-eevee)) |
 | Streaming Stampede | [minigames/src/stampede/](minigames/src/stampede/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#streaming-stampede)) |
+| Pichu's Power Plant | [minigames/src/pichu/](minigames/src/pichu/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#pichus-power-plant)) |
 
 ## Run it
 
@@ -37,6 +38,7 @@ Add `?debug` to the URL to get `window.mg` in the console: `mg.game` (the
 game's round), `mg.mini` (the game's module), `mg.paused = true`, `mg.tick(dt)`
 (one frame by hand, for a hidden page), `mg.lean(-1 | 0 | 1)`, `mg.cut()`,
 `mg.mini.debug.dash()` and `.feint()` (Eager Eevee), `mg.mini.debug.count()` (Streaming Stampede),
+`mg.mini.debug.press(dir, "a" | "b")` (Pichu's Power Plant: dir 1 up, 2 down, 3 right, 4 left),
 `mg.show("clearcut")`, `mg.title()`, `mg.net()`, `mg.room()`,
 `mg.sound.engine` (the audio engine, once it's loaded). It works on localhost
 only, unless `debug` is true in `src/config.js`. `clips.html` plays every clip
@@ -375,6 +377,56 @@ server's copy: the questions, the CPUs and the scoring), `src/stampede/game.js`
 the game and its scene, `src/stampede/assets.js` the models and pictures and
 `src/stampede/index.js` the camera, the taps, its HUD and its online messages.
 
+## Pichu's Power Plant
+
+Four Pichus charge up in the four rooms of a power plant, each with four
+Electrode lamps pointing in at it from the ceiling, the floor and the walls.
+When an Electrode pops out, hold the **D-pad** towards it (the arrow keys)
+and tap the button its lamp shows: **A** for blue (X), **B** for green (Z);
+the sign in the middle lights up with the colours that are out. Each right tap
+charges your Pichu one; the wrong button, or a tap towards an Electrode that's
+gone dead, shocks it for 9 frames. The first to 80 wins: the others are
+zapped. This one follows the game's own code too (module #54:
+[docs/minigames.md](../docs/minigames.md#pichus-power-plant) has where each
+number is):
+
+- **The Electrodes.** One pops out a cycle (every 1.6-1.8 s on Normal and
+  Hard, 2.3-2.4 s on Easy), each direction once in every four, and stays live
+  through the next cycle, so for about a second two are out; blue and green
+  come about as often, with runs kept short. Everyone has the same ones.
+- **The CPUs** are the game's: they tap the current Electrode every few frames
+  (4 apart on average on Hard, 5 on Normal, 7 on Easy, each with a mood of its
+  own and the round a speed), never with the wrong button, and near a cycle's
+  end go for the next one, or now and then a random direction, which can shock
+  them. The first of three is full after about 18 s on Easy, 13 on Normal and
+  10.5 on Hard; tapping right ten times a second beats them.
+
+The screen is the game's one screen (the frame of four rooms, its camera,
+which glides in from the side during the countdown), as big as fits; in
+portrait at the top, a little wider than the window (the hazard stripes at
+its sides are cut off), with the controls below. The cards sit where the
+game's badges do, with each player's charge; the gauges are the game's. The
+D-pad and the A and B buttons work with as many fingers as it takes.
+
+**Sound**: the game's (`assets/pichu/sound.bin`, 310 KB): song 21 from GO,
+and bank 2's effects: its own count and GO, an Electrode popping out, a turn
+(a sound for each player), a shock, the hum while your Pichu charges, the
+losers' zap, the jingle after the finish and the winner's cry.
+
+What comes from the ROM and what is made up:
+
+| From the game | Made for the remake |
+|---|---|
+| the Electrodes' pattern, the presses, hits, misses and shocks, the CPUs, the finish (module #54's code) | the pattern and the CPUs draw from random numbers of their own (in the game the sparks' flicker takes from the same ones), so every device and the server have the same; the round ends 50 frames after the finish |
+| the frame (object 56) and its B/A sign, the Electrode lamps (57) and their faces, Pichu (107) and its clips and faces, the dizzy stars (190), the sparks and the lightning (banks 224, 225, coloured as the game draws them), the gauges (banks 409, 410), the camera and its glide | Pichu in every seat (the game's Pikachu comes from a Game Pak), the sparks shown a few frames after each hit, the lightning drawn brighter (it's thin and faint at its size), the stars' place, the portrait screen, the title's art (the frame drawn flat), the badges' intro (not played), the D-pad and the buttons |
+| song 21, the effects of bank 2 | |
+
+Code: `src/pichu/rules.js` has the rules (and `tools/pichu_rules.py`, the
+server's copy: the Electrodes, the presses, the CPUs and the finish),
+`src/pichu/game.js` the game and its scene, `src/pichu/assets.js` the models
+and pictures and `src/pichu/index.js` the camera, the controls, its HUD and
+its online messages.
+
 ## Online play
 
 **Play with friends** on the title screen makes a room with a four-letter
@@ -421,6 +473,15 @@ How it works:
   counts and points (`ans`) once no press still on its way could change them:
   the devices show its word at the answer, and make the next question from
   its totals.
+- **Pichu's Power Plant**: devices send each press (the frame, the direction
+  and the button) and the server checks it as Eager Eevee's (no older than
+  the way here allows, not in the future: one outside counts as that old, or
+  as now), and by the rules (not while shocked, not too soon after the last,
+  not after the finish: `tools/pichu_rules.py`, the same as
+  `src/pichu/rules.js`, bit for bit); it passes it on, tells its own device
+  if it counts on another frame or not at all (the device works its charge out
+  again), plays the CPUs itself from the seed, and says who finished first
+  (`won`) once no press still on its way could make someone full sooner.
 - **Eager Eevee**: devices send each dash and feint, with the frame their
   player pressed on, and the server checks it could have happened then (the
   Eevee at its place, not bouncing back or blown away: `tools/eevee_rules.py`,
@@ -541,17 +602,18 @@ Messages are JSON objects with their type in `t`. From the client:
 
 | `t` | Fields | |
 |---|---|---|
-| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`, `eevee`, `stampede`) |
+| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`, `eevee`, `stampede`, `pichu`) |
 | `ping` | `c`, `rtt` | the client's clock; answered with `pong`. `rtt`: a round trip it can count on, ms (from the last pongs) |
 | `name` | `name` | rename |
 | `level` | `level` | host, in the lobby: `easy`, `normal` or `hard` |
-| `game` | `game` | host, in the lobby: `egg`, `clearcut`, `eevee` or `stampede` |
+| `game` | `game` | host, in the lobby: `egg`, `clearcut`, `eevee`, `stampede` or `pichu` |
 | `start` | | host, in the lobby |
 | `lean` | `r`, `s`, `g`, `l` | in round `r`, seat `s` leans `l` (−1, 0, 1) from round time `g` (s) |
 | `ev` | `r`, `s`, `g`, `n`, `k`, `e` | seat `s` caught its drop `n` (`k: "c"`) or was shocked by it (`"h"`), as this device judged it; `e` is its egg count after. The server answers only if it disagrees |
 | `cut` | `r`, `s`, `n`, `f` | Clear Cut Challenge: seat `s` pressed `f` frames after log `n`'s drop (negative: while it hung) |
 | `dash` | `r`, `s`, `k`, `f` | Eager Eevee: seat `s` pressed A (`k: "a"`, a dash) or B (`"b"`, a feint) on frame `f` from GO |
 | `count` | `r`, `s`, `n`, `f` | Streaming Stampede: seat `s` pressed (counted one) on frame `f` of question `n`'s counting |
+| `press` | `r`, `s`, `f`, `d`, `b` | Pichu's Power Plant: seat `s` pressed A (`b: 5`) or B (`6`) on frame `f` from GO, held towards `d` (1 up, 2 down, 3 right, 4 left) |
 | `done` | `r` | this device's round is over |
 | `leave` | | |
 
@@ -569,7 +631,9 @@ drops are judged, `settled`, in the order they arrive. Clear Cut Challenge:
 seed), and to rejoin, `scores` and `cuts`, each seat's `[f, points]` by log, `[f, points, 1]` for a miss it may still follow up.
 Eager Eevee: `ee`, with `level` (the level code the rounds are dealt for) and,
 to rejoin, `scores` and `prizes`, each seat's by round. Streaming Stampede:
-`ss`, with `told`, the answers so far as `ans` gives them, to rejoin);
+`ss`, with `told`, the answers so far as `ans` gives them, to rejoin. Pichu's
+Power Plant: `pp`, with `done`, the finish as `won` gives it (null till then),
+and `presses`, the people's so far, `[f, d, b]` by seat, to rejoin);
 `pong` (`c`, `s`); `cut` (`r`, `s`, `n`, `f`, `p`, `e`), the server's word on
 a seat's swing at a log: the frame (null: no swing), the points and the
 total after, and `a: 1` for a miss that doesn't count yet (the seat may swing
@@ -579,7 +643,11 @@ again; the total leaves it out); `dash` as above, passed on to the others
 points by seat, the totals after, and the frame it was decided (A stops
 working after it); `count` as above, passed on to the others; `ans` (`r`,
 `n`, `c`, `p`, `e`), Streaming Stampede's answer to question `n`: each seat's
-count, points and total after;
+count, points and total after; `press` as above, passed on to the others, and
+to its own device with `o`, the frame it said, if it counts on another one
+(`f`), or `x: 1` if it doesn't count; `won` (`r`, `f`, `w`, `e`), Pichu's
+Power Plant's finish: its frame, the winners (1 or 0 by seat) and each seat's
+charge then;
 `lean` as above (with the time the server kept: never before the seat's last
 lean); `ev` (`r`, `s`, `n`, `k`, `e`, `g`), the server's verdict on a drop:
 `c` caught, `h` a shock, or `m`, not a catch after all, with the egg count

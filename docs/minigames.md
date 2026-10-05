@@ -43,10 +43,10 @@ characters' models.
 |---|---|---|
 | Gutsy Golbat | Golbat 053 | Jynx 110 |
 | Topsy-Turvy | Hitmontop 115 | (Hitmontop 052 and 123 *by appearance*: no code loads them by number) |
-| Clear Cut Challenge | Scyther 122, Pinsir 055, Scizor 179 | signpost 059, log slices 081 and 111, cut line 112, effects 130 and 131, wall pieces 190 |
+| Clear Cut Challenge | Scyther 122, Pinsir 055, Scizor 179 | signpost 059, log slices 081 and 111, cut line 112, effects 130 and 131, dizzy stars 190 |
 | Furret's Frolic | Furret 142, Girafarig 223 | Poké Balls 153, leaf pile / shards / chips 155, bush 183 |
 | Barrier Ball | Mr. Mime 129, 218 | court pieces 120 (7 layouts), mesh panels 141, 146, Poké Balls 154 |
-| Pichu's Power Plant | Pichu 107, Pikachu 201 | window 056, red orb lamp 057, wall pieces 190 |
+| Pichu's Power Plant | Pichu 107, Pikachu 201 | the power plant's frame 056 (a window of four rooms by appearance before), the electrode lamps 057, dizzy stars 190 (wall pieces by appearance before) |
 | Rampage Rollout | Donphan 108 (walking, rolling) | track 113 (2 layouts) |
 | Streaming Stampede | Cleffa 114 (186 shiny), Igglybuff 119 (205 shiny) | the players' booths 080 and 100–102 (named Game Paks by appearance before), ramp 116, circus backdrop 117, books 118; the Pokémon that go by are sprites (image banks 201–220) |
 | Tumbling Togepi | Togepi 109, Omanyte 206 | platform 060, flower patch 062, rocks 063–064, logs 065–067, pillars 068–070, course pieces 132–140, ice block 188, water 202 |
@@ -617,6 +617,167 @@ press, `0x3F07` a card (`0x3F0B` the last one's), `0x3F03` 36 frames into it,
 question), `0x3209` a booth going up; the crowd is bank 1's (Clear Cut
 Challenge's). Songs 29 (the opening), 30 (from the first card), 31 (the
 results) and 32 (before the last answer).
+
+## Pichu's Power Plant
+
+Module #54 (ROM `0x299CA0`, linked at `0x86600000`; code to `0x6514`, data
+from `0x6518`) was read instruction by instruction, and the remake
+(`web/minigames/src/pichu/`) plays by its rules. Its variables: G at
+`0x86606788` (+4 the state), the players at `0x8660A990` + 0x58·p, the
+Electrodes' buttons at `0x8660AAF0` + 4·(d − 1). The minigame's context is at
+`*0x86607230` (`+0x2180` the mode, 4 = the COM plays alone; `+0x2181` the COM
+level; `+0x2182` a bit per human seat). The instructions (text 50.2): "When an
+electrode pops out, press and hold the + Control Pad in the same direction. If
+the lamp is blue, repeatedly tap the A Button. If the lamp is green, tap the B
+Button. The first to fully charge wins."
+
+**In short.** Four Electrode lamps sit round each player's Pichu, one a
+direction (1 up, 2 down, 3 right, 4 left), and every player has the same
+pattern. One at a time an Electrode pops out, blue (A) or green (B), and
+stays live through the next cycle; a little before each cycle ends the next one
+pops out (another direction), so for the last 30-65 frames of a cycle two are
+live. Each press of the right button with the D-pad (or stick) held towards a
+live one charges 1; 80 wins, and everyone who gets there on the same frame
+wins. The wrong button, or a press towards one that isn't live, charges
+nothing and shocks the Pichu (no input till its clip 10 ends, 9 frames). A
+press with no direction does nothing; the button has to come up between presses.
+
+**The states** (switch `0x8660715C`): 0 and 4 the instructions (`0xCF0B` as
+you start), 11 the instruction screen's Pichus turning and charging during the
+fade, 10 and 12 the count and the camera's glide (play starts once both GO
+has come and the glide is over), 1 the play (`0x866056B8`), 8 the results
+(`0x866049D4`), 7 the menu, 13-14 play again (the instructions again), 2 the
+end, 9 a debug menu nothing reaches (its items: the end score 80, the input
+mode, the random type, the overlap time, the demo wait, the switch time,
+Pikachu's scale, the miss animation).
+
+**Per level** (c = 4 − the COM level, 0 with no CPU; G+0x94):
+
+| c | Level | Base cycle `0x8660722C` | W `0x86606724` | First pop-out `0x86606ADC` | CPU add `0x8660670C` | CPU div `0x86606710` | Button step |
+|---|---|---|---|---|---|---|---|
+| 0 | no CPU | 70 | 35 | +1 | – | – | 1 |
+| 1 | Hard | 60 | 25 | +12 | 1 | 120 | 1 |
+| 2 | Normal | 60 | 25 | +15 | 2 | 140 | 1 |
+| 3 | Easy | 80 | 40 | +20 | 4 | 120 | 2 |
+| 4 | (level 0) | 120 | 60 | +25 | 6 | 140 | 2 |
+
+**The play**, each frame (after the players' callbacks): the time and G0 (the
+frame in the cycle) go up; anyone at 80 finishes; at the event frame the next
+Electrode pops out (sound `0x2F03`); 8 frames before the cycle's last frame L
+the current one starts going back in (it stays live); past L a new cycle
+(`0x86600CC4`): L = base − (rand2 % 30 + 40) / 5, the event at L − W +
+first pop-out in the first cycle and L − W − 5 after, the CPUs' plans dropped,
+and the setup (`0x86600298`):
+
+- the direction: from the 24 orders of 1-4 (`0x8660694C`, lexicographic): a
+  new row (rand2 % 24) every four, its columns in turn, skipping one equal to
+  the next Electrode's; so each run of four has every direction, and never the
+  same twice in a row;
+- the button: A if rand_lcg % 101 < 50 − 15 × the balance (which goes up a
+  step for an A, down for a B), else B; then, from the second on, a run rule
+  (G+0x98 against `0x86606ACC[c]`: 0 for c 1-3, 1 for c 4, and for c 0 the
+  column counter, a quirk of the table sharing that word);
+- the first time, one more Electrode (another direction, the same button)
+  pops out at once; after that the current one goes dead; the next one becomes
+  the current one, and the pick the next.
+
+So an Electrode pops out W + 6 frames before the end of the cycle before its
+own, is the current one for its cycle (48-53 frames on Normal and Hard, 68-73
+on Easy, 58-63 with no CPU), goes back in 8 frames before that ends, and
+goes dead when the next cycle starts. A press on frame t sees it if it popped
+out before t and goes dead at t or later.
+
+**The players** (`0x86602260`). Input (`0x86601C98`): the D-pad if any of it
+is held (up first, then down, right, left), else the stick past ±10; a press
+is A or B going down with the latch clear (it clears when neither is held: one
+press per press-and-release, every other frame at most; A wins if both). A
+press (`0x866017E0`, `0x86601F70`): no direction, nothing; the right button at
+a live Electrode a hit (charge +1, sparks); the wrong one, or a dead
+Electrode, a miss (`0x86600C70`: no charge, and a shock: clip 10 from the next
+frame, sound `0x2F08`, no input till it ends). A press towards a new direction
+turns the Pichu (clips 3 up, 4 down, 1 right, 2 left, with their face clips,
+texanim01-04, and sound `0x2F04` + the player); it holds the clip's frames
+11-12 while it charges (a CPU, or a person who pressed in the last 20 frames)
+with the hum `0x200B` (+ 0x100 × the player) asked for every frame.
+
+**The CPUs** (`0x86600678`, after the play each frame). A CPU without a plan
+draws x = rand2 % 399 and presses on the first frame G0 passes G0 + x / a0 +
+add (add from the table above, a0 = div − its mood's (rand_lcg % 5, once a
+round) + a round-wide speed (rand_lcg % 11) times 8, 10, 20 or 25 for c 1-4;
+c 3 with a speed of 8 or more takes 150 off a0, and 1 off the frames). Its
+mood tables: c 1 (0, 10, 30, 40, 50), c 2 (0, 20, 40, 70, 90), c 3 (0, 20, 30,
+40, 50), c 4 (0, 10, 30, 40, 50). It aims at the current Electrode and never
+picks a wrong button. If it would press past its margin before the cycle's end
+(L − (rand2 % W − 5), once a round), it goes for the next one with a free
+pass (a hit even if it's dead), or, now and then, a random direction (c 1: x
+< 10 with a speed under 7; c 2: x < 30; c 3: x < 100, or 50 with a speed of 7
+or more; c 4: x < 120 and no pass): a shock if nothing's live there. A free
+pass doesn't drop the plan, so the next frame it presses again. The code's
+"late" and "wrong" flags are uninitialised locals only ever set to 1; the
+remake (and the simulation) take them per CPU, as clearly meant.
+
+**Finishing and the results.** Everyone at 80 on the same frame wins (all
+four: G+0xA4, everyone wins). The time from GO is kept (minutes, seconds,
+hundredths + rand_lcg % 3) but nothing in the module shows it. From the
+finish: at 50 the losers are zapped (clip 6, a lightning bolt over them,
+sounds `0x2F09` for 1P and 4P, `0x2F0A` for 2P and 3P) with the jingle's
+first part (`0x2F0C`, `0x2F0D`), its others at 70, 90 and 110 (`0x2F0E`-
+`0x2F10`); at 130 (80 if all four won, with no zap and no jingle) the winners
+play clip 5 (and a Pichu cries, `0x2F11`), and the menu follows.
+
+**The scene.** One screen, not one a player: the power plant's frame (object
+56) head on, a 2×2 grid of rooms (1P top left, 2P top right, 3P bottom left,
+4P bottom right), the B/A sign in the middle.
+
+- The camera: fov 30 (the camera node's own: `0x80038070`), 320 × 240, eye
+  (0, 50, 2210) looking at (0, 50, 0). In states 5, 10 and 12 it glides from
+  (750, 300, 900) looking at (60, 60, 50) to there over 50 frames
+  (`0x86605ABC`, table `0x86606830`), and the HUD comes on.
+- The Pichus (object 107; Pikachu, 201, at 0.6 if the seat's Game Pak
+  Pokémon is one) at 0.7, at (∓345, 100) and (∓345, −390), z −200 (`0x86606DD4`).
+- The Electrode lamps (object 57, 16 of them) at z −50 round each Pichu
+  (`0x866068CC`): 1P's at (−325, 450) up, (−325, 50) down, (−50, 250) right,
+  (−600, 250) left, the others the same about their rooms; turned 180° (up),
+  0 (down), +90° and −90° about z, so all point in. Its clip 00 pops it out
+  (frames 0-3, out at 4) and puts it back (5-8); its face is red (2) when
+  dead and loops [3, 4, 5, 5, 4] (blue A) or [6, 7, 8, 8, 7] (green B) while
+  live (`0x866023F4`). All four players' lamps in a direction move together.
+- The B/A sign (object 56's face channels 0 and 1, `0x86601910`): every 6
+  frames it restarts texanim 0 (A lit), 1 (B lit) or 2 (both), from which
+  colours are live; dim (6 and 9) otherwise.
+- The sparks (image bank 224, 64 × 64, white): 6 times a ±30 quad at z 150,
+  by player and direction (`0x86606B80`, `0x86606BC0`: 1P's (−280, 274) up,
+  (−280, 134) down, (−140, 204) right, (−420, 204) left; 2P's 600 to the
+  right, 3P's and 4P's 460 down), a random picture of 0-6 each frame. The
+  lightning (bank 225, 32 × 96, yellow) 12 × 8 times a ±15 × ±45 quad at
+  (∓510, 550) and (∓510, 70), turned `0x1C00` (1P, 3P) or `0x6C00` (2P, 4P),
+  drawn after the HUD. Both are grey (I8) pictures: the colour is prim + (1 −
+  prim) × the grey, the alpha the grey. The dizzy stars (object 190) come out
+  in the results (`0x86604FB4`).
+- The HUD (`0x86603604`): each player's badge (bank 434) big over its Pichu,
+  shrinking to its room's corner as the glide ends (1P (41, 39), 2P (255, 39),
+  3P (41, 143), 4P (255, 143)), and a gauge on the bar over each room
+  (`0x86606E6C`: (40, 19), (210, 19), (40, 123), (210, 123)), 70 × 14: bank
+  410's cap, its last column stretched, and the cap mirrored; the fill (bank
+  409's first column) charge × 60/80 pixels long (`0x8660673C`), 61 for a
+  winner, with a grey over it pulsing (alpha |10 − n| × 20, n 0-20).
+
+**Random numbers.** rand2 (`0x8007B100`) for the cycles, the rows, the first
+Electrode, the CPUs' x and margins; rand_lcg (`0x800357EC`) for the buttons,
+the moods, the round's CPU speed, the late CPUs' random direction, the sparks
+and the time's hundredths. The drawing takes rand2 every frame too, so a real
+game can't be replayed from the module alone; the remake gives the pattern
+and the CPUs random numbers of their own.
+
+**Played out** (`web/minigames/tests.js`, three CPUs): the first CPU is full
+at about frame 535 on Easy, 395 on Normal and 316 on Hard (the middle of 41
+rounds); a person tapping the right button every 3 frames beats three Hard
+CPUs every time, every 4 frames about 40% of the time, every 5 never.
+
+**Sounds** (bank 2 of the effect table: [audio.md](audio.md)): `0x2F00` and
+`0x2F01` the count and GO, `0x2F03` a pop-out, `0x2F04`-`0x2F07` a turn,
+`0x2F08` a shock, `0x200B` the hum, `0x2F09`-`0x2F11` the results. Song 21
+from GO.
 
 ## How this was found
 

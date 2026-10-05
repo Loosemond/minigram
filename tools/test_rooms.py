@@ -1,5 +1,6 @@
 """Tests for the rooms server (tools/rooms.py) and its rules (tools/egg_rules.py,
-tools/clearcut_rules.py, tools/eevee_rules.py, tools/stampede_rules.py).
+tools/clearcut_rules.py, tools/eevee_rules.py, tools/stampede_rules.py,
+tools/pichu_rules.py).
 
     python3 tools/test_rooms.py
 
@@ -14,6 +15,7 @@ import hashlib
 import hmac
 import http.server
 import json
+import math
 import os
 import socket
 import struct
@@ -26,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import clearcut_rules  # noqa: E402
 import eevee_rules  # noqa: E402
 import egg_rules  # noqa: E402
+import pichu_rules  # noqa: E402
 import rooms  # noqa: E402
 import stampede_rules  # noqa: E402
 
@@ -43,6 +46,10 @@ JS_EEVEE = {1: "d54a9e4e6d7d05ec", 12345: "e4663aef5698855e", 2 ** 31 - 1: "60c9
 # answer, counting frames, code, the CPUs' answers and presses, and every
 # Pokemon in its stream (web/minigames/tests.js has the same)
 JS_STAMPEDE = {1: "84a6cb28cd987d1d", 12345: "2a9b704b839d8309", 2 ** 31 - 1: "15649380292b011a"}
+# pattern() and cpuPresses() in web/minigames/src/pichu/rules.js, for c 0-3
+# over 3000 frames: every Electrode (its direction, button and frames) and the
+# CPUs' presses and finishes (web/minigames/tests.js has the same)
+JS_PICHU = {1: "e27615795ea9a2a3", 12345: "daf3601d2ace0952", 2 ** 31 - 1: "ecb9ea996496d4dd"}
 
 # a short round, the same for every seat: (t, col, kind, fall); they reach the
 # hands at 0.5, 0.8, 1.1 (the Voltorb), 1.4 and 2.1
@@ -247,6 +254,43 @@ def _():
     assert (st["bonus"], st["level"]) == (2, 2), st
     st = stampede_rules.after(st, 1, [20, 20, 15, 0], True)  # only two perfect: no more
     assert (st["bonus"], st["level"]) == (2, 2), st
+
+
+def pichu_digest(seed):
+    def js(v):  # (as JavaScript writes them)
+        return "Infinity" if v == math.inf else "null" if v is None else str(v)
+    s = ""
+    for c in range(4):
+        P = pichu_rules.pattern(seed, c, 3000)
+        s += "".join("%d,%d,%s,%s,%s;" % (e["dir"], e["btn"], js(e["frm"]), js(e["close"]), js(e["to"])) for e in P["list"])
+        cp = pichu_rules.cpu_presses(seed, c, [False, True, True, True], P)
+        s += "|".join(js(x["full"]) + ":" + ",".join("%d/%d/%d" % (p["t"], p["dir"], p["hit"]) for p in x["presses"])
+                      if x else "-" for x in cp)
+    return hashlib.sha256(s.encode()).hexdigest()[:16]
+
+
+@check("Pichu's Power Plant: the Electrodes and the CPUs match the browser's, bit for bit; the presses")
+def _():
+    for seed, want in JS_PICHU.items():
+        assert pichu_digest(seed) == want, seed
+    P = pichu_rules.pattern(7, 2)
+    e = P["list"][0]  # the first, out from GO through the first cycle
+    other = pichu_rules.B if e["btn"] == pichu_rules.A else pichu_rules.A
+    dead = next(d for d in (1, 2, 3, 4) if d != e["dir"] and d != P["list"][1]["dir"])
+    assert pichu_rules.Runner(P).press(0, e["dir"], e["btn"]) == "miss"  # (on GO's frame it isn't out yet)
+    r = pichu_rules.Runner(P)
+    assert r.press(1, e["dir"], e["btn"]) == "hit"
+    assert r.press(2, e["dir"], e["btn"]) is None  # too soon: the button has to come up
+    assert r.press(3, e["dir"], e["btn"]) == "hit"
+    assert r.press(5, e["dir"], other) == "miss"  # the wrong button: a shock
+    assert r.press(5 + pichu_rules.SHOCK, e["dir"], e["btn"]) is None  # (shocked)
+    assert r.press(6 + pichu_rules.SHOCK, e["dir"], e["btn"]) == "hit"
+    assert r.press(8 + pichu_rules.SHOCK, dead, e["btn"]) == "miss"  # one that isn't out
+    assert r.press(20 + pichu_rules.SHOCK, 0, e["btn"]) is None and r.charge == 3  # no direction: nothing
+    # every level's CPUs get there, the harder ones sooner
+    firsts = {c: sorted(pichu_rules.finish([x["full"] for x in pichu_rules.cpu_presses(s, c, [True] * 4, pichu_rules.pattern(s, c))])[0]
+                        for s in range(20))[10] for c in (1, 2, 3)}
+    assert firsts[1] < firsts[2] < firsts[3] < 700, firsts
 
 
 @check("Eager Eevee: a dash, a feint, the basket and a Pineco; who gets the prize")
@@ -638,6 +682,57 @@ def _():
     finally:
         (stampede_rules.question, stampede_rules.cpu_presses, stampede_rules.CARD, stampede_rules.ANSWER,
          stampede_rules.LAST_ANSWER) = saved
+
+
+@check("Pichu's Power Plant: the server checks the presses, says who finished first and stops cheats")
+def _():
+    saved = pichu_rules.FULL, pichu_rules.cpu_presses
+    pichu_rules.FULL = 3  # (three hits to win)
+    pichu_rules.cpu_presses = lambda seed, c, cpus, P: [dict(presses=[], full=None) if cpus[s] else None for s in range(4)]
+    try:
+        a, b = Client("PA"), Client("PB")
+        a.send("hello", id="pa", name="Pam", game="pichu")
+        code = a.wait("welcome")["room"]
+        b.send("hello", id="pb", name="Pat", room=code)
+        b.wait("welcome")
+        time.sleep(rooms.CHANGE_GAP)
+        a.drain()
+        b.drain()
+        a.send("start")
+        st = a.wait("start")
+        assert st["game"] == "pichu" and st["pp"] == dict(done=None, presses=[[], [], None, None]), st
+        go, r = st["go"], st["round"]
+        g = rooms.rooms[code].game
+        assert g.cpus == [False, False, True, True]
+        e = g.P["list"][0]
+        other = pichu_rules.B if e["btn"] == pichu_rules.A else pichu_rules.A
+
+        def press(c, seat, f, btn=e["btn"], claim=None):
+            at(go, (f + 0.3) / pichu_rules.FPS)
+            c.send("press", r=r, s=seat, f=f if claim is None else claim, d=e["dir"], b=btn)
+
+        press(a, 0, 3)
+        press(b, 1, 4, other)  # the wrong button: Pat's Pichu is shocked
+        press(a, 0, 5)
+        press(b, 1, 6)  # shocked: it doesn't count, and Pat's device hears so
+        a.send("press", r=r, s=1, f=6, d=e["dir"], b=e["btn"])  # someone else's player: ignored
+        press(a, 0, 20, claim=0)  # older than the way here allows: it counts as late as that does
+        late = 20 - int(rooms.ALLOW_GUESS * pichu_rules.FPS)
+        got = a.drain(0.3)
+        heard = [(m["s"], m["f"], m.get("o")) for m in got if m["t"] == "press"]
+        assert heard == [(1, 4, None), (0, late, 0)], heard  # (Pat's miss; and Pam's own, where it counts)
+        won = next((m for m in got if m["t"] == "won"), None) or a.wait("won", timeout=3)
+        assert (won["f"], won["w"], won["e"]) == (late, [1, 0, 0, 0], [3, 0, 0, 0]), won
+        seen = [(m["s"], m["f"], m.get("x")) for m in b.drain() if m["t"] == "press"]
+        assert seen == [(0, 3, None), (0, 5, None), (1, 6, 1), (0, late, None)], seen  # (its own shocked press: x)
+        a.send("press", r=r, s=0, f=late + 3, d=e["dir"], b=e["btn"])  # after the finish: too late
+        a.s.settimeout(8)
+        res = a.wait("results", timeout=10)
+        assert res["scores"] == [3, 0, 0, 0] and g.end == (late + pichu_rules.END) / pichu_rules.FPS, (res, g.end)
+        b.close()
+        a.close()
+    finally:
+        pichu_rules.FULL, pichu_rules.cpu_presses = saved
 
 
 @check("Telegram logins: checked, and no one can pose as a Telegram player")

@@ -17,6 +17,10 @@ const DEALS = { 1: "845261658a294406", 12345: "dcaad7cc4c79a603", 2147483647: "8
 const EEVEE = { 1: "d54a9e4e6d7d05ec", 12345: "e4663aef5698855e", 2147483647: "60c971ff1eb41fe2" };
 // Streaming Stampede's questions (and the CPUs' answers and presses) for levels 1-3: the same as JS_STAMPEDE in tools/test_rooms.py
 const STAMPEDE = { 1: "84a6cb28cd987d1d", 12345: "2a9b704b839d8309", 2147483647: "15649380292b011a" };
+// Pichu's Power Plant's Electrodes and CPUs for c 0-3: the same as JS_PICHU in tools/test_rooms.py
+const PICHU = { 1: "e27615795ea9a2a3", 12345: "daf3601d2ace0952", 2147483647: "ecb9ea996496d4dd" };
+// the frame the first of three CPUs gets to full charge, the middle of 41 rounds (rules.js cpuPresses)
+const CHARGE_TARGETS = { easy: [500, 590], normal: [365, 420], hard: [295, 345] };
 // the best of the three CPUs' totals in a game, on average (Streaming Stampede: rules.js cpuPresses)
 const COUNT_TARGETS = { easy: [54, 62], normal: [56, 65], hard: [67, 76] };
 // how soon after the basket comes up the CPUs dash (frames, on average), by level (rules.js cpuPlan)
@@ -161,6 +165,21 @@ function autocount(w, off = 0) {
     if (!on || g.state !== "play") return;
     const { q, Q, f, k } = g.now;
     if (f >= 0 && k < 0 && f % 3 === 0 && g.players[z].presses[q].length < Q.answer + off) g.press();
+  };
+  return () => { api.step = step; };
+}
+
+// a scripted Pichu's Power Plant player: taps the button the current Electrode
+// wants, held towards it, every `every` frames, from inside the game's steps
+function autopress(w, every) {
+  const api = w.mg.mini, step = api.step;
+  let last = -99;
+  api.step = function (dt, on) {
+    step.call(api, dt, on);
+    const g = api.game, t = g.frame;
+    if (!on || g.state !== "play" || t - last < every || t < 1) return;
+    const e = g.P.list[g.P.at.cur[t - 1]];
+    if (e && e.from < t) { g.press(e.dir, e.btn); last = t; }
   };
   return () => { api.step = step; };
 }
@@ -557,6 +576,93 @@ await test("Streaming Stampede: a solo game, played headless: a player who count
   return "totals over 4 games on Hard: " + tally.join(", ");
 });
 
+await test("Pichu's Power Plant: the Electrodes and the CPUs are the same as the server's copy of them", async () => {
+  const R = await moduleOf(solo, "./src/pichu/rules.js");
+  for (const [seed, want] of Object.entries(PICHU)) {
+    let s = "";
+    for (const c of [0, 1, 2, 3]) {
+      const P = R.pattern(+seed, c, 3000);
+      s += P.list.map((e) => `${e.dir},${e.btn},${e.from},${e.close},${e.to};`).join("");
+      s += R.cpuPresses(+seed, c, [false, true, true, true], P)
+        .map((x) => (x ? x.full + ":" + x.presses.map((p) => `${p.t}/${p.dir}/${p.hit ? 1 : 0}`).join(",") : "-")).join("|");
+    }
+    const got = await sha16(s);
+    assert(got === want, `seed ${seed}: ${got}; tools/pichu_rules.py expects ${want} (update both, and the digests)`);
+  }
+});
+
+await test("Pichu's Power Plant: the presses and the shocks; CPU levels", async () => {
+  const R = await moduleOf(solo, "./src/pichu/rules.js");
+  // two at a time: from each pop-out to the end of the cycle before it's the current one
+  const P = R.pattern(99, 2);
+  let two = 0, none = 0;
+  for (let t = 1; t < 2000; t++) {
+    const n = [1, 2, 3, 4].filter((d) => R.liveAt(P, t, d)).length;
+    if (n === 2) two++; else if (n !== 1) none++;
+  }
+  assert(!none && two > 900 && two < 1500, `${two} of 2000 frames with two out, ${none} with none or more`);
+  const e = P.list[0], other = e.btn === R.A ? R.B : R.A, r = new R.Runner(P);
+  const got = [r.press(1, e.dir, e.btn), r.press(2, e.dir, e.btn), r.press(4, e.dir, other), r.press(4 + R.SHOCK, e.dir, e.btn),
+               r.press(5 + R.SHOCK, e.dir, e.btn), r.press(8 + R.SHOCK, 0, e.btn)].join();
+  assert(got === "hit,,miss,,hit," && r.charge === 2, "presses: " + got);
+  const report = [];
+  for (const level of ["easy", "normal", "hard"]) {
+    const c = R.levelCode(level, true), firsts = [];
+    for (let s = 1; s <= 41; s++) {
+      const P = R.pattern(s * 7717, c);
+      firsts.push(R.finish(R.cpuPresses(s * 7717, c, [false, true, true, true], P).map((x) => x?.full ?? null)).at);
+    }
+    const mid = firsts.sort((a, b) => a - b)[20], [lo, hi] = CHARGE_TARGETS[level];
+    report.push(`${level} ${mid}`);
+    assert(mid >= lo && mid <= hi, `${level}: the first CPU is full at frame ${mid} (the middle round), expected ${lo}-${hi}`);
+  }
+  return "the first CPU full at frame: " + report.join(", ");
+});
+
+await test("Pichu's Power Plant: its music and sound effects play from sound.bin", () => soundTest("assets/pichu/sound.bin", [
+  ["main", 6, (r) => assert(r.notes > 10 && r.peak > 0.05 && r.peak < 1, `song 21: ${r.notes} notes, peak ${r.peak.toFixed(2)}`)],
+], async (render, audio) => {
+  // the hum while a Pichu charges goes on until it's stopped
+  const hum = (e) => assert(audio.trigger(e, "hum", 0), "the hum didn't start");
+  const effects = (e) => audio.startEffects(e);
+  const on = await render(6, effects, hum);
+  const off = await render(6, effects, hum, [3, (e) => audio.stopEffect(e, "hum")]);
+  assert(on.tail > 0.001, `the hum stopped by itself (${on.tail.toFixed(4)} at the end)`);
+  assert(off.tail < on.tail / 20, `the hum didn't stop (${off.tail.toFixed(4)} at the end, ${on.tail.toFixed(4)} not stopped)`);
+  return "the hum stops";
+}));
+
+await test("Pichu's Power Plant: a solo game, played headless: a quick, right player beats the CPUs", async () => {
+  await solo.mg.show("pichu");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners;
+  solo.mg.paused = true;
+  g.listeners = {};
+  const wins = [0, 0, 0, 0], at = [];
+  try {
+    for (let s = 1; s <= 4; s++) {
+      g.reset("hard", s * 9973, { me: 0, control: ["local", "cpu", "cpu", "cpu"] });
+      g.start();
+      let last = -9;
+      while (g.state === "play") {
+        g.update(1 / 30);
+        const t = g.frame, e = g.P.list[g.P.at.cur[Math.max(0, t - 1)]];
+        if (t - last >= 3 && e.from < t && g.press(e.dir, e.btn)) last = t;
+      }
+      const f = g.fin();
+      assert(f, "no one got to full charge");
+      f.winners.forEach((w, z) => { wins[z] += w ? 1 : 0; });
+      at.push(f.at);
+    }
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  assert(wins[0] === 4, "the player who tapped right every 3 frames didn't always win: " + wins);
+  return `wins over 4 games on Hard: ${wins.join(", ")}; full at frames ${at.join(", ")}`;
+});
+
 await test("online: another device's player is shown as far behind as its moves take to get here", async () => {
   const { Lag, LAG, startDelay } = await moduleOf(solo, "./src/lag.js");
   const start = startDelay(40, 120); // (80 ms each way, and the spare)
@@ -618,7 +724,7 @@ await test("online: Clear Cut Challenge's logs fall together, and a late cut goe
   }
 });
 
-await test("a solo round starts and plays, in all four games", async () => {
+await test("a solo round starts and plays, in all five games", async () => {
   solo.document.querySelector("#play").click();
   await until(() => solo.mg.phase() === "play" && solo.mg.game.time > 4, "Egg Emergency's round to be under way");
   let g = solo.mg.game;
@@ -660,9 +766,20 @@ await test("a solo round starts and plays, in all four games", async () => {
   const answer = g.verdicts[0];
   assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
   assert(answer && answer.counts[0] === g.qs[0].answer && answer.pts[0] === 10, "counting right, the first answer gave " + JSON.stringify(answer));
+  solo.mg.title();
+  await solo.mg.show("pichu");
+  solo.document.querySelector("#play").click();
+  const stopPress = autopress(solo, 3);
+  try {
+    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > 120, "Pichu's Power Plant's first 4 s", 30000);
+  } finally { stopPress(); }
+  g = solo.mg.game;
+  const charges = [0, 1, 2, 3].map((z) => g.charge(z));
+  assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
+  assert(charges[0] >= 30 && charges.slice(1).every((x) => x > 5 && x < charges[0]), "4 s in, the charges are " + charges);
   solo.frameElement.remove();
   return "Clear Cut's first log: " + first.join(", ") + `; Eevee's first race: ${v ? v.pts.join(", ") : "no one"}` +
-    `; Stampede's first answer: ${answer.pts.join(", ")}`;
+    `; Stampede's first answer: ${answer.pts.join(", ")}; Pichu's charges 4 s in: ${charges.join(", ")}`;
 }, { live: true });
 
 const code = Array.from({ length: 4 }, () => "BCDFGHJKLMNPQRSTVWXZ"[Math.floor(Math.random() * 20)]).join("");
@@ -841,6 +958,43 @@ await test("online: a Streaming Stampede game, the same on both devices, and che
     assert(a.counts[0] === Q.answer && a.counts[1] === Q.answer - 1, `counts ${a.counts} for an answer of ${Q.answer}: a claim got through?`);
     assert(a.pts[0] === 10 && a.pts[1] === (Q.answer - 1 ? 5 : 0), "points " + a.pts);
     return `the first answer (${Q.answer}): counts ${a.counts}, points ${a.pts}`;
+  } finally {
+    stop.forEach((s) => s());
+  }
+}, { live: true });
+
+await test("online: a Pichu's Power Plant game, the same on both devices, and cheating doesn't work", async () => {
+  await until(() => ann.mg.room()?.state === "lobby", "the Streaming Stampede game to end", 180000);
+  ann.document.querySelector("#menu").click();
+  bob.document.querySelector("#menu").click();
+  ann.document.querySelector(`#lobby .games button[data-game="pichu"]`).click();
+  await until(() => bob.mg.room()?.game === "pichu" && bob.document.title === "Pichu's Power Plant", "Pichu's Power Plant in the lobby");
+  const stop = [];
+  try {
+    ann.mg.net().send("start");
+    await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the round", 20000);
+    stop.push(autopress(ann, 3), autopress(bob, 5)); // Ann's quicker than Bob
+    const net = bob.mg.net(), r = ann.mg.room().round, g = bob.mg.game;
+    await until(() => g.frame > 60, "two seconds in", 20000);
+    // Bob presses for Ann's seat, says a press he didn't make was long ago, and presses three times in a frame
+    const e = g.P.list[g.P.at.cur[g.frame - 1]];
+    net.send("press", { r, s: 0, f: g.frame, d: e.dir, b: e.btn });
+    for (const f of [5, 6, 7]) net.send("press", { r, s: 1, f, d: e.dir, b: e.btn });
+    for (let k = 0; k < 3; k++) net.send("press", { r, s: 1, f: g.frame + 2, d: e.dir, b: e.btn });
+    await until(() => [ann, bob].every((w) => w.mg.game.result), "the finish, on both devices", 60000);
+    const res = (w) => JSON.stringify(w.mg.game.result);
+    assert(res(ann) === res(bob), `the finish: ${res(ann)} / ${res(bob)}`);
+    const f = ann.mg.game.result;
+    assert(f.winners.join() === "true,false,false,false" && f.e[0] === 80 && f.e[1] < 80, "the finish " + res(ann) + ": a claim got through?");
+    // the presses each device has from the server (and Ann's own) come to the server's charges, by the
+    // rules there: so the server took none that breaks them (Bob's view of himself is off after his own
+    // made-up presses, which is his lookout)
+    const hits = (w, z) => w.mg.game.runners[z].presses.filter((p) => p[3] === "hit" && p[0] <= f.at).length;
+    const seen = `${hits(ann, 0)},${hits(ann, 1)},${hits(bob, 0)}`;
+    assert(seen === `${f.e[0]},${f.e[1]},${f.e[0]}`, `charges (Ann's of Ann and Bob, Bob's of Ann): ${seen}, the server's ${f.e}`);
+    await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 20000);
+    assert(ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
+    return `full at frame ${f.at}: ${f.e.join(", ")} (Bob's device has him at ${hits(bob, 1)})`;
   } finally {
     stop.forEach((s) => s());
   }

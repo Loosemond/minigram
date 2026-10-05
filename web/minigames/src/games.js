@@ -70,5 +70,22 @@ export const GAMES = {
     messages: ["count", "ans"],
     load: () => import("./stampede/index.js"),
   },
+  pichu: {
+    id: "pichu",
+    name: "Pichu's Power Plant",
+    banner: "assets/ui/title_pichu.png", // image bank 408
+    art: "assets/pichu/art.png", // (its frame, drawn flat: tools/web_assets.py)
+    color: "#2f2a40",
+    how: `When an Electrode pops out, hold the <b>D-pad</b> towards it and tap the button
+      its lamp shows: <b class="blue">A</b> for blue, <b class="green">B</b> for green. Each
+      right tap charges your Pichu; the wrong button, or a tap towards an Electrode that's
+      gone back in, <b class="volt">shocks</b> it for a moment. The first to fully charge wins!`,
+    keys: "Keyboard: <kbd>←</kbd> <kbd>↑</kbd> <kbd>↓</kbd> <kbd>→</kbd> hold, <kbd>X</kbd> A, <kbd>Z</kbd> B",
+    unit: (n) => `${n}<small>/80</small>`,
+    invite: "Charge up with me in Pichu's Power Plant!",
+    store: "pichu_",
+    messages: ["press", "won"],
+    load: () => import("./pichu/index.js"),
+  },
 };
-export const ORDER = ["egg", "clearcut", "eevee", "stampede"];
+export const ORDER = ["egg", "clearcut", "eevee", "stampede", "pichu"];

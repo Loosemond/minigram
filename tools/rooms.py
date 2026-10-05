@@ -8,10 +8,11 @@ Emergency's drops, Clear Cut Challenge's logs) and a start time on its own
 clock (the clients sync to it with ping/pong). Each device plays its own
 player, and the host's device also plays the CPUs; they send what their players
 do (Egg Emergency: the leans; Clear Cut Challenge: the cuts; Eager Eevee: the
-dashes and feints; Streaming Stampede: the counts), which the server passes on
-to the others. The server keeps the score itself from those
-(tools/egg_rules.py, tools/clearcut_rules.py, tools/eevee_rules.py,
-tools/stampede_rules.py), so a device can't claim points its player didn't make,
+dashes and feints; Streaming Stampede: the counts; Pichu's Power Plant: the
+presses), which the server passes on to the others. The server keeps the score
+itself from those (tools/egg_rules.py, tools/clearcut_rules.py,
+tools/eevee_rules.py, tools/stampede_rules.py, tools/pichu_rules.py), so a
+device can't claim points its player didn't make,
 and announces the ranking at the end. A dropped
 connection keeps its seat for a few seconds, so a reload or a network blip
 rejoins the same seat (and the same round, with its score).
@@ -40,10 +41,11 @@ import urllib.request
 import clearcut_rules
 import eevee_rules
 import egg_rules
+import pichu_rules
 import stampede_rules
 
 SEATS = egg_rules.SEATS
-GAMES = ("egg", "clearcut", "eevee", "stampede")  # the minigames, as web/minigames/src/games.js names them
+GAMES = ("egg", "clearcut", "eevee", "stampede", "pichu")  # the minigames, as web/minigames/src/games.js names them
 LETTERS = "BCDFGHJKLMNPQRSTVWXZ"  # no vowels, so no code spells a word
 LEVELS = ("easy", "normal", "hard")
 GRACE = 8  # s a dropped connection keeps its seat
@@ -52,10 +54,11 @@ GO_DELAY = 2650  # ms of countdown before GO (COUNTDOWN in the game's main.js)
 SETTLE_LAG = 3  # s after a drop reaches the hands, it's judged even if its device hasn't reported it
 SLACK = 2  # s a device's clock may be off from the server's
 END_WAIT = 5  # s after the last drop: the round ends even if a device hasn't finished (one in the background)
-# Eager Eevee and Streaming Stampede: how old a press may be when it gets here
-# (its device's way here, from its round trip, and a little over), and so how
-# long a race waits for the presses that could still win it before it gives the
-# prize (or an answer for the counts still on their way)
+# Eager Eevee, Streaming Stampede and Pichu's Power Plant: how old a press may
+# be when it gets here (its device's way here, from its round trip, and a
+# little over), and so how long a race waits for the presses that could still
+# win it before it gives the prize (an answer for the counts still on their
+# way, the finish for the presses that could make someone full sooner)
 ALLOW_MIN, ALLOW_MAX, ALLOW_GUESS = 0.2, 0.5, 0.3
 ROUND_MAX = 300  # s: no round lasts longer (they take about two minutes)
 IDLE = 45  # s without a message: the connection is dead (clients ping every 8 s)
@@ -178,9 +181,9 @@ class Room:
         self.minigame = "egg"
         self.seed = self.at = self.go = 0
         self.lineup = {}  # seat -> {id, name}: who plays this round; the other seats are CPUs
-        self.game = None  # the round's rules and scores (egg_rules.Round, clearcut_rules.Round, eevee_rules.Round, stampede_rules.Round)
+        self.game = None  # the round's rules and scores (egg_rules.Round, clearcut_rules.Round, ... pichu_rules.Round)
         self.started = None
-        self.timer = None  # Eager Eevee: the next prize's giving; Streaming Stampede: the next answer's
+        self.timer = None  # Eager Eevee: the next prize's giving; Streaming Stampede: the next answer's; Pichu: the finish's
 
     def broadcast(self, msg, skip=None):
         for m in self.members.values():
@@ -234,7 +237,7 @@ class Room:
         g = self.game
         msg = dict(t="start", game=self.minigame, round=self.round, seed=self.seed, level=self.level, at=self.at,
                    go=self.go, host=self.host(), lineup=self.lineup_info(), rtt=[self.rtt(s) for s in range(SEATS)])
-        if self.minigame in ("clearcut", "eevee", "stampede"):
+        if self.minigame in ("clearcut", "eevee", "stampede", "pichu"):
             msg.update(g.wire())
         else:
             msg.update(drops=g.wire(), scores=g.scores, leans=[g.last_lean(s) for s in range(SEATS)], settled=g.next,
@@ -412,6 +415,8 @@ def start(room):
         room.game = eevee_rules.Round(room.seed, room.level, cpus=len(room.lineup) < SEATS)
     elif room.minigame == "stampede":
         room.game = stampede_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
+    elif room.minigame == "pichu":
+        room.game = pichu_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
     else:
         room.game = egg_rules.Round(room.seed)
     room.started = time.monotonic()
@@ -471,7 +476,20 @@ def relay(room, m, t, msg):
                 room.broadcast(dict(t="count", r=room.round, s=s, n=n, f=f), skip=m)
             answers(room)
         return
-    if t in ("cut", "dash", "count"):
+    if room.minigame == "pichu":
+        if t == "press" and room.playing(s):
+            f, d, b = msg.get("f"), msg.get("d"), msg.get("b")
+            got = g.press(s, f, d, b, room.now(), room.allow(s))
+            if got:  # to the others, and back to its device if it counts on another frame
+                room.broadcast(dict(t="press", r=room.round, s=s, f=got[0], d=d, b=b), skip=m)
+                if got[0] != f:
+                    m.send(dict(t="press", r=room.round, s=s, f=got[0], o=f, d=d, b=b))
+            elif type(f) is int:  # its device counted it: it doesn't
+                m.send(dict(t="press", r=room.round, s=s, f=f, o=f, d=d if d in (1, 2, 3, 4) else 0,
+                            b=b if b in (pichu_rules.A, pichu_rules.B) else pichu_rules.A, x=1))
+            finishes(room)
+        return
+    if t in ("cut", "dash", "count", "press"):
         return
     if t == "lean":
         l = max(-1, min(1, int(_number(msg.get("l")))))
@@ -543,6 +561,32 @@ def answers(room, now=None):
         room.timer.start()
 
 
+def finishes(room, now=None):
+    """Pichu's Power Plant: say who finished first once it's decided (no
+    press still on its way could make someone full sooner), and set a timer
+    for when it can be."""
+    g = room.game
+    if room.state != "playing" or not isinstance(g, pichu_rules.Round):
+        return
+    allow = room.allow()
+    if g.settle(room.now() if now is None else now, allow):
+        room.broadcast(dict(t="won", r=room.round, **g.result()))
+    if room.timer:
+        room.timer.cancel()
+        room.timer = None
+    at = g.next_settle(allow)
+    if at is not None and now is None:
+        rnd = room.round
+
+        def fire():
+            with lock:
+                if room.round == rnd and room.game is g:
+                    finishes(room)
+        room.timer = threading.Timer(max(0.0, at - room.now()) + 0.01, fire)
+        room.timer.daemon = True
+        room.timer.start()
+
+
 def settle(room, s, upto):
     """Judge seat s's round up to round time upto: what hasn't been reported is missed."""
     if room.minigame == "clearcut":
@@ -551,6 +595,8 @@ def settle(room, s, upto):
         prizes(room, 1e9 if upto == math.inf else None)
     elif room.minigame == "stampede":
         answers(room, 1e9 if upto == math.inf else None)
+    elif room.minigame == "pichu":
+        finishes(room, 1e9 if upto == math.inf else None)
     else:
         judge(room, s, upto)
 
@@ -595,7 +641,7 @@ def handle(room, m, msg):
         if type(rtt) in (int, float) and 0 <= rtt < 10000:
             m.rtt = rtt
         m.send(dict(t="pong", c=msg.get("c"), s=clock()))
-    elif t in ("lean", "ev", "cut", "dash", "count"):
+    elif t in ("lean", "ev", "cut", "dash", "count", "press"):
         relay(room, m, t, msg)
     elif t == "done":
         if room.state == "playing" and msg.get("r") == room.round and room.playing(m.seat):

@@ -84,10 +84,10 @@ Names are the game's own (text table 57). Details and method:
 |---|---|
 | Gutsy Golbat | Golbat `053`, Jynx `110` |
 | Topsy-Turvy | Hitmontop `115` (and `052`, `123`) |
-| Clear Cut Challenge | Scyther `122`, Pinsir `055`, Scizor `179`, signpost `059`, log slices `081`/`111`, `112` (the cut line), effects `130`/`131`, wall pieces `190` |
+| Clear Cut Challenge | Scyther `122`, Pinsir `055`, Scizor `179`, signpost `059`, log slices `081`/`111`, `112` (the cut line), effects `130`/`131`, dizzy stars `190` |
 | Furret's Frolic | Furret `142`, Girafarig `223`, Poké Balls `153`, leaves/shards/chips `155`, bush `183` |
 | Barrier Ball | Mr. Mime `129`/`218`, court pieces `120`, mesh panels `141`, `146`, Poké Balls `154` |
-| Pichu's Power Plant | Pichu `107`, Pikachu `201`, window `056`, red orb lamp `057`, wall pieces `190` |
+| Pichu's Power Plant | Pichu `107`, Pikachu `201`, the power plant's frame `056`, electrode lamps `057`, dizzy stars `190` |
 | Rampage Rollout | Donphan `108` (walking and rolling), track `113` |
 | Streaming Stampede | Cleffa `114` (shiny `186`), Igglybuff `119` (shiny `205`), the players' booths `080`/`100`–`102`, ramp `116`, circus backdrop `117`, books `118` |
 | Tumbling Togepi | Togepi `109`, Omanyte `206`, course pieces `060`, `062`–`070`, `132`–`140`, ice block `188`, water `202` |

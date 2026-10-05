@@ -9,6 +9,7 @@ assets/<game>/ each game's own files (a player only downloads the games they
 play).
 """
 import glob
+import math
 import os
 import shutil
 import sys
@@ -81,7 +82,7 @@ CLEARCUT = {
     "backdrop.jpg": "images/backgrounds/15.jpg",  # the castle, behind a curtain
     "scyther.glb": "objects/122_scyther/122_scyther.glb",
     "signpost.glb": "objects/059_signpost/059_signpost.glb",
-    "stars.glb": "objects/190_wall_pieces/190_wall_pieces.glb",
+    "stars.glb": "objects/190_dizzy_stars/190_dizzy_stars.glb",
     "flash.png": bank(398, 0),
 }
 CLEARCUT.update({"spinarak%d.png" % i: bank(397, i) for i in range(3)})
@@ -157,8 +158,30 @@ for _d in STAMPEDE_DEX:
 STAMPEDE_SPRITES = [b for b in range(201, 221) if b not in (214, 215)]  # (Xatu and Natu have pictures but never go by)
 UI["title_stampede.png"] = bank(411, 0)
 
+# Pichu's Power Plant is code module #54. It loads the power plant's frame
+# (object 56: the four rooms and the B/A sign), the Electrode lamps (57),
+# Pichu (107; Pikachu, 201, for a Game Pak's Pikachu), the dizzy stars (190),
+# and image banks 224 (the sparks), 225 (the losers' lightning), 409 and 410
+# (the gauges) and 434 (the badges, the shell's own). The sparks and the
+# lightning are grey pictures the game colours as it draws them: made into
+# strips below, coloured; the gauges are made from their pieces there too.
+PICHU = {
+    "frame.glb": "objects/056_power_plant_frame/056_power_plant_frame.glb",
+    "lamp.glb": "objects/057_electrode_lamp/057_electrode_lamp.glb",
+    "pichu.glb": "objects/107_pichu/107_pichu.glb",
+    "stars.glb": "objects/190_dizzy_stars/190_dizzy_stars.glb",
+    "pichu.json": "objects/107_pichu/107_pichu.json",  # its face tracks
+    "button_a.png": bank(51, 0),
+    "button_b.png": bank(51, 1),
+}
+PICHU.update({"frame_face%d.png" % i: "objects/056_power_plant_frame/textures/face/tex%02d.png" % i for i in range(6, 12)})
+PICHU.update({"lamp_face%d.png" % i: "objects/057_electrode_lamp/textures/face/tex%02d.png" % i for i in range(2, 9)})
+PICHU.update({"pichu_face%d.png" % i: "objects/107_pichu/textures/face/tex%02d%s.png" % (i, "_ms" if i in (2, 3) else "")
+              for i in range(28)})
+UI["title_pichu.png"] = bank(408, 0)
+
 # folder -> {asset name: file under out/}
-FILES = {"ui": UI, "egg": EGG, "clearcut": CLEARCUT, "eevee": EEVEE, "stampede": STAMPEDE}
+FILES = {"ui": UI, "egg": EGG, "clearcut": CLEARCUT, "eevee": EEVEE, "stampede": STAMPEDE, "pichu": PICHU}
 
 # Sound (docs/audio.md). A game asks for song n, which the game plays as
 # sequence n + 39. The effects are sounds of sequence 9, the one the game runs
@@ -251,12 +274,35 @@ SOUNDS = {
         "allScored": _sound(0x10, 110, 1, 0x4000, sfx=[15]),  # 0x1E09, someone scored
         **SHARED,
     }),
+    # Pichu's Power Plant asks for song 21 (sequence 60) at GO. Its effects
+    # are bank 2's (0x2Fxx); 0x13-0x1B share a script that picks its effect
+    # from the sound number as it plays (effect = sound - 3), so those are
+    # listed by hand
+    "pichu": ({"main": 60, "win": 94}, {
+        "pop": _sound(0x16, 100, 4, 0x1000, sfx=[19]),  # 0x2F03, an Electrode pops out
+        **{"turn%d" % i: _sound(0x17 + i, 90, 2, 0x0001, sfx=[20 + i]) for i in range(4)},  # 0x2F04-0x2F07, a player turns
+        "shock": _sound(0x1B, 90, 2, 0x0001, sfx=[24]),  # 0x2F08, a miss
+        "zapA": _sound(0x1C, 90, 2, 0x0001),  # 0x2F09, 1P's and 4P's lightning, if they lost
+        "zapB": _sound(0x1D, 90, 2, 0x0001),  # 0x2F0A, 2P's and 3P's
+        "hum": _sound(0x1E, 70, 5, 0x0010),  # 0x200B, while a player charges
+        "jingle0": _sound(0x1F, 100, 5, 0x0100),  # 0x2F0C, 50 frames after the finish (unless all four won)
+        "jingle1": _sound(0x29, 100, 5, 0x0010),  # 0x2F0D, with it
+        "jingle2": _sound(0x2A, 100, 5, 0x0010),  # 0x2F0E, at 70
+        "jingle3": _sound(0x2B, 100, 5, 0x0010),  # 0x2F0F, at 90
+        "jingle4": _sound(0x2C, 100, 5, 0x0010),  # 0x2F10, at 110
+        "cry": _sound(0x15, 100, 2, 0x0001),  # 0x2F11, a Pichu winner's cry
+        **SHARED,
+        "count": _sound(0x13, 100, 5, 0x0100, sfx=[16]),  # 0x2F00, the minigame's own count
+        "go": _sound(0x14, 100, 5, 0x0100, sfx=[17]),  # 0x2F01, and GO
+    }),
 }
 
 def flat_picture(glb_path, width):
-    """A flat model (Streaming Stampede's circus backdrop, a wall of 15
-    textured strips) drawn front on into a picture width pixels wide: (w, h,
-    RGBA). For the title's art: the minigame has no background picture."""
+    """A model drawn front on (looking down -z, no perspective) into a picture
+    width pixels wide: (w, h, RGBA). Its parts go where its bones put them,
+    and the nearest wins (a depth buffer). For the title's art, where a
+    minigame has no background picture (Streaming Stampede's circus backdrop,
+    Pichu's Power Plant's frame)."""
     import json
     import struct
     import zlib
@@ -271,8 +317,8 @@ def flat_picture(glb_path, width):
 
     def accessor(i):
         a = j["accessors"][i]
-        size = {"SCALAR": 1, "VEC2": 2, "VEC3": 3}[a["type"]]
-        fmt = {5126: "f", 5123: "H"}[a["componentType"]]
+        size = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4}[a["type"]]
+        fmt = {5126: "f", 5123: "H", 5121: "B"}[a["componentType"]]
         raw = view(a["bufferView"])[a.get("byteOffset", 0):]
         vals = struct.unpack_from("<%d%s" % (a["count"] * size, fmt), raw)
         return [vals[k:k + size] for k in range(0, len(vals), size)]
@@ -290,18 +336,68 @@ def flat_picture(glb_path, width):
         assert all(raw[y * (w * 4 + 1)] == 0 for y in range(h))
         return w, h, b"".join(raw[y * (w * 4 + 1) + 1:(y + 1) * (w * 4 + 1)] for y in range(h))
 
-    prims = [p for m in j["meshes"] for p in m["primitives"]]
-    pos = [accessor(p["attributes"]["POSITION"]) for p in prims]
-    x0, x1 = min(v[0] for ps in pos for v in ps), max(v[0] for ps in pos for v in ps)
-    y0, y1 = min(v[1] for ps in pos for v in ps), max(v[1] for ps in pos for v in ps)
+    # each node's place: translation, rotation (a quaternion) and scale, down the tree
+    def local(nd):
+        tx, ty, tz = nd.get("translation", (0, 0, 0))
+        qx, qy, qz, qw = nd.get("rotation", (0, 0, 0, 1))
+        sx, sy, sz = nd.get("scale", (1, 1, 1))
+        r = [[1 - 2 * (qy * qy + qz * qz), 2 * (qx * qy - qz * qw), 2 * (qx * qz + qy * qw)],
+             [2 * (qx * qy + qz * qw), 1 - 2 * (qx * qx + qz * qz), 2 * (qy * qz - qx * qw)],
+             [2 * (qx * qz - qy * qw), 2 * (qy * qz + qx * qw), 1 - 2 * (qx * qx + qy * qy)]]
+        return [[r[i][0] * sx, r[i][1] * sy, r[i][2] * sz, (tx, ty, tz)[i]] for i in range(3)]
+
+    def mul(a, b):
+        return [[sum(a[i][k] * b[k][jj] for k in range(3)) + (a[i][3] if jj == 3 else 0) for jj in range(4)] for i in range(3)]
+    world = {}
+
+    def walk(i, parent):
+        world[i] = mul(parent, local(j["nodes"][i]))
+        for ch in j["nodes"][i].get("children", []):
+            walk(ch, world[i])
+    ident = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]
+    for root in j["scenes"][j.get("scene", 0)]["nodes"]:
+        walk(root, ident)
+    joints = j["skins"][0]["joints"] if j.get("skins") else []
+
+    def place(p, jn):
+        m = world[joints[jn]] if joints else ident
+        return tuple(m[i][0] * p[0] + m[i][1] * p[1] + m[i][2] * p[2] + m[i][3] for i in range(3))
+
+    prims = []
+    for m in j["meshes"]:
+        for p in m["primitives"]:
+            pos = accessor(p["attributes"]["POSITION"])
+            jn = accessor(p["attributes"]["JOINTS_0"]) if "JOINTS_0" in p["attributes"] else [(0,)] * len(pos)
+            prims.append((p, [place(v, k[0]) for v, k in zip(pos, jn)]))
+    x0 = min(v[0] for _, ps in prims for v in ps)
+    x1 = max(v[0] for _, ps in prims for v in ps)
+    y0 = min(v[1] for _, ps in prims for v in ps)
+    y1 = max(v[1] for _, ps in prims for v in ps)
     k = width / (x1 - x0)
     W, H = width, int(round((y1 - y0) * k))
     out = bytearray(W * H * 4)
-    for p, ps in zip(prims, pos):
+    depth = [-math.inf] * (W * H)
+    for p, ps in prims:
+        if "TEXCOORD_0" not in p["attributes"]:
+            continue
         uv = accessor(p["attributes"]["TEXCOORD_0"])
         idx = [i[0] for i in accessor(p["indices"])]
-        tex = j["textures"][j["materials"][p["material"]]["pbrMetallicRoughness"]["baseColorTexture"]["index"]]
+        mat = j["materials"][p["material"]]
+        tx = mat["pbrMetallicRoughness"].get("baseColorTexture")
+        if not tx:
+            continue
+        tex = j["textures"][tx["index"]]
+        smp = j["samplers"][tex["sampler"]] if "sampler" in tex else {}
         tw, th, texels = image(tex["source"])
+
+        def wrap(c, n, mode):
+            i = int(math.floor(c * n))
+            if mode == 33071:
+                return min(n - 1, max(0, i))
+            if mode == 33648:
+                i %= 2 * n
+                return i if i < n else 2 * n - 1 - i
+            return i % n
         for t in range(0, len(idx), 3):
             a, b, c = idx[t:t + 3]
             (ax, ay), (bx, by), (cx, cy) = [((ps[i][0] - x0) * k, (y1 - ps[i][1]) * k) for i in (a, b, c)]
@@ -316,11 +412,15 @@ def flat_picture(glb_path, width):
                     wc = 1 - wa - wb
                     if wa < -1e-6 or wb < -1e-6 or wc < -1e-6:
                         continue
+                    z = wa * ps[a][2] + wb * ps[b][2] + wc * ps[c][2]
+                    if z < depth[py * W + px]:
+                        continue
                     u = wa * uv[a][0] + wb * uv[b][0] + wc * uv[c][0]
                     v = wa * uv[a][1] + wb * uv[b][1] + wc * uv[c][1]
-                    tx = min(tw - 1, max(0, int(u * tw)))
-                    ty = min(th - 1, max(0, int(v * th)))
-                    o = (ty * tw + tx) * 4
+                    o = (wrap(v, th, smp.get("wrapT", 10497)) * tw + wrap(u, tw, smp.get("wrapS", 10497))) * 4
+                    if texels[o + 3] < 128:
+                        continue
+                    depth[py * W + px] = z
                     out[(py * W + px) * 4:(py * W + px) * 4 + 4] = texels[o:o + 4]
     return W, H, bytes(out)
 
@@ -353,6 +453,12 @@ if os.path.exists(_backdrop):
     with open(os.path.join(site, "stampede", "backdrop.png"), "wb") as fh:
         fh.write(png.encode_rgba(*flat_picture(_backdrop, 400)))
 
+# Pichu's Power Plant's art for the title and the lobby: its frame, flat
+_frame = os.path.join(site, "pichu", "frame.glb")
+if os.path.exists(_frame):
+    with open(os.path.join(site, "pichu", "art.png"), "wb") as fh:
+        fh.write(png.encode_rgba(*flat_picture(_frame, 400)))
+
 if roms:
     rom = Rom(roms[0])
     for name, (w, h, rgba) in minigames.clearcut_textures(rom).items():
@@ -376,6 +482,37 @@ if roms:
             px[o + 2] = 0
         with open(os.path.join(site, "stampede", "g%d.png" % k), "wb") as fh:
             fh.write(png.encode_rgba(w, h, bytes(px)))
+    # Pichu's Power Plant's sparks (bank 224, drawn white) and lightning (225,
+    # yellow): the game's combiner makes a texel's colour prim + (1 - prim) x
+    # its grey, and its alpha the grey (0x86600160, 0x86600020)
+    for name, b, prim in (("spark", 224, (255, 255, 255)), ("bolt", 225, (255, 255, 0))):
+        frames = images.bank_images(rom, b)
+        w, h = frames[0][1], frames[0][2]
+        rows = []
+        for y in range(h):
+            row = bytearray()
+            for _, _, _, rgba in frames:
+                for x in range(w):
+                    i = rgba[(y * w + x) * 4]
+                    row += bytes(c + (255 - c) * i // 255 for c in prim) + bytes([i])
+            rows.append(bytes(row))
+        with open(os.path.join(site, "pichu", name + ".png"), "wb") as fh:
+            fh.write(png.encode_rgba(w * len(frames), h, b"".join(rows)))
+    # its gauges' frame (0x86603604): bank 410's cap, its last column across
+    # 54 pixels, and the cap again, mirrored: 70 x 14
+    _, cw, ch, cap = images.bank_images(rom, 410)[0]
+    rows = []
+    for y in range(ch):
+        row = [cap[(y * cw + x) * 4:(y * cw + x) * 4 + 4] for x in range(cw)]
+        rows.append(b"".join(row + [row[-1]] * (70 - 2 * cw) + row[::-1]))
+    with open(os.path.join(site, "pichu", "gauge.png"), "wb") as fh:
+        fh.write(png.encode_rgba(70, ch, b"".join(rows)))
+    # and its fill and the pulse over it: bank 409's pictures' first column
+    # (the rest is clear), stretched as long as the charge
+    for name, (_, fw, fh_, px) in zip(("gauge_fill", "gauge_glow"), images.bank_images(rom, 409)):
+        with open(os.path.join(site, "pichu", name + ".png"), "wb") as fh:
+            fh.write(png.encode_rgba(1, fh_, b"".join(px[y * fw * 4:y * fw * 4 + 4] for y in range(fh_))))
+    print("pichu: the sparks, the lightning and the gauge (image banks 224, 225, 409, 410)")
     sound = audio.Audio(rom.data)
     for game, (songs, sounds) in SOUNDS.items():
         dst = os.path.join(site, game, "sound.bin")
