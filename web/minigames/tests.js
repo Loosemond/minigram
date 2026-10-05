@@ -663,6 +663,22 @@ await test("Pichu's Power Plant: a solo game, played headless: a quick, right pl
   return `wins over 4 games on Hard: ${wins.join(", ")}; full at frames ${at.join(", ")}`;
 });
 
+await test("online: rejoining a round, a seat whose player is away is still theirs, not a CPU", async () => {
+  // (the server's CPUs are the seats nobody was dealt: a device that took one more would count it itself)
+  const round = { online: true, level: "normal", seed: 7, me: 0, control: ["local", "remote", "remote", "cpu"],
+                  lineup: [{ seat: 0, here: true }, { seat: 1, here: false }, { seat: 2, here: true }] };
+  const out = [];
+  try {
+    for (const id of ["stampede", "pichu"]) {
+      await solo.mg.show(id);
+      solo.mg.mini.reset(round);
+      out.push(`${id}: ${solo.mg.mini.game.cpus.join()}`);
+      solo.mg.mini.idle();
+    }
+  } finally { await solo.mg.show("egg"); }
+  assert(out.every((c) => c.endsWith(": false,false,false,true")), "the CPUs: " + out.join("; "));
+});
+
 await test("online: another device's player is shown as far behind as its moves take to get here", async () => {
   const { Lag, LAG, startDelay } = await moduleOf(solo, "./src/lag.js");
   const start = startDelay(40, 120); // (80 ms each way, and the spare)

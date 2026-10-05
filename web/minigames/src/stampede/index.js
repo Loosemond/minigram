@@ -231,8 +231,10 @@ export async function create(shell, onProgress) {
 
     reset(round) {
       const m = round.start;
+      // (online: the seats nobody was dealt are CPUs, as the server has them; one
+      // whose player is away, rejoining midway, is still theirs)
       const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me)
-        : [0, 1, 2, 3].map((z) => !(round.lineup || []).some((p) => p.seat === z && p.here));
+        : [0, 1, 2, 3].map((z) => !(round.lineup || []).some((p) => p.seat === z));
       game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, told: m?.ss?.told });
       shell.stopSound();
       board.hidden = lets.hidden = stop.hidden = true;
