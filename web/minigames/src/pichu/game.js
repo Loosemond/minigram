@@ -20,13 +20,13 @@ export const PICHU = [[-345, 100], [345, 100], [-345, -390], [345, -390]];
 const PICHU_Z = -200, PICHU_SCALE = 0.7;
 // the lamps (0x866068CC), by player and direction (up, down, right, left:
 // the rules' 1-4, less one), each turned about z to point in at its Pichu
-const LAMPS = [
+export const LAMPS = [
   [[-325, 450], [-325, 50], [-50, 250], [-600, 250]],
   [[325, 450], [325, 50], [600, 250], [50, 250]],
   [[-325, -50], [-325, -450], [-50, -250], [-600, -250]],
   [[325, -50], [325, -450], [600, -250], [50, -250]],
 ];
-const LAMP_Z = -50;
+export const LAMP_Z = -50;
 const LAMP_TURN = [Math.PI, 0, Math.PI / 2, -Math.PI / 2];
 // the lamp's clip (clip00): frames 0-3 pop it out, 4 is out, 5-8 put it back
 const OUT = 4, IN = 8;

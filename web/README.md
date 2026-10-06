@@ -381,12 +381,13 @@ the game and its scene, `src/stampede/assets.js` the models and pictures and
 
 Four Pichus charge up in the four rooms of a power plant, each with four
 Electrode lamps pointing in at it from the ceiling, the floor and the walls.
-When an Electrode pops out, hold the **D-pad** towards it (the arrow keys)
-and tap the button its lamp shows: **A** for blue (X), **B** for green (Z);
-the sign in the middle lights up with the colours that are out. Each right tap
-charges your Pichu one; the wrong button, or a tap towards an Electrode that's
-gone dead, shocks it for 9 frames. The first to 80 wins: the others are
-zapped. This one follows the game's own code too (module #54:
+When an Electrode pops out, tap it in your room: on its left side for **B**
+if its lamp is green, on its right side for **A** if it's blue (as on the sign
+in the middle, which lights up with the colours that are out). Each right tap
+charges your Pichu one; the wrong button, or a tap at an Electrode that's gone
+dead, shocks it for 9 frames. With a keyboard, hold the arrow keys towards it
+and press X for A, Z for B, as on the N64's D-pad and buttons. The first to 80
+wins: the others are zapped. This one follows the game's own code too (module #54:
 [docs/minigames.md](../docs/minigames.md#pichus-power-plant) has where each
 number is):
 
@@ -401,12 +402,18 @@ number is):
   them. The first of three is full after about 18 s on Easy, 13 on Normal and
   10.5 on Hard; tapping right ten times a second beats them.
 
-The screen is the game's one screen (the frame of four rooms, its camera,
-which glides in from the side during the countdown), as big as fits; in
-portrait at the top, a little wider than the window (the hazard stripes at
-its sides are cut off), with the controls below. The cards sit where the
-game's badges do, with each player's charge; the gauges are the game's. The
-D-pad and the A and B buttons work with as many fingers as it takes.
+With a mouse, the screen is the game's one screen (the frame of four rooms,
+its camera, which glides in from the side during the countdown), as big as
+fits, and a click in your room works as a tap. On a phone each room has a
+view of its own: yours big (in portrait under the other three and low, where
+the thumbs are; in landscape beside them), what's round it dimmed, and the
+other three small. A tap anywhere in it counts: your room is in four parts,
+by which lamp is nearest (above Pichu, below it, left or right), and a tap
+left of that lamp is B, right of it A; the B and A buttons show either side
+of each lamp through the countdown and the first seconds, and a ring of the
+button's colour where you tap. Taps work with as many fingers as it takes.
+The cards sit where the game's badges do, with each player's charge; the
+gauges are the game's.
 
 **Sound**: the game's (`assets/pichu/sound.bin`, 310 KB): song 21 from GO,
 and bank 2's effects: its own count and GO, an Electrode popping out, a turn
@@ -418,7 +425,7 @@ What comes from the ROM and what is made up:
 | From the game | Made for the remake |
 |---|---|
 | the Electrodes' pattern, the presses, hits, misses and shocks, the CPUs, the finish (module #54's code) | the pattern and the CPUs draw from random numbers of their own (in the game the sparks' flicker takes from the same ones), so every device and the server have the same; the round ends 50 frames after the finish |
-| the frame (object 56) and its B/A sign, the Electrode lamps (57) and their faces, Pichu (107) and its clips and faces, the dizzy stars (190), the sparks and the lightning (banks 224, 225, coloured as the game draws them), the gauges (banks 409, 410), the camera and its glide | Pichu in every seat (the game's Pikachu comes from a Game Pak), the sparks shown a few frames after each hit, the lightning drawn brighter (it's thin and faint at its size), the stars' place, the portrait screen, the title's art (the frame drawn flat), the badges' intro (not played), the D-pad and the buttons |
+| the frame (object 56) and its B/A sign, the Electrode lamps (57) and their faces, Pichu (107) and its clips and faces, the dizzy stars (190), the sparks and the lightning (banks 224, 225, coloured as the game draws them), the gauges (banks 409, 410), the camera and its glide | Pichu in every seat (the game's Pikachu comes from a Game Pak), the sparks shown a few frames after each hit, the lightning drawn brighter (it's thin and faint at its size), the stars' place, the portrait screen, the title's art (the frame drawn flat), the badges' intro (not played), the taps (a room's four parts, B left and A right), a view a room on phones |
 | song 21, the effects of bank 2 | |
 
 Code: `src/pichu/rules.js` has the rules (and `tools/pichu_rules.py`, the
