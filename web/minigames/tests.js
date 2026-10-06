@@ -658,23 +658,6 @@ await test("Pichu's Power Plant: its music and sound effects play from sound.bin
   return "the hum stops";
 }));
 
-await test("Pichu's Power Plant: a tap by a lamp in your room presses towards it, B on its left, A on its right", async () => {
-  await solo.mg.show("pichu");
-  const d = solo.mg.mini.debug, got = [];
-  try {
-    for (const dir of [1, 2, 3, 4]) {
-      for (const b of ["b", "a"]) {
-        const [x, y] = d.tapFor(dir, b), t = d.tapAt(x, y);
-        got.push(t ? `${t.dir}${t.btn === 5 ? "a" : "b"}` : "-");
-      }
-    }
-    const [x, y] = d.tapFor(1, "a");
-    got.push(d.tapAt(x + 2000, y) ? "outside" : "");
-  } finally { await solo.mg.show("egg"); }
-  assert(got.join() === "1b,1a,2b,2a,3b,3a,4b,4a,", `taps (${d.mode}) gave ${got.join()}`);
-  return "the view: " + d.mode;
-});
-
 await test("Pichu's Power Plant: a solo game, played headless: a quick, right player beats the CPUs", async () => {
   await solo.mg.show("pichu");
   const api = solo.mg.mini, g = api.game, saved = g.listeners;

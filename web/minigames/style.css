@@ -173,25 +173,39 @@ input { -webkit-user-select: text; user-select: text; }
 .ss-pads .pad img { width: 24px; height: 24px; }
 .game-hud.off .ss-pads { display: none; }
 
-/* Pichu's Power Plant: the gauges (--u, pixels a pixel of the game's 320 x
-   240 screen: frame bank 410, fill bank 409), the B and A hints by your lamps
-   (bank 51) and the marks where you tap */
-.pp-gauge { position: absolute; left: 0; top: 0; width: calc(70 * var(--u)); height: calc(14 * var(--u)); --u: 1px; animation: pp-open 0.24s ease-out; }
+/* Pichu's Power Plant: the gauges on the game's 320 x 240 screen (--u, pixels
+   a screen pixel: frame bank 410, fill bank 409), and the controls: a D-pad
+   held to a direction, and the A and B buttons (bank 51), at the bottom
+   corners, or in portrait below the screen */
+.pp-screen { position: absolute; --u: 1px; }
+.pp-gauge { position: absolute; width: calc(70 * var(--u)); height: calc(14 * var(--u)); transform-origin: 50% 50%; animation: pp-open 0.24s ease-out; }
 .pp-gauge .pp-frame { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .pp-gauge i { position: absolute; left: calc(5 * var(--u)); top: calc(3 * var(--u)); height: calc(8 * var(--u)); width: 0; background: url(assets/pichu/gauge_fill.png) 0 0 / 100% 100%; }
 .pp-gauge .pp-glow { background-image: url(assets/pichu/gauge_glow.png); opacity: 0; }
 @keyframes pp-open { from { transform: scaleX(0.23); } }
-.pp-hint { position: absolute; left: 0; top: 0; width: 26px; height: 26px; transform: translate(-50%, -50%); opacity: 0; transition: opacity 0.4s;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7)); }
-.pp-hint.on { opacity: 0.9; }
-.pp-tap { position: absolute; left: 0; top: 0; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; opacity: 0;
-  box-sizing: border-box; border: 3px solid currentColor; }
-.pp-tap.pp-a { color: #39a8ff; animation: pp-tap 0.3s ease-out; }
-.pp-tap.pp-b { color: #3ddc5a; animation: pp-tap 0.3s ease-out; }
-@keyframes pp-tap { from { opacity: 0.95; transform: scale(0.5); } to { opacity: 0; transform: scale(1.3); } }
-.pp-dim { position: absolute; overflow: hidden; }
-.pp-dim i { position: absolute; display: block; box-shadow: 0 0 0 4000px rgba(12, 12, 18, 0.62); border-radius: 6px; }
-.game-hud.off .pp-hint, .game-hud.off .pp-tap { display: none; }
+.pp-pads { position: absolute; inset: 0; pointer-events: none; --pad: clamp(120px, 30vmin, 176px); --btn: clamp(58px, 15vmin, 84px); }
+.pp-dpad, .pp-buttons { position: absolute; bottom: calc(var(--safe-b) + 16px); pointer-events: auto; }
+.pp-dpad { left: calc(var(--safe-l) + 16px); width: var(--pad); height: var(--pad); border-radius: 50%; background: rgba(20, 20, 30, 0.35); }
+.pp-buttons { right: calc(var(--safe-r) + 16px); width: calc(var(--btn) * 2.1); height: calc(var(--btn) * 1.7); }
+.pp-pads.pp-below { top: auto; height: var(--room); }
+.pp-pads.pp-below .pp-dpad, .pp-pads.pp-below .pp-buttons { bottom: calc(var(--safe-b) + max(16px, (var(--room) - var(--safe-b) - var(--pad)) / 2)); }
+.pp-dpad i { position: absolute; background: rgba(235, 235, 245, 0.55); border: 2px solid rgba(255, 255, 255, 0.7); box-sizing: border-box; transition: background 0.05s; }
+.pp-dpad .pp-up, .pp-dpad .pp-down { left: 35%; width: 30%; height: 36%; }
+.pp-dpad .pp-left, .pp-dpad .pp-right { top: 35%; height: 30%; width: 36%; }
+.pp-dpad .pp-up { top: 4%; border-radius: 8px 8px 2px 2px; }
+.pp-dpad .pp-down { bottom: 4%; border-radius: 2px 2px 8px 8px; }
+.pp-dpad .pp-left { left: 4%; border-radius: 8px 2px 2px 8px; }
+.pp-dpad .pp-right { right: 4%; border-radius: 2px 8px 8px 2px; }
+.pp-dpad b { position: absolute; left: 35%; top: 35%; width: 30%; height: 30%; background: rgba(235, 235, 245, 0.55); }
+.pp-dpad[data-dir="up"] .pp-up, .pp-dpad[data-dir="down"] .pp-down,
+.pp-dpad[data-dir="left"] .pp-left, .pp-dpad[data-dir="right"] .pp-right { background: #ffe14d; border-color: #fff; }
+.pp-btn { position: absolute; width: var(--btn); height: var(--btn); border-radius: 50%; display: grid; place-items: center;
+  background: rgba(20, 20, 30, 0.35); border: 2px solid rgba(255, 255, 255, 0.6); box-sizing: border-box; transition: transform 0.06s; }
+.pp-btn img { width: 78%; height: 78%; display: block; }
+.pp-btn.pp-a { right: 0; bottom: 0; }
+.pp-btn.pp-b { left: 0; top: 0; }
+.pp-btn.on { transform: scale(1.12); border-color: #fff; }
+.game-hud.off .pp-pads { display: none; }
 /* Tumbling Togepi: the hint till GO and a moment after */
 .tg-hint { position: absolute; left: 50%; bottom: calc(var(--safe-bottom, 0px) + 18%); transform: translateX(-50%);
   padding: 6px 14px; border-radius: 16px; background: rgba(0, 0, 0, 0.45); color: #fff; font-weight: 700;
