@@ -139,6 +139,11 @@ BANKS = {
     # 2048: START, the 10-90 marks and GOAL), and the rank coins over the
     # Togepi; it also uses 205 (Diglett, popping out of the track) and 434
     226: "Tumbling Togepi track", 387: "Tumbling Togepi rank",
+    # Gutsy Golbat (module #49): Magnemite (a sprite in 5 frames), the cave
+    # backdrops (the cave, its mouth, the meadow outside), the hearts (red, then
+    # outlined in 1P-4P's colours) and the glow behind each Golbat
+    69: "Gutsy Golbat Magnemite", 221: "Gutsy Golbat backdrops", 222: "Gutsy Golbat hearts",
+    343: "Gutsy Golbat glow",
     412: "Streaming Stampede all", 413: "Streaming Stampede names", 414: "Streaming Stampede answer digits",
     # shared by menus and boards (by appearance, and Streaming Stampede's question board)
     51: "buttons", 165: "board rod and chain", 345: "arrows",

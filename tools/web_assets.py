@@ -202,9 +202,25 @@ TOGEPI["shadow.png"] = bank(307, 1)  # (the round shadow under each Togepi: Eage
 TOGEPI.update({"rank%d.png" % (i + 1): bank(387, i) for i in range(4)})
 UI["title_togepi.png"] = bank(417, 0)
 
+# Gutsy Golbat is code module #49. It loads Golbat (53) and Jynx (110: she
+# stands at the cave's mouth at the end and throws hearts), and image banks
+# 221 (the backdrops: the cave, its mouth, the meadow outside), 69 (Magnemite,
+# a sprite in 5 frames) and 222 (the hearts: red, then outlined in 1P-4P's
+# colours), both made into strips below, 343 (the glow behind each Golbat,
+# coloured below) and 434 (the badges). Its name banner is bank 395.
+GOLBAT = {
+    "golbat.glb": "objects/053_golbat/053_golbat.glb",
+    "jynx.glb": "objects/110_jynx/110_jynx.glb",
+    "cave.png": bank(221, 0),
+    "mouth.png": bank(221, 1),
+    "meadow.png": bank(221, 2),
+    "button_a.png": bank(51, 0),  # (the menus' A button: the flap button on a phone)
+}
+UI["title_golbat.png"] = bank(395, 0)
+
 # folder -> {asset name: file under out/}
 FILES = {"ui": UI, "egg": EGG, "clearcut": CLEARCUT, "eevee": EEVEE, "stampede": STAMPEDE, "pichu": PICHU,
-         "togepi": TOGEPI}
+         "togepi": TOGEPI, "golbat": GOLBAT}
 
 # Sound (docs/audio.md). A game asks for song n, which the game plays as
 # sequence n + 39. The effects are sounds of sequence 9, the one the game runs
@@ -333,6 +349,21 @@ SOUNDS = {
         **SHARED,
         "count": _sound(0x3F, 100, 2, 0x0C00),  # 0x5F07
         "go": _sound(0x40, 127, 2, 0x0C00),  # 0x5F08
+    }),
+    # Gutsy Golbat asks for song 13 (sequence 52) at GO. Its effects are bank
+    # 0's (0x0Fxx), panned to the Golbat's x; the shared count (0xCF00) and
+    # 0xCF06 sound the play's last three seconds and its end
+    "golbat": ({"main": 52, "win": 94}, {
+        "bump": _sound(0x00, 110, 2, 0x1000),  # 0x0F01, a dash knocks a heart out of a Golbat
+        "zap": _sound(0x01, 110, 2, 0x1000),  # 0x0F02, a Magnemite hits one
+        "wing": _sound(0x02, 63, 3, 0x0001),  # 0x0F03, a wingbeat (each time its flying clip comes round)
+        "got": _sound(0x03, 110, 3, 0x0100),  # 0x0F04, a heart caught
+        "drop": _sound(0x04, 110, 3, 0x0100),  # 0x0F05, a heart knocked out
+        **SHARED,
+        "lastCount": SHARED["count"],
+        "lastGo": SHARED["go"],
+        "count": _sound(0x05, 100, 5, 0x0010),  # 0x0F06, the minigame's own count
+        "go": _sound(0x06, 127, 5, 0x0010),  # 0x0F07, and GO (with song 13)
     }),
 }
 
@@ -571,6 +602,26 @@ if roms:
     with open(os.path.join(site, "togepi", "art.png"), "wb") as fh:
         fh.write(png.encode_rgba(aw, 256, bytes(art)))
     print("togepi: the Diglett strip and the art (image banks 205, 226)")
+    # Gutsy Golbat's Magnemite (bank 69) and hearts (222), side by side; and the
+    # glow behind each Golbat (bank 343, grey: its combiner 0x86109D64 makes a
+    # texel env + (prim - env) x its grey, and its alpha 1 - the grey; the prim
+    # and env colours each player's, 0x8610A224), one picture a player
+    for name, b in (("magnemite", 69), ("hearts", 222)):
+        frames = images.bank_images(rom, b)
+        w, h = frames[0][1], frames[0][2]
+        rows = [b"".join(rgba[y * w * 4:(y + 1) * w * 4] for _, _, _, rgba in frames) for y in range(h)]
+        with open(os.path.join(site, "golbat", name + ".png"), "wb") as fh:
+            fh.write(png.encode_rgba(w * len(frames), h, b"".join(rows)))
+    (_, gw, gh, grey), = images.bank_images(rom, 343)[:1]
+    for z, (prim, env) in enumerate((((0, 0, 255), (200, 200, 255)), ((0, 255, 0), (200, 255, 200)),
+                                     ((255, 0, 0), (255, 200, 200)), ((255, 255, 0), (255, 255, 200)))):
+        px = bytearray()
+        for o in range(0, gw * gh * 4, 4):
+            i = grey[o]
+            px += bytes(e + (p - e) * i // 255 for p, e in zip(prim, env)) + bytes([255 - i])
+        with open(os.path.join(site, "golbat", "glow%d.png" % z), "wb") as fh:
+            fh.write(png.encode_rgba(gw, gh, bytes(px)))
+    print("golbat: the Magnemite and heart strips and the glows (image banks 69, 222, 343)")
     sound = audio.Audio(rom.data)
     for game, (songs, sounds) in SOUNDS.items():
         dst = os.path.join(site, game, "sound.bin")

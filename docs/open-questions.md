@@ -53,7 +53,6 @@ What isn't known yet, roughly by how useful it would be.
 - Where these are loaded: Hitmontop 052 and 123, fruit 208, 210, 212 and 215,
   gift boxes 088–091, 093–095, 097 and 099. No code loads them by a constant
   number.
-- Why Gutsy Golbat loads Jynx (110).
 
 ## Models
 

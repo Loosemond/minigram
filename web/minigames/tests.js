@@ -24,6 +24,12 @@ const PICHU = { 1: "e27615795ea9a2a3", 12345: "daf3601d2ace0952", 2147483647: "e
 const TOGEPI = { 1: "efcaeb571cb83ba1", 12345: "98649f14c45fb285", 2147483647: "897e6c53dd29b182" };
 const TOGEPI_SCRIPT = [[0, 0, -60], [100, 45, -60], [160, 0, -60], [260, -60, -45], [300, 0, -60], [500, 30, 0], [530, 0, -60],
   [700, -45, -45], [760, 60, -60], [800, 0, -60]];
+// Gutsy Golbat: a round with seats 0 and 2 on golbatPad() and two CPUs (normal, hard, easy), the
+// world's digest() every 50 frames, the end and the hearts: the same as JS_GOLBAT in tools/test_rooms.py
+const GOLBAT = { 1: "7f7fc535a3084587", 12345: "1187f3c1ce14e6a9", 2147483647: "25353e1685cb6a40" };
+const GOLBAT_LEVEL = { 1: "normal", 12345: "hard", 2147483647: "easy" };
+const golbatPad = (z, t) => (z === 0 ? [[64, 0, -64, 32, -32, 0][Math.floor(t / 90) % 6], t % 12 === 0 || t % 47 === 5]
+  : [[-64, 64][Math.floor(t / 70) % 2], t % 9 === 0]);
 // the frame the first of three CPUs gets to full charge, the middle of 41 rounds (rules.js cpuPresses)
 const CHARGE_TARGETS = { easy: [500, 590], normal: [365, 420], hard: [295, 345] };
 // the best of the three CPUs' totals in a game, on average (Streaming Stampede: rules.js cpuPresses)
@@ -205,6 +211,21 @@ async function autorun(w) {
   api.step = function (dt, on) {
     const g = api.game, z = w.mg.me();
     if (on && g.state === "play") g.setStick(steerFor(g.lanes[z], BOX), -60);
+    step.call(api, dt, on);
+  };
+  return () => { api.step = step; };
+}
+
+// a Gutsy Golbat player: flies left and right, flapping every 10 frames or so
+function autoflap(w) {
+  const api = w.mg.mini, step = api.step;
+  api.step = function (dt, on) {
+    const g = api.game;
+    if (on && g.state === "play") {
+      const t = g.lastFrame + 1;
+      g.setStick(Math.round(Math.sin(t / 37 + w.mg.me()) * 4) * 16);
+      if (t % 10 === w.mg.me() % 10 && g.flaps === 0) g.flap();
+    }
     step.call(api, dt, on);
   };
   return () => { api.step = step; };
@@ -769,13 +790,123 @@ await test("Tumbling Togepi: a solo race, played headless: all four get there, a
   return "finish frames: " + out.join("; ");
 });
 
+await test("Gutsy Golbat: the world and the CPUs are the same as the server's copy of them", async () => {
+  const R = await moduleOf(solo, "./src/golbat/rules.js");
+  for (const [seed, want] of Object.entries(GOLBAT)) {
+    const w = new R.World(+seed, GOLBAT_LEVEL[seed], [false, true, false, true]), parts = [];
+    for (let t = 0; w.end === null; t++) {
+      w.step(t, [golbatPad(0, t), null, golbatPad(2, t), null]);
+      w.events = [];
+      if (t % 50 === 0) parts.push(w.digest());
+    }
+    parts.push(w.end + ":" + w.scores.join(","));
+    const got = await sha16(parts.join(";"));
+    assert(got === want, `seed ${seed}: ${got}; tools/golbat_rules.py expects ${want} (update both, and the digests)`);
+  }
+});
+
+await test("Gutsy Golbat: its music and sound effects play from sound.bin", () => soundTest("assets/golbat/sound.bin", [
+  ["main", 6, (r) => assert(r.notes > 10 && r.peak > 0.05 && r.peak < 1, `song 13: ${r.notes} notes, peak ${r.peak.toFixed(2)}`)],
+]));
+
+await test("Gutsy Golbat: online, the others' pads coming in late run the world again to the same place", async () => {
+  await solo.mg.show("golbat");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners, R = await moduleOf(solo, "./src/golbat/rules.js");
+  solo.mg.paused = true;
+  g.listeners = {};
+  try {
+    // seat 0 here, seat 2 someone else whose pads come in 4-12 frames late, 1 and 3 CPUs
+    g.reset("normal", 77, { me: 0, control: ["local", "cpu", "remote", "cpu"], cpus: [false, true, false, true] });
+    g.start();
+    const late = [];
+    let lastX = null;
+    for (let t = 0; t < 1000; t++) {
+      const [x, a] = golbatPad(2, t);
+      if (x !== lastX || a) { late.push({ at: t + 4 + (t % 9), e: [t, x, a ? 1 : 0] }); lastX = x; }
+      for (const l of late.filter((l) => l.at === t)) g.told("pad", { s: 2, f: l.e[0], x: l.e[1], a: l.e[2] });
+      const [mx, ma] = golbatPad(0, t);
+      g.setStick(mx);
+      g.flaps = ma ? 1 : 0;
+      g.step(t);
+      g.lastFrame = t;
+    }
+    for (const l of late.filter((l) => l.at >= 1000)) g.told("pad", { s: 2, f: l.e[0], x: l.e[1], a: l.e[2] });
+    g.runTo(g.lastFrame);
+    // the same world with every pad on time
+    const w = new R.World(77, "normal", [false, true, false, true]);
+    for (let t = 0; t <= g.lastFrame; t++) w.step(t, [golbatPad(0, t), null, [golbatPad(2, t)[0], golbatPad(2, t)[1]], null]);
+    assert(g.world.digest() === w.digest(), `at frame ${g.lastFrame}: hearts ${g.world.scores} here, ${w.scores} on time`);
+    return `frame ${g.lastFrame}: hearts ${w.scores.join(", ")}; ${g.snaps.length} saved frames`;
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+});
+
+await test("Gutsy Golbat: a solo round, played headless: it ends when the meadow's in place, places by hearts", async () => {
+  await solo.mg.show("golbat");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners, { END } = await moduleOf(solo, "./src/golbat/game.js");
+  solo.mg.paused = true;
+  g.listeners = {};
+  const out = [];
+  try {
+    for (const [seed, level] of [[11, "easy"], [22, "hard"]]) {
+      g.reset(level, seed, { me: 0, control: ["local", "cpu", "cpu", "cpu"] });
+      g.start();
+      while (g.state === "play" && g.frame < 2500) {
+        const t = g.lastFrame + 1;
+        g.setStick(Math.round(Math.sin(t / 30) * 4) * 16);
+        if (t % 9 === 0) g.flap();
+        g.update(1 / 30);
+      }
+      const res = g.results(), h = g.world.scores;
+      assert(g.state === "over" && g.world.end === END, `${level}: over ${g.state}, the end at ${g.world.end}`);
+      assert(res.every((r, k) => r.score === h[r.i] && (!k || res[k - 1].place <= r.place)), `${level}: results ${JSON.stringify(res)} for hearts ${h}`);
+      assert(res.every((r) => r.place === 1 + h.filter((x) => x > h[r.i]).length), `${level}: places ${JSON.stringify(res)}`);
+      assert(h.slice(1).some((x) => x > 0), `${level}: the CPUs caught nothing: ${h}`);
+      out.push(`${level}: ${h.join(", ")}`);
+    }
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  return "hearts: " + out.join("; ");
+});
+
+await test("Gutsy Golbat: a finger on the left steers, a tap on the right flaps", async () => {
+  await solo.mg.show("golbat");
+  const api = solo.mg.mini, g = api.game, W = solo.innerWidth, H = solo.innerHeight;
+  const got = [];
+  try {
+    g.state = "play";
+    g.flaps = 0;
+    api.pointerdown({ pointerId: 1, clientX: W * 0.2, clientY: H * 0.7 });
+    api.pointermove({ pointerId: 1, clientX: W * 0.2 + 30, clientY: H * 0.7 });
+    got.push(g.stick);
+    api.pointermove({ pointerId: 1, clientX: W * 0.2 - 200, clientY: H * 0.7 }); // (past the stick's reach: full left)
+    got.push(g.stick);
+    api.pointerdown({ pointerId: 2, clientX: W * 0.8, clientY: H * 0.7 }); // (another finger, on the right)
+    got.push(g.flaps);
+    api.pointerup({ pointerId: 1 });
+    got.push(g.stick);
+  } finally {
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  assert(got.join() === "48,-64,1,0", "stick, stick, flaps, stick: " + got.join());
+});
+
 await test("online: rejoining a round, a seat whose player is away is still theirs, not a CPU", async () => {
   // (the server's CPUs are the seats nobody was dealt: a device that took one more would count it itself)
   const round = { online: true, level: "normal", seed: 7, me: 0, control: ["local", "remote", "remote", "cpu"],
                   lineup: [{ seat: 0, here: true }, { seat: 1, here: false }, { seat: 2, here: true }] };
   const out = [];
   try {
-    for (const id of ["stampede", "pichu", "togepi"]) {
+    for (const id of ["stampede", "pichu", "togepi", "golbat"]) {
       await solo.mg.show(id);
       solo.mg.mini.reset(round);
       out.push(`${id}: ${solo.mg.mini.game.cpus.join()}`);
@@ -846,7 +977,7 @@ await test("online: Clear Cut Challenge's logs fall together, and a late cut goe
   }
 });
 
-await test("a solo round starts and plays, in all six games", async () => {
+await test("a solo round starts and plays, in all seven games", async () => {
   solo.document.querySelector("#play").click();
   await until(() => solo.mg.phase() === "play" && solo.mg.game.time > 4, "Egg Emergency's round to be under way");
   let g = solo.mg.game;
@@ -910,10 +1041,22 @@ await test("a solo round starts and plays, in all six games", async () => {
   const far = [0, 1, 2, 3].map((z) => g.progressOf(z));
   assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
   assert(far.every((x) => x >= 5 && x < 30), "4 s in, the progress is " + far);
+  solo.mg.title();
+  await solo.mg.show("golbat");
+  solo.document.querySelector("#play").click();
+  const stopFlap = autoflap(solo);
+  try {
+    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > 120, "Gutsy Golbat's first 4 s", 30000);
+  } finally { stopFlap(); }
+  g = solo.mg.game;
+  const { START } = await moduleOf(solo, "./src/golbat/rules.js");
+  const moved = g.world.g.map((o, z) => Math.round(Math.hypot(o.x - START[z][0], o.y - START[z][1])));
+  assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
+  assert(moved.every((d) => d > 20) && g.world.mags.length + g.world.hearts.length > 0, `4 s in, the Golbat have moved ${moved}, with ${g.world.mags.length} Magnemite`);
   solo.frameElement.remove();
   return "Clear Cut's first log: " + first.join(", ") + `; Eevee's first race: ${v ? v.pts.join(", ") : "no one"}` +
     `; Stampede's first answer: ${answer.pts.join(", ")}; Pichu's charges 4 s in: ${charges.join(", ")}` +
-    `; Togepi's progress 4 s in: ${far.join(", ")}%`;
+    `; Togepi's progress 4 s in: ${far.join(", ")}%; Golbat moved ${moved.join(", ")} 4 s in`;
 }, { live: true });
 
 const code = Array.from({ length: 4 }, () => "BCDFGHJKLMNPQRSTVWXZ"[Math.floor(Math.random() * 20)]).join("");
@@ -961,11 +1104,13 @@ await test("online: an Egg Emergency round, the same on both devices, and cheati
     const r = ann.mg.room().round, net = bob.mg.net();
     same(ann, bob, "6 s in");
 
-    // Bob stands still for a while, then says he caught an egg he missed, with a made-up count
+    // Bob stands still till he's missed an egg (one not in the middle: some rounds have none for a
+    // few seconds), then says he caught it, with a made-up count
     stop[1]();
-    await sleep(3000);
-    const gb = bob.mg.game, t = gb.time;
-    const missed = gb.drops[1].findIndex((d, n) => d.kind === "egg" && d.col !== 0 && gb.arrive[1][n] < t - 0.5 && !gb.settled[1].has(n));
+    const gb = bob.mg.game;
+    const missedEgg = () => gb.drops[1].findIndex((d, n) => d.kind === "egg" && d.col !== 0 && gb.arrive[1][n] < gb.time - 0.5 && !gb.settled[1].has(n));
+    await until(() => missedEgg() >= 0, "Bob to miss an egg", 12000);
+    const t = gb.time, missed = missedEgg();
     assert(missed >= 0, "Bob didn't miss an egg");
     gb.players[1].eggs = 99;
     net.send("ev", { r, s: 1, n: missed, k: "c", e: 99 });
@@ -1168,6 +1313,38 @@ await test("online: a Tumbling Togepi race, the same on both devices, and cheati
   }
 }, { live: true });
 
+await test("online: a Gutsy Golbat round, the same on both devices, and cheating doesn't work", async () => {
+  await until(() => ann.mg.room()?.state === "lobby", "the Tumbling Togepi race to end", 180000);
+  ann.document.querySelector("#menu").click();
+  bob.document.querySelector("#menu").click();
+  ann.document.querySelector(`#lobby .games button[data-game="golbat"]`).click();
+  await until(() => bob.mg.room()?.game === "golbat" && bob.document.title === "Gutsy Golbat", "Gutsy Golbat in the lobby");
+  const stop = [];
+  try {
+    ann.mg.net().send("start");
+    await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the round", 20000);
+    stop.push(autoflap(ann), autoflap(bob));
+    const net = bob.mg.net(), r = ann.mg.room().round, g = bob.mg.game;
+    await until(() => g.frame > 60, "two seconds in", 20000);
+    // Bob flies Ann's Golbat, says a pad he didn't press was long ago, and sends one off the stick's range
+    net.send("pad", { r, s: 0, f: g.frame, x: -64, a: 1 });
+    net.send("pad", { r, s: 1, f: 5, x: 64, a: 1 });
+    net.send("pad", { r, s: 1, f: g.frame + 1, x: 90, a: 0 });
+    await until(() => [ann, bob].every((w) => w.mg.game.result), "the end, on both devices", 120000);
+    const res = (w) => JSON.stringify(w.mg.game.result);
+    assert(res(ann) === res(bob), `the end: ${res(ann)} / ${res(bob)}`);
+    const f = ann.mg.game.result;
+    // each device's run of the world comes to the server's hearts: so the server took the same
+    // pads (Bob's made-up old one on the frame it counts on, as told back to him)
+    const hearts = (w) => w.mg.game.world.scores.join();
+    assert(hearts(ann) === f.h.join() && hearts(bob) === f.h.join(), `hearts: Ann's ${hearts(ann)}, Bob's ${hearts(bob)}, the server's ${f.h}`);
+    await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 30000);
+    assert(ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
+    return `hearts ${f.h.join(", ")} at frame ${f.f}`;
+  } finally {
+    stop.forEach((s) => s());
+  }
+}, { live: true });
 const passed = results.filter((r) => r.ok).length, failed = results.filter((r) => r.ok === false).length;
 const verdict = failed ? "FAIL" : passed < results.length ? "INCONCLUSIVE" : "PASS";
 document.title = `${verdict} ${passed}/${results.length}: minigames tests`;

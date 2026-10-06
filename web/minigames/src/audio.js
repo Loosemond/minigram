@@ -117,7 +117,7 @@ export function trigger(engine, name, seat) {
   c.sfxName = name;
   c.sfxState[0] = s.vol;
   c.sfxState[1] = s.rev;
-  c.sfxState[2] = seat === undefined ? 64 : SEAT_PAN[seat];
+  c.sfxState[2] = seat === undefined ? 64 : typeof seat === "object" ? seat.pan : SEAT_PAN[seat];
   c.sfxPitch = s.pitch;
   c.io[3] = s.n >> 7;
   c.io[1] = (s.n << 24) >> 24;
@@ -183,7 +183,8 @@ function custom(index, value, channel) {
   return value;
 }
 
-// one of the game's sounds by name; seat: whose it is (panned to their column)
+// one of the game's sounds by name; seat: whose it is (panned to their column),
+// or { pan } (0-127: Gutsy Golbat pans by where the Golbat is)
 export function sound(name, seat) {
   if (!ctx || muted || !pack) return;
   const e = pack.engine;

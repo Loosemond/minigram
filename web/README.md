@@ -13,6 +13,7 @@ have a game picker; a game's code and files load the first time it's picked.
 | Streaming Stampede | [minigames/src/stampede/](minigames/src/stampede/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#streaming-stampede)) |
 | Pichu's Power Plant | [minigames/src/pichu/](minigames/src/pichu/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#pichus-power-plant)) |
 | Tumbling Togepi | [minigames/src/togepi/](minigames/src/togepi/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#tumbling-togepi)) |
+| Gutsy Golbat | [minigames/src/golbat/](minigames/src/golbat/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#gutsy-golbat)) |
 
 ## Run it
 
@@ -41,6 +42,7 @@ game's round), `mg.mini` (the game's module), `mg.paused = true`, `mg.tick(dt)`
 `mg.mini.debug.dash()` and `.feint()` (Eager Eevee), `mg.mini.debug.count()` (Streaming Stampede),
 `mg.mini.debug.press(dir, "a" | "b")` (Pichu's Power Plant: dir 1 up, 2 down, 3 right, 4 left),
 `mg.mini.debug.stick(x, y)` (Tumbling Togepi: -60-60 each, x right, y up; `mg.mini.debug.lanes` the four lanes),
+`mg.mini.debug.stick(x)` and `.flap()` (Gutsy Golbat: x -64-64; `mg.mini.debug.world` the world),
 `mg.show("clearcut")`, `mg.title()`, `mg.net()`, `mg.room()`,
 `mg.sound.engine` (the audio engine, once it's loaded). It works on localhost
 only, unless `debug` is true in `src/config.js`. `clips.html` plays every clip
@@ -493,6 +495,69 @@ server's copy: the course, the lanes, the CPUs and the end),
 models and pictures and `src/togepi/index.js` the cameras, the controls, its
 HUD and its online messages.
 
+## Gutsy Golbat
+
+Four Golbat fly through a cave that scrolls by from the right: push left or
+right to fly that way, press A to flap up, and gravity pulls you down. Catch
+the hearts the cave brings; dodge the Magnemite, which knock you back and
+knock out half your hearts (at least one) for anyone to catch. Fly fast
+enough (your Golbat shows your colour) into another Golbat and you knock one
+of theirs out. After 40 s the cave's mouth comes, then the meadow outside,
+with Jynx; once it's in place (about 61 s in, with the count's beeps for the
+last three seconds) the most hearts wins. It follows the game's own code
+(module #49: [docs/minigames.md](../docs/minigames.md#gutsy-golbat) has
+where each number is):
+
+- **One world for all four.** The Golbat bump each other and catch each
+  other's hearts, so unlike the other games every device runs the whole
+  world from everyone's pads, and the server too (below). It uses the game's
+  tuning (its debug menu's names: the scroll, the flap, the gravity, how hard
+  a Magnemite knocks you back, the share of hearts it knocks out) and its
+  course: 42 sections of Magnemite and hearts in a fixed order (the game
+  draws random numbers as if to shuffle them, but swaps none: every round's
+  course is the same; Easy has fewer Magnemite).
+- **The CPUs** are the game's: each frame they're ranked by hearts and each
+  given a way to play by level (go for the best heart: near, among others, no
+  Magnemite between; roam; on Easy and Normal, roam once they've 5 or 9); if a
+  person is well ahead, the CPU with the fewest goes after them, to ram them
+  or follow them. They steer round Magnemite and brake for ones in the way,
+  and work the stick and A as a person would.
+
+The screen is the game's: its camera, at 92% across and up as a TV showed it
+(the game's backdrops don't quite reach its screen's edges), as tall as the
+window; a wider window (a phone on its side) shows more of the cave either
+side, filling it: the course is the same every round, so the Magnemite and
+hearts the game brings on just past its screen's edge are drawn coming from
+further off, and the backdrops go on past the game's two (the cave, its
+mouth, the meadow, then the meadow mirrored). The badges and hearts are at the
+top where the game has them. On a phone: slide
+a finger on the left half to fly left and right (the stick's middle is where
+it went down, and follows it), tap the right half to flap; a resting stick
+and the A button show where. In portrait the screen is at the top, a little
+wider than the window, the stick and the button below it. With a keyboard:
+← → to fly, Space (or ↑) to flap. In the countdown the Golbat fly in from by
+the camera; at the end the winners fly round cheering, the others drop to the
+floor, and Jynx throws hearts.
+
+**Sound**: the game's (`assets/golbat/sound.bin`, 392 KB): song 13 from GO,
+bank 0's effects (the wingbeats, a heart caught, one knocked out, a Magnemite's
+hit, a dash's), panned by where the Golbat is, its own count and GO, and the
+shared count for the last three seconds.
+
+What comes from the ROM and what is made up:
+
+| From the game | Made for the remake |
+|---|---|
+| the course (its sections and their order), the flying, the bumps and dashes, the Magnemite and the hearts, the clock and the backdrops' timing, the CPUs, the end (module #49's code) | the countdown's 2.65 s as 80 frames of the backdrops going by (the game's lasts as long as its count), the end's flight (its winners roam and its losers fall the game's way, from random spots of the remake's own), the sparkles, a hurt Golbat's flashing |
+| Golbat (53) and its clips, Jynx (110), the backdrops (bank 221), Magnemite (69), the hearts (222), the glows (343, coloured as the game's combiner does), the badges (434), the camera | Golbat in every seat, the touch stick and A button (the menus' A, bank 51), the 92% screen, more of the cave on a wide screen (the meadow mirrored past its edge), the title's art (the cave) |
+| song 13, bank 0's effects, the count | |
+
+Code: `src/golbat/rules.js` has the world (and `tools/golbat_rules.py`, the
+server's copy, line for line), `src/golbat/game.js` the game (the pads, running
+the world again, and its scene), `src/golbat/assets.js` the models and
+pictures and `src/golbat/index.js` the layout, the controls, its HUD and its
+online messages.
+
 ## Online play
 
 **Play with friends** on the title screen makes a room with a four-letter
@@ -558,6 +623,17 @@ How it works:
   the first) once that's decided. A device runs the others' lanes from their
   changes a little behind (as in Egg Emergency), and again from a saved point
   when one comes in late.
+- **Gutsy Golbat**: devices send their player's pad for each frame it
+  changes (the frame, the stick and a flap); the server keeps them in order
+  (as Tumbling Togepi's sticks, one flap a frame), passes them on, tells the
+  sender's device if one counts on another frame, and runs the world itself
+  (`tools/golbat_rules.py`, the same as `src/golbat/rules.js`, bit for bit,
+  the CPUs too) as far as no pad still on its way could change; it says each
+  one's hearts at the end (`won`). The four share one world, so a device runs
+  everyone in it on time: the others as if they held their stick and didn't
+  flap, till their pad comes in a few frames late; then it runs the world
+  again from a frame it saved before then, and eases the others' Golbat to
+  where they turn out to be.
 - **Eager Eevee**: devices send each dash and feint, with the frame their
   player pressed on, and the server checks it could have happened then (the
   Eevee at its place, not bouncing back or blown away: `tools/eevee_rules.py`,
@@ -678,11 +754,11 @@ Messages are JSON objects with their type in `t`. From the client:
 
 | `t` | Fields | |
 |---|---|---|
-| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`) |
+| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat`) |
 | `ping` | `c`, `rtt` | the client's clock; answered with `pong`. `rtt`: a round trip it can count on, ms (from the last pongs) |
 | `name` | `name` | rename |
 | `level` | `level` | host, in the lobby: `easy`, `normal` or `hard` |
-| `game` | `game` | host, in the lobby: `egg`, `clearcut`, `eevee`, `stampede`, `pichu` or `togepi` |
+| `game` | `game` | host, in the lobby: `egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi` or `golbat` |
 | `start` | | host, in the lobby |
 | `lean` | `r`, `s`, `g`, `l` | in round `r`, seat `s` leans `l` (−1, 0, 1) from round time `g` (s) |
 | `ev` | `r`, `s`, `g`, `n`, `k`, `e` | seat `s` caught its drop `n` (`k: "c"`) or was shocked by it (`"h"`), as this device judged it; `e` is its egg count after. The server answers only if it disagrees |
@@ -691,6 +767,7 @@ Messages are JSON objects with their type in `t`. From the client:
 | `count` | `r`, `s`, `n`, `f` | Streaming Stampede: seat `s` pressed (counted one) on frame `f` of question `n`'s counting |
 | `press` | `r`, `s`, `f`, `d`, `b` | Pichu's Power Plant: seat `s` pressed A (`b: 5`) or B (`6`) on frame `f` from GO, held towards `d` (1 up, 2 down, 3 right, 4 left) |
 | `stick` | `r`, `s`, `f`, `x`, `y` | Tumbling Togepi: seat `s`'s stick is at `x`, `y` (-60-60 each, right and up) from frame `f` from GO |
+| `pad` | `r`, `s`, `f`, `x`, `a` | Gutsy Golbat: seat `s`'s stick is at `x` (-64-64, right) from frame `f` from GO, and A was pressed on it (`a: 1`) or not (`0`) |
 | `done` | `r` | this device's round is over |
 | `leave` | | |
 
@@ -712,7 +789,9 @@ to rejoin, `scores` and `prizes`, each seat's by round. Streaming Stampede:
 Power Plant: `pp`, with `done`, the finish as `won` gives it (null till then),
 and `presses`, the people's so far, `[f, d, b]` by seat, to rejoin. Tumbling
 Togepi: `tg`, with `done`, the end as `won` gives it (null till then), and
-`sticks`, the people's stick changes so far, `[f, x, y]` by seat, to rejoin);
+`sticks`, the people's stick changes so far, `[f, x, y]` by seat, to rejoin.
+Gutsy Golbat: `gb`, with `done`, the end as `won` gives it (null till then),
+and `pads`, the people's so far, `[f, x, a]` by seat, to rejoin);
 `pong` (`c`, `s`); `cut` (`r`, `s`, `n`, `f`, `p`, `e`), the server's word on
 a seat's swing at a log: the frame (null: no swing), the points and the
 total after, and `a: 1` for a miss that doesn't count yet (the seat may swing
@@ -729,7 +808,10 @@ Power Plant's finish: its frame, the winners (1 or 0 by seat) and each seat's
 charge then; `stick` as above, passed on to the others, and to its own
 device with `o`, the frame it said, if it counts from another one; `won`
 (`r`, `f`, `fin`, `p`), Tumbling Togepi's end: the frame it ended on, each
-seat's finish frame (null: not in) and how far each got (‰);
+seat's finish frame (null: not in) and how far each got (‰); `pad` as above,
+passed on to the others, and to its own device with `o`, the frame it said, if
+it counts on another one; `won` (`r`, `f`, `h`), Gutsy Golbat's end: the
+frame the play ended on and each seat's hearts;
 `lean` as above (with the time the server kept: never before the seat's last
 lean); `ev` (`r`, `s`, `n`, `k`, `e`, `g`), the server's verdict on a drop:
 `c` caught, `h` a shock, or `m`, not a catch after all, with the egg count

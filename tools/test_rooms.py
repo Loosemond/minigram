@@ -1,6 +1,6 @@
 """Tests for the rooms server (tools/rooms.py) and its rules (tools/egg_rules.py,
 tools/clearcut_rules.py, tools/eevee_rules.py, tools/stampede_rules.py,
-tools/pichu_rules.py, tools/togepi_rules.py).
+tools/pichu_rules.py, tools/togepi_rules.py, tools/golbat_rules.py).
 
     python3 tools/test_rooms.py
 
@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import clearcut_rules  # noqa: E402
 import eevee_rules  # noqa: E402
 import egg_rules  # noqa: E402
+import golbat_rules  # noqa: E402
 import pichu_rules  # noqa: E402
 import rooms  # noqa: E402
 import stampede_rules  # noqa: E402
@@ -57,6 +58,17 @@ JS_PICHU = {1: "e27615795ea9a2a3", 12345: "daf3601d2ace0952", 2 ** 31 - 1: "ecb9
 JS_TOGEPI = {1: "efcaeb571cb83ba1", 12345: "98649f14c45fb285", 2 ** 31 - 1: "897e6c53dd29b182"}
 TOGEPI_SCRIPT = [[0, 0, -60], [100, 45, -60], [160, 0, -60], [260, -60, -45], [300, 0, -60], [500, 30, 0], [530, 0, -60],
                  [700, -45, -45], [760, 60, -60], [800, 0, -60]]
+# web/minigames/src/golbat/rules.js: a round with seats 0 and 2 on golbat_pad()
+# and two CPUs (normal, hard and easy), the world's digest() every 50 frames,
+# the end and the hearts (web/minigames/tests.js has the same)
+JS_GOLBAT = {1: "7f7fc535a3084587", 12345: "1187f3c1ce14e6a9", 2 ** 31 - 1: "25353e1685cb6a40"}
+GOLBAT_LEVEL = {1: "normal", 12345: "hard", 2 ** 31 - 1: "easy"}
+
+
+def golbat_pad(z, t):
+    if z == 0:
+        return [[64, 0, -64, 32, -32, 0][t // 90 % 6], t % 12 == 0 or t % 47 == 5]
+    return [[-64, 64][t // 70 % 2], t % 9 == 0]
 
 # a short round, the same for every seat: (t, col, kind, fall); they reach the
 # hands at 0.5, 0.8, 1.1 (the Voltorb), 1.4 and 2.1
@@ -838,6 +850,89 @@ def _():
         a.close()
     finally:
         togepi_rules.END_TILE, togepi_rules.CALL = saved
+
+
+def golbat_digest(seed):
+    w = golbat_rules.World(seed, GOLBAT_LEVEL[seed], [False, True, False, True])
+    parts, t = [], 0
+    while w.end is None:
+        w.step(t, [golbat_pad(0, t), None, golbat_pad(2, t), None])
+        w.events = []
+        if t % 50 == 0:
+            parts.append(w.digest())
+        t += 1
+    parts.append("%d:%s" % (w.end, ",".join(map(str, w.scores))))
+    return hashlib.sha256(";".join(parts).encode()).hexdigest()[:16]
+
+
+@check("Gutsy Golbat: the world (the CPUs too) matches the browser's, bit for bit; the round")
+def _():
+    for seed, want in JS_GOLBAT.items():
+        assert golbat_digest(seed) == want, seed
+    assert golbat_rules.END == 1837, golbat_rules.END  # (the cave's mouth after 1200 frames, the meadow, and it stops)
+    # the CPUs catch hearts, more on the harder levels (four CPUs: the people's seats hold still)
+    def best(seed, level):
+        w = golbat_rules.World(seed, level, [False, True, True, True])
+        t = 0
+        while w.end is None:
+            w.step(t, [[0, False], None, None, None])
+            t += 1
+        return max(w.scores[1:])
+    tops = {lv: sum(best(s, lv) for s in range(6)) for lv in ("easy", "hard")}
+    assert 0 < tops["easy"] < tops["hard"], tops
+
+
+@check("Gutsy Golbat: the server runs the world from the pads, says how it ended and stops cheats")
+def _():
+    saved = golbat_rules.TIME, golbat_rules.BACKDROPS_AT, golbat_rules.MEADOW_STOP, golbat_rules.END
+    # (a short round: the cave's mouth and the meadow come at once, and it stops at 640)
+    golbat_rules.TIME, golbat_rules.MEADOW_STOP = -1, 640
+    golbat_rules.BACKDROPS_AT = [-860 + 320, -856 + 320]
+    golbat_rules.END = golbat_rules.end_frame()
+    try:
+        assert 40 < golbat_rules.END < 70, golbat_rules.END
+        a, b = Client("GA"), Client("GB")
+        a.send("hello", id="ga", name="Gil", game="golbat")
+        code = a.wait("welcome")["room"]
+        b.send("hello", id="gb", name="Bea", room=code)
+        b.wait("welcome")
+        time.sleep(rooms.CHANGE_GAP)
+        a.drain()
+        b.drain()
+        a.send("start")
+        st = a.wait("start")
+        assert st["game"] == "golbat" and st["gb"] == dict(done=None, pads=[[], [], None, None]), st
+        go, r = st["go"], st["round"]
+        g = rooms.rooms[code].game
+        assert g.cpus == [False, False, True, True]
+        at(go, 0.05)
+        a.send("pad", r=r, s=0, f=0, x=64, a=1)  # Gil flies right, flapping
+        a.send("pad", r=r, s=1, f=1, x=0, a=1)  # someone else's Golbat: ignored
+        b.send("pad", r=r, s=1, f=2, x=90, a=0)  # out of range: ignored
+        b.send("pad", r=r, s=1, f=2, x=10, a=2)  # not a flap or none: ignored
+        at(go, 25 / golbat_rules.FPS)
+        b.send("pad", r=r, s=1, f=0, x=-64, a=1)  # Bea's, older than the way here allows: it counts as late as that does
+        late = 25 - int(rooms.ALLOW_GUESS * golbat_rules.FPS)
+        mine = [(m["s"], m["f"], m.get("o")) for m in b.drain(0.3) if m["t"] == "pad"]
+        assert mine == [(0, 0, None), (1, late, 0)], mine  # (Gil's; and Bea's own, from where it counts)
+        heard = [(m["s"], m["f"], m["x"], m["a"]) for m in a.drain(0.1) if m["t"] == "pad"]
+        assert heard == [(1, late, -64, 1)], heard
+        won = a.wait("won", timeout=8)
+        # the same round, here
+        want = golbat_rules.Round(rooms.rooms[code].seed, "normal", cpus=[False, False, True, True])
+        want.pads = [[[0, 64, 1]], [[late, -64, 1]], [], []]
+        said = {k: won[k] for k in ("f", "h")}
+        assert want.settle(100, 0) == said and said["f"] == golbat_rules.END, (won, want.done)
+        assert g.end == (golbat_rules.END + golbat_rules.AFTER) / golbat_rules.FPS
+        a.send("pad", r=r, s=0, f=won["f"] + 5, x=-64, a=1)  # after the end: nothing
+        a.send("done", r=r)
+        b.send("done", r=r)
+        res = a.wait("results", timeout=10)
+        assert res["scores"] == won["h"], res
+        b.close()
+        a.close()
+    finally:
+        golbat_rules.TIME, golbat_rules.BACKDROPS_AT, golbat_rules.MEADOW_STOP, golbat_rules.END = saved
 
 
 @check("Telegram logins: checked, and no one can pose as a Telegram player")

@@ -41,7 +41,7 @@ characters' models.
 
 | Minigame | Player | Other objects the code loads |
 |---|---|---|
-| Gutsy Golbat | Golbat 053 | Jynx 110 |
+| Gutsy Golbat | Golbat 053 | Jynx 110 (she stands in the meadow at the end and throws hearts) |
 | Topsy-Turvy | Hitmontop 115 | (Hitmontop 052 and 123 *by appearance*: no code loads them by number) |
 | Clear Cut Challenge | Scyther 122, Pinsir 055, Scizor 179 | signpost 059, log slices 081 and 111, cut line 112, effects 130 and 131, dizzy stars 190 |
 | Furret's Frolic | Furret 142, Girafarig 223 | Poké Balls 153, leaf pile / shards / chips 155, bush 183 |
@@ -68,10 +68,11 @@ Worth knowing:
 - Other Pokémon in the minigames (per Serebii: Magnemite, Spinarak, Electrode,
   Diglett, Voltorb) are not in the objects table. They're 2D sprites in the
   image banks: Egg Emergency's Voltorb (bank 227, below), Clear Cut
-  Challenge's Spinarak (397), and the Pokémon that go by in Streaming
-  Stampede (201–220). The extractor names the banks whose use is known
+  Challenge's Spinarak (397), Gutsy Golbat's Magnemite (69), and the Pokémon
+  that go by in Streaming Stampede (201–220). The extractor names the banks whose use is known
   (`BANKS` in `tools/ps2tool/names.py`: `images/banks/bank_NNN_<name>/`).
-- Why Gutsy Golbat loads Jynx is *unknown*.
+- Gutsy Golbat loads Jynx for its end: she stands in the meadow outside the
+  cave and throws hearts (below).
 
 ## Egg Emergency: Chansey's clips
 
@@ -925,6 +926,130 @@ lane has random numbers of its own (the game's are shared), the Togepi stay
 put on their belts (the game moves each up or down by its rank, −300 to 100,
 3 a frame), the CPUs rank among themselves, and the race is called 30 s after
 the first one's in ([web/README.md](../web/README.md#tumbling-togepi)).
+
+## Gutsy Golbat
+
+Module #49 (ROM `0x25A9F0`, linked at `0x86100000`; code to `0xA09C`, data
+from `0xA0A0`, constants and strings from `0xAA10`) was read with `m2c` on a
+`spimdisasm` listing, and the remake (`web/minigames/src/golbat/`) plays by
+its rules. Its variables: W at `0x8610AD28` (a pointer to it at
+`0x8610AD20`; +0x3C the state), and in it object pools (`0x87F025B8` takes a
+free slot and puts it at the end of the pool's list; each object's +0x1C
+counts its frames, after its update): the Golbat at +0x6E8 (4 of 0x18C), the
+Magnemite at +0xD2C (16), the hearts at +0x2600 (64), the backdrops at
++0x8914 (2), Jynx at +0x8C40 (1). Each player's record is at +0x8DE0 + 0x2C·p:
++0 its Golbat, +4 its hearts, +8 a CPU's ways (below), +0xC a direction, +0x18
+a spot to fly to, +0x24 which way it faces, +0x26 last frame's buttons. The
+instructions (text 50.0): "Tap the A Button repeatedly to go up. Use the
+Control Stick to move from side to side. The one with the most hearts wins.
+Your hearts will scatter if you hit a MAGNEMITE or get hit hard by an
+opponent."
+
+**Its tuning** has names: a debug menu (`0x861075DC`, unreachable) lists them
+with the module's strings, and `0x86107360` sets them: SCROLL SPD −8, FLAP TYPE
+0, FLAP SPD 9, SPD X 0.023, ENEMY BND 20.5, PLAYER BND 0.6, GRAVITY −0.58,
+DROP RATE 0.5, TIME 1200 (frames) and GOLBAT SC 1 (a Golbat's scale is 0.04 ×
+it, and its size 700 × that: 28).
+
+**The scene** (geo layout `0x8610A114`). The camera node (command 0x0B,
+`0x8003FF98`) puts the eye 1200 from (0, 0, 0) at angles 0, 0: at (0, 0,
+1200), fov 30 (vertical), 320 × 240, near 100, far 12800. So the play is the
+plane z = 0, and the module's odd constants are screen pixels × 2.6795
+(1200 tan 15° / 120): a Golbat stays within x −364.41 (−136 px) to 321.54
+(120 px) and y −209 (−78 px; −192.92 outside the play) to 199.35; things
+come on at x 464.85 (just past the right edge) and go past −464.85. Two
+lights follow the camera (white and grey, `0x86100ACC`, `0x86100B34`).
+
+- **The backdrops** (`0x86106044`, `0x86105CD8`): image bank 221's three
+  256 × 192 pictures (the cave, the cave's mouth, the meadow outside),
+  3.375x (864 × 648), side by side at z −100, from x −100 and 764, going by
+  at half the scroll (4 a frame; also through the countdown). One that goes
+  past −864 moves on 1728. Once the clock's run out, the next to move on
+  becomes the cave's mouth, the one after the meadow (with Jynx, and the
+  players' glows off). Once the meadow is past 0.95 × 864 no more of the
+  course comes; once it's past 10 the scroll stops: the play is over. The
+  last three seconds sound the shared count (0xCF00) and the end 0xCF06.
+- **Golbat** (object 53 at 0.04): clip 2 flying (played faster after a flap:
+  1 + 2 × its upward speed / 15), 4 knocked by a dash, 5 hurt by a Magnemite,
+  6 cheering, 8 falling, 9 down; its wingbeat (0x0F03) each time clip 2 comes
+  round. It turns 15% of the way a frame to face right, or left while its
+  stick's pushed that way (`0x8610362C`). Behind it, a glow in its player's
+  colour (bank 343, a grey disc the combiner makes env + (prim − env) × grey,
+  alpha 1 − grey; `0x86109AE0`, colours `0x8610A224`), pulsing.
+- **Magnemite** (bank 69, five 32 × 19 frames, 0, 1, 2, 1, 0, 3, 4, 3, one
+  every three frames; on a 112 × 66 quad at 0.64: `0x86105C30`) bob 10 up and
+  down, 12° a frame.
+- **Hearts** (bank 222, 16 × 16 on a 46 × 46 quad, wobbling; red from the
+  course, outlined in the colour of the Golbat they were knocked out of).
+- **Jynx** (object 110 at 0.2, turned −22.5°, at y −242.92, z −100) comes with
+  the meadow, 1.35 × 864 to its right; once the scroll stops she throws a
+  heart on frames 8 and 47 of her clip, which the winners catch (for show).
+
+**The course** (`0x86100418`): the scroll counts 8 a frame through sections of
+1000; a section is a list of [where /255, height /255, what] (`0x8610A250`,
+42 of them listed at `0x8610A7A0`): what 0 is a Magnemite at y = 213.69 −
+444.18 × height/255, 1 one on every level, 2 one on Normal and Hard, 3 a heart
+at y = 213.69 − 427.37 × height/255. Their order (`0x861001A0`) is 6, 0, 7, 1,
+12, 18, 13, 19, 24, 30, 25, 31, 36, 37…: two of one six, two of another. The
+code draws random numbers for each six as if to shuffle them, but swaps
+nothing, so every round's course is the same.
+
+**A Golbat in the play** (`0x8610362C`), each frame: its speed × 0.97, gravity
+added; a person's stick across (−64 to 64, the D-pad ±64) adds 0.023 × it
+(`0x8610320C`); A pressed (FLAP TYPE 0: a press, not held) adds 9 up. A CPU
+does the same from what it decides (below). Faster than √450 × 0.7 (14.85) is
+a **dash** (it shows in its player's colour). It moves, bumps the others,
+its speed is kept within ±15 each way, and the edges stop it (it bounces off
+the floor at half its speed). Two Golbat closer than 49 (`0x8610109C`) are
+pushed apart and bounce (by 1.6 × 0.8 of their speed towards each other); a
+dashing one into one that isn't knocks a heart out of it (0x0F01; no one can
+catch that heart for 16 frames) and bounces less (0.5).
+
+A **Magnemite** closer than 30.68 to a Golbat (`0x861056C0`) knocks it back
+20.5 and out go half its hearts, rounded up (DROP RATE × (hearts + 1)),
+each towards a random spot at 15 (`0x86100F1C`, 0x0F05); the Golbat is hurt
+for 26 frames (no Magnemite can hit it again meanwhile, and it flashes), 0x0F02;
+a Golbat can't catch back a heart knocked out of it for 16 frames. A **heart** is caught (`0x86106504`: 0x0F04, up to
+99) by the first Golbat within 58 across and up, except the one it came out
+of (or anyone, if a dash knocked it out) in its first 16 frames. Hearts from
+the course go by with the scroll; knocked-out ones fly off, slow down
+(× 0.97) and bounce off the floor and the roof.
+
+**The CPUs** (`0x86109318`, each frame) are ranked by hearts (after three
+random swaps each) and given ways from a table by level (`0x8610A0A0`,
+`0x8610A0B0`, `0x8610A0C0`): Easy 0xC10, 1, 1, 1; Normal 0x120, 0x210, 1, 1;
+Hard 0x120, 1, 0x182, 0x140 (the best first). On Easy one with 5 hearts (on
+Normal 9) just roams. And when a person leads (Easy: 9 hearts and three times
+the best CPU's; Normal 6, Hard 4, and more than it), the CPU with the fewest
+goes after them: aiming 12 Golbat past them (bit 4) if they have twice the
+best CPU's (2.33 times on Hard), else following them (bit 2) and going for
+hearts once close. The bits (`0x86102E8C`): 4 / 0x2000 chase, 2 follow, 0x1000
+roam, 1 roam round the Magnemite, else go for hearts (`0x86102D50`): the one
+that's near, far left (0x10: not minding), among others (0x40: twice as
+much) and with no Magnemite between (0x80: twice), as far right as 464.85
+(0x100), 393.19 (0x200) or 321.54, even ones it can't reach in time (0x800).
+It steers round Magnemite within 52.16 first, brakes for one in its way, and
+works its stick and A as a person would: a frame's change of speed is its
+buttons, and it can't flap two frames running.
+
+**The end** (state 5, `0x861008E8`): the most hearts win (a four-way tie: no
+one); for half a second all are startled (clip 5, pushed left), then the
+winners fly round the meadow cheering (clip 6) and the others drop to the
+floor (clips 8, 9), while Jynx throws hearts.
+
+**The HUD** (`0x86108018`): the badges (bank 434 at 0.8) at x 28, 97, 166 and
+235, y 16, each player's hearts beside them in its colour. The song is 13
+(sequence 52), from GO; the count is 0x0F06 and GO 0x0F07 ([audio.md](audio.md)).
+
+**The states** (`0x861095EC`): 0-2 the instructions and the fade, 3 the
+Golbat flying in from by the camera (to a zigzag on the left: x −160.77 and
+−272.77, y 117.68 down 81.67 each) with the countdown, 4 the play (the clock
+counts down 1200 frames), 5 the end, 6 the results, 7 the menu after.
+
+The browser remake runs this world in every device and on the server, from
+everyone's pads (the CPUs think in it), and shows the screen at 92% of the
+game's width and height, as a TV did, and more of the cave either side on a
+wide screen ([web/README.md](../web/README.md#gutsy-golbat)).
 
 ## How this was found
 

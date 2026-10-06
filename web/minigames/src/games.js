@@ -108,5 +108,22 @@ export const GAMES = {
     messages: ["stick", "won"],
     load: () => import("./togepi/index.js"),
   },
+  golbat: {
+    id: "golbat",
+    name: "Gutsy Golbat",
+    banner: "assets/ui/title_golbat.png", // image bank 395
+    art: "assets/golbat/cave.png", // (its cave: image bank 221)
+    color: "#2a2433",
+    how: `Fly your Golbat through the cave and catch the <b class="heart-word">hearts</b>! Slide a finger
+      on the left side to fly left and right; tap the right side to <b>flap</b> up. Dodge the
+      <b class="volt">Magnemite</b>: they knock your hearts out. Fly fast into another Golbat to knock
+      one of theirs out! The most hearts when you reach the meadow wins.`,
+    keys: "Keyboard: <kbd>←</kbd> <kbd>→</kbd> fly, <kbd>Space</kbd> flap",
+    unit: (n) => `<i class="heart"></i>${n}`,
+    invite: "Fly through the cave with me in Gutsy Golbat!",
+    store: "golbat_",
+    messages: ["pad", "won"],
+    load: () => import("./golbat/index.js"),
+  },
 };
-export const ORDER = ["egg", "clearcut", "eevee", "stampede", "pichu", "togepi"];
+export const ORDER = ["egg", "clearcut", "eevee", "stampede", "pichu", "togepi", "golbat"];
