@@ -1,10 +1,11 @@
 // Pichu's Power Plant in the minigames shell (main.js): the power plant and
-// its camera, the controls (a D-pad held to a direction, and the A and B
-// buttons), its HUD (each player's charge gauge) and its online messages
-// ("press", "won"). The rules are in rules.js, the game in game.js.
+// its camera, the controls (a D-pad held to a direction, or a tap on an
+// Electrode in your room to aim at it; and the A and B buttons), its HUD
+// (each player's charge gauge) and its online messages ("press", "won"). The
+// rules are in rules.js, the game in game.js.
 import * as THREE from "three";
 import { loadAssets } from "./assets.js";
-import { Game } from "./game.js";
+import { Game, LAMPS, LAMP_Z } from "./game.js";
 import * as R from "./rules.js";
 
 export const SOUNDS = {
@@ -37,6 +38,13 @@ const PER = 60 / R.FULL, WON = 61; // a gauge's fill: px a charge (0x8660673C), 
 // portrait: the screen this much wider than the window, so the rooms fill it
 // (the hazard stripes at the sides are cut off)
 const CROP = 1.12;
+// "Tap to aim" (made for the remake): a tap in your room aims at the lamp
+// nearest it (where its face is when it's out: 122 in from its base, clip00
+// frame 4), and stays aimed till the next; A and B as ever
+const ROOMS = LAMPS.map((row) => ({ x: row[0][0], y: row[0][1] > 0 ? 295 : -205, w: 600, h: 530 }));
+const REACH = 122, INWARD = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+const TARGETS = LAMPS.map((row) => row.map(([x, y], k) => [x + INWARD[k][0] * REACH, y + INWARD[k][1] * REACH]));
+const SHOW_TARGETS = 90; // (frames of the play the rings round your lamps show for, after the countdown)
 
 export async function create(shell, onProgress) {
   const assets = await loadAssets("assets/pichu/", onProgress);
@@ -60,6 +68,7 @@ export async function create(shell, onProgress) {
       <div class="pp-gauge" style="left: calc(${x} * var(--u)); top: calc(${y} * var(--u))" hidden>
         <img class="pp-frame" src="${A}gauge.png" alt=""><i class="pp-fill"></i><i class="pp-glow"></i></div>`).join("")}
     </div>
+    ${[1, 2, 3, 4].map((d) => `<i class="pp-aim" data-dir="${d}" hidden></i>`).join("")}
     <div class="pp-pads" hidden>
       <div class="pp-dpad" data-pad="dpad"><i class="pp-up"></i><i class="pp-down"></i><i class="pp-left"></i><i class="pp-right"></i><b></b></div>
       <div class="pp-buttons">
@@ -72,6 +81,7 @@ export async function create(shell, onProgress) {
   const gauges = [...hud.querySelectorAll(".pp-gauge")].map((g) => ({ el: g, fill: g.querySelector(".pp-fill"), glow: g.querySelector(".pp-glow") }));
   const dpad = hud.querySelector(".pp-dpad");
   const buttons = { [R.A]: hud.querySelector(".pp-a"), [R.B]: hud.querySelector(".pp-b") };
+  const rings = [...hud.querySelectorAll(".pp-aim")];
 
   // ---- sounds and the like, from the game ----
   const mine = (z) => z === shell.me();
@@ -97,6 +107,7 @@ export async function create(shell, onProgress) {
   // ---- the controls: the D-pad (held), A and B (pressed) ----
   let held = 0; // the direction held: 1 up, 2 down, 3 right, 4 left (the rules'), 0 none
   let dpadPointer = null;
+  let mode = "dpad", aimed = 0; // the controls ("dpad" or "tap"), and where the last tap aimed
   const keys = []; // the arrow keys held, the last one wins
   const KEYS = { ArrowUp: 1, KeyW: 1, ArrowDown: 2, KeyS: 2, ArrowRight: 3, KeyD: 3, ArrowLeft: 4, KeyA: 4 };
   const BUTTONS = { KeyX: R.A, KeyK: R.A, Space: R.A, KeyZ: R.B, KeyJ: R.B };
@@ -105,7 +116,28 @@ export async function create(shell, onProgress) {
     held = d;
     dpad.dataset.dir = NAMES[d] || "";
   }
-  function fromKeys() { setHeld(dpadPointer === null ? keys[keys.length - 1] || 0 : held); }
+  function fromKeys() { setHeld(dpadPointer === null ? keys[keys.length - 1] || aimed : held); }
+  // the lamp of your room a tap at (x, y) on the screen aims at, or 0 (not in your room)
+  const ray = new THREE.Raycaster(), lampPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -LAMP_Z);
+  function aimAt(x, y) {
+    if (!view || x < view.x || x > view.x + view.w || y < view.y || y > view.y + view.h) return 0;
+    ray.setFromCamera(new THREE.Vector2(((x - view.x) / view.w) * 2 - 1, 1 - ((y - view.y) / view.h) * 2), view.cam);
+    const p = ray.ray.intersectPlane(lampPlane, new THREE.Vector3()), me = shell.me(), r = ROOMS[me];
+    if (!p || Math.abs(p.x - r.x) > r.w / 2 || Math.abs(p.y - r.y) > r.h / 2) return 0;
+    let best = 0, dist = Infinity;
+    TARGETS[me].forEach(([tx, ty], k) => {
+      const d = (p.x - tx) ** 2 + (p.y - ty) ** 2;
+      if (d < dist) { dist = d; best = k + 1; }
+    });
+    return best;
+  }
+  // a lamp of your room on the screen
+  const v3 = new THREE.Vector3();
+  function onScreen(d) {
+    const [x, y] = TARGETS[shell.me()][d - 1];
+    v3.set(x, y, LAMP_Z).project(view.cam);
+    return [view.x + ((v3.x + 1) / 2) * view.w, view.y + ((1 - v3.y) / 2) * view.h];
+  }
   function aimDpad(e) {
     const r = dpad.getBoundingClientRect(), x = e.clientX - (r.left + r.width / 2), y = e.clientY - (r.top + r.height / 2);
     if (Math.hypot(x, y) < r.width * 0.12) return setHeld(0); // (the middle: none)
@@ -163,6 +195,7 @@ export async function create(shell, onProgress) {
       game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, told: m?.pp });
       shell.stopSound();
       humming = false;
+      aimed = 0;
       setHeld(0);
       keys.length = 0;
       dpadPointer = null;
@@ -186,13 +219,26 @@ export async function create(shell, onProgress) {
     celebrate() { return game.celebrate(); },
     hud(on) { drawHud(on); },
     remote(t, m) { if (t === "press" || t === "won") game.told(t, m); },
+    // the controls picked on the title or in the lobby: "dpad" or "tap"
+    setControls(c) {
+      mode = c === "tap" ? "tap" : "dpad";
+      padsEl.classList.toggle("pp-tapmode", mode === "tap");
+      dpad.hidden = mode === "tap";
+      aimed = 0;
+      setHeld(0);
+    },
 
-    // the D-pad held (and slid), A and B tapped: as many fingers as it takes
+    // the D-pad held (and slid), or a tap on your room to aim; A and B tapped:
+    // as many fingers as it takes
     pointerdown(e) {
       const pad = e.target.closest?.("[data-pad]")?.dataset.pad;
       if (pad === "dpad") { dpadPointer = e.pointerId; aimDpad(e); }
       else if (pad === "a") press(R.A);
       else if (pad === "b") press(R.B);
+      else if (mode === "tap") {
+        const d = aimAt(e.clientX, e.clientY);
+        if (d) { aimed = d; fromKeys(); }
+      }
     },
     pointermove(e) { if (e.pointerId === dpadPointer) aimDpad(e); },
     pointerup(e) { if (e.pointerId === dpadPointer) { dpadPointer = null; fromKeys(); } },
@@ -211,8 +257,14 @@ export async function create(shell, onProgress) {
       if (k >= 0) keys.splice(k, 1);
       fromKeys();
     },
-    blur() { keys.length = 0; dpadPointer = null; setHeld(0); },
-    debug: { press: (dir, btn) => game.press(dir, btn === "b" ? R.B : R.A) },
+    blur() { keys.length = 0; dpadPointer = null; setHeld(aimed); },
+    debug: {
+      press: (dir, btn) => game.press(dir, btn === "b" ? R.B : R.A),
+      aimAt, // (x, y) on the screen: the lamp it aims at
+      tapFor: (dir) => onScreen(dir), // where your lamp dir is on the screen
+      get held() { return held; },
+      get mode() { return mode; },
+    },
   };
 
   // ---- the HUD, each frame ----
@@ -232,6 +284,17 @@ export async function create(shell, onProgress) {
       g.glow.style.opacity = game.state === "play" || game.won(z) ? String((Math.abs(10 - (t % 21)) * 20) / 255) : "0";
     }
     padsEl.hidden = game.state !== "play" && game.state !== "ready";
+    // tap to aim: a ring round the lamp you aimed at, and faint ones round all
+    // four through the countdown and the play's first seconds (where to tap)
+    const live = mode === "tap" && !padsEl.hidden && !!view, early = game.state === "ready" || game.lastFrame < SHOW_TARGETS;
+    rings.forEach((el, k) => {
+      const d = k + 1, on = live && (held === d || early);
+      el.hidden = !on;
+      if (!on) return;
+      const [x, y] = onScreen(d);
+      Object.assign(el.style, { left: x + "px", top: y + "px" });
+      el.classList.toggle("on", held === d);
+    });
     hum(on && game.charging(shell.me()) && !shell.catchingUp());
   }
 

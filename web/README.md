@@ -410,6 +410,15 @@ its sides are cut off), with the controls below. The cards sit where the
 game's badges do, with each player's charge; the gauges are the game's. The
 D-pad and the A and B buttons work with as many fingers as it takes.
 
+**Controls**: picked on the title (and in the lobby), kept on the device.
+**D-pad**, the game's: hold it towards the Electrode, tap A or B. **Tap to
+aim** (made for the remake): tap your room to aim at the Electrode nearest
+the tap (a yellow ring shows which; it stays aimed till the next tap), and
+tap the big A or B, one in each bottom corner. Through the countdown and the
+first seconds faint rings show your four Electrodes. The keys work either
+way. (A game declares its schemes in `src/games.js`, `controls`; the shell
+shows the picker and calls the game's `setControls()`.)
+
 **Sound**: the game's (`assets/pichu/sound.bin`, 310 KB): song 21 from GO,
 and bank 2's effects: its own count and GO, an Electrode popping out, a turn
 (a sound for each player), a shock, the hum while your Pichu charges, the

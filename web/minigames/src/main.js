@@ -200,6 +200,7 @@ async function showGame(id) {
   $("#loading").hidden = true;
   game = g;
   gameOn = id;
+  g.setControls?.(controlsOf(id));
   if (!playing() && phase !== "finish" && phase !== "results") g.idle(); // on show, not playing yet
   for (const [k, el] of hudOf) el.hidden = k !== id;
   const label = g.label;
@@ -217,7 +218,8 @@ function showInfo(id) {
   for (const img of document.querySelectorAll(".logo")) { img.src = info.banner; img.alt = info.name; }
   for (const art of document.querySelectorAll(".art")) art.style.backgroundImage = `url(${info.art})`;
   $("#title h1").textContent = info.name;
-  $("#how").innerHTML = info.how;
+  $("#how").innerHTML = typeof info.how === "function" ? info.how(controlsOf(id)) : info.how;
+  showControls(id);
   $("#keys").innerHTML = info.keys;
   document.title = info.name;
   showBest();
@@ -267,6 +269,26 @@ function show(screen) {
   if (screen) $("#waiting").hidden = true;
 }
 
+// A game's control schemes, if it has a choice ({ id: label } in games.js):
+// each player picks one, kept on this device, on the title and in the lobby
+const controls = {}; // game id -> the scheme picked
+const controlsKey = (id) => GAMES[id].store + "controls";
+const controlsOf = (id) => (GAMES[id].controls && controls[id] in GAMES[id].controls ? controls[id] : Object.keys(GAMES[id].controls || { "": 0 })[0]);
+function showControls(id) {
+  const info = GAMES[id], c = controlsOf(id);
+  for (const group of document.querySelectorAll(".controls")) {
+    group.hidden = !info.controls;
+    if (!info.controls) continue;
+    group.innerHTML = Object.entries(info.controls).map(([k, label]) => `<button role="radio" data-controls="${k}" aria-checked="${k === c}">${label}</button>`).join("");
+  }
+}
+function setControls(id, c) {
+  controls[id] = c;
+  telegram.set(controlsKey(id), c);
+  showInfo(id);
+  if (gameOn === id) game?.setControls?.(c);
+}
+
 function markLevel(group, l) { for (const b of group.querySelectorAll("button")) b.setAttribute("aria-checked", b.dataset.level === l); }
 const bestKey = (id, l) => GAMES[id].store + "best_" + l;
 function showBest() {
@@ -275,7 +297,7 @@ function showBest() {
 }
 function setLevel(l) {
   level = l;
-  markLevel($("#title .levels"), l);
+  markLevel($("#title .levels:not(.controls)"), l);
   showBest();
 }
 
@@ -580,8 +602,8 @@ function renderLobby() {
     : host ? "Up to 4 players. Empty spots are played by CPUs." : `Waiting for ${hostName()} to start…`;
   $("#start").hidden = r ? !host || busy : !roomError;
   $("#start").textContent = r ? "Start" : "New room";
-  markLevel($("#lobby .levels"), r?.level || "normal");
-  for (const group of document.querySelectorAll("#lobby .levels, #lobby .games")) {
+  markLevel($("#lobby .levels:not(.controls)"), r?.level || "normal");
+  for (const group of document.querySelectorAll("#lobby .levels:not(.controls), #lobby .games")) {
     group.classList.toggle("locked", !host);
     group.hidden = !r;
   }
@@ -699,12 +721,14 @@ async function boot() {
   buildPickers();
   const keys = ["level", "muted", "game"];
   for (const id of ORDER) for (const l of ["easy", "normal", "hard"]) keys.push(bestKey(id, l));
+  for (const id of ORDER) if (GAMES[id].controls) keys.push(controlsKey(id));
   const got = await Promise.all(keys.map((k) => telegram.get(k)));
   const saved = Object.fromEntries(keys.map((k, i) => [k, got[i]]));
   for (const id of ORDER) for (const l of ["easy", "normal", "hard"]) {
     const v = saved[bestKey(id, l)];
     if (v !== null && v !== undefined && v !== "" && Number.isFinite(+v)) best[id + ":" + l] = +v;
   }
+  for (const id of ORDER) if (GAMES[id].controls && saved[controlsKey(id)] in GAMES[id].controls) controls[id] = saved[controlsKey(id)];
   const code = telegram.startParam || params.get("room");
   const first = params.get("game") in GAMES ? params.get("game") : saved.game in GAMES ? saved.game : "egg";
   try { await showGame(first); } catch { return; }
@@ -717,15 +741,23 @@ async function boot() {
                   net: () => net, room: () => room, me: () => me, sound: audioDebug };
   }
 
-  for (const b of document.querySelectorAll("#title .levels button")) {
+  for (const b of document.querySelectorAll("#title .levels:not(.controls) button")) {
     b.addEventListener("click", () => { sfx.tap(); telegram.haptic("select"); setLevel(b.dataset.level); telegram.set("level", level); });
   }
-  for (const b of document.querySelectorAll("#lobby .levels button")) {
+  for (const b of document.querySelectorAll("#lobby .levels:not(.controls) button")) {
     b.addEventListener("click", () => {
       if (room?.host !== mySeat) return;
       sfx.tap(); telegram.haptic("select");
-      markLevel($("#lobby .levels"), b.dataset.level);
+      markLevel($("#lobby .levels:not(.controls)"), b.dataset.level);
       net.send("level", { level: b.dataset.level });
+    });
+  }
+  for (const group of document.querySelectorAll(".controls")) {
+    group.addEventListener("click", (e) => {
+      const c = e.target.closest("[data-controls]")?.dataset.controls;
+      if (!c) return;
+      sfx.tap(); telegram.haptic("select");
+      setControls(gameId, c);
     });
   }
   $("#sound").addEventListener("click", () => {

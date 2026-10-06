@@ -206,6 +206,18 @@ input { -webkit-user-select: text; user-select: text; }
 .pp-btn.pp-b { left: 0; top: 0; }
 .pp-btn.on { transform: scale(1.12); border-color: #fff; }
 .game-hud.off .pp-pads { display: none; }
+/* "Tap to aim": the A and B buttons bigger, one under each thumb, and rings
+   round your lamps (bright: the one you aimed at) */
+.pp-pads.pp-tapmode { --btn: clamp(78px, 22vmin, 116px); }
+.pp-pads.pp-tapmode .pp-buttons { left: calc(var(--safe-l) + 16px); right: calc(var(--safe-r) + 16px); width: auto; height: var(--btn); pointer-events: none; }
+.pp-pads.pp-tapmode .pp-btn { pointer-events: auto; top: auto; bottom: 0; }
+.pp-pads.pp-tapmode .pp-btn.pp-b { left: 0; }
+.pp-pads.pp-tapmode .pp-btn.pp-a { right: 0; }
+.pp-pads.pp-below.pp-tapmode .pp-buttons { bottom: calc(var(--safe-b) + max(16px, (var(--room) - var(--safe-b) - var(--btn)) / 2)); }
+.pp-aim { position: absolute; left: 0; top: 0; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; box-sizing: border-box;
+  border: 2px dashed rgba(255, 225, 77, 0.55); pointer-events: none; }
+.pp-aim.on { border: 3px solid #ffe14d; box-shadow: 0 0 10px #ffe14d; }
+.game-hud.off .pp-aim { display: none; }
 /* Tumbling Togepi: the hint till GO and a moment after */
 .tg-hint { position: absolute; left: 50%; bottom: calc(var(--safe-bottom, 0px) + 18%); transform: translateX(-50%);
   padding: 6px 14px; border-radius: 16px; background: rgba(0, 0, 0, 0.45); color: #fff; font-weight: 700;
@@ -252,6 +264,7 @@ kbd { display: inline-block; min-width: 1.4em; padding: 0 0.3em; border-radius: 
 .levels { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: #f1eef4; }
 .levels button { border: 0; background: none; font-weight: 700; padding: 8px clamp(10px, 3.5vw, 15px); border-radius: 999px; color: var(--muted); }
 .levels button[aria-checked="true"] { background: var(--pink); color: #fff; }
+.levels.controls { display: flex; width: max-content; max-width: 100%; margin: 0 auto 8px; } /* (a game's control schemes) */
 .big {
   display: block; width: calc(100% - 40px); margin: 14px auto 4px; padding: 12px 0;
   font-size: 22px; font-weight: 700; color: #fff; background: var(--pink);

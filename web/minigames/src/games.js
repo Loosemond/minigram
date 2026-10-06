@@ -76,9 +76,12 @@ export const GAMES = {
     banner: "assets/ui/title_pichu.png", // image bank 408
     art: "assets/pichu/art.png", // (its frame, drawn flat: tools/web_assets.py)
     color: "#2f2a40",
-    how: `When an Electrode pops out, hold the <b>D-pad</b> towards it and tap the button
-      its lamp shows: <b class="blue">A</b> for blue, <b class="green">B</b> for green. Each
-      right tap charges your Pichu; the wrong button, or a tap towards an Electrode that's
+    // two ways to play on a screen: the D-pad held towards the Electrode, or a
+    // tap on the Electrode to aim at it; both with the A and B buttons
+    controls: { dpad: "D-pad", tap: "Tap to aim" },
+    how: (c) => `When an Electrode pops out, ${c === "tap" ? "<b>tap it</b> in your room to aim at it" : "hold the <b>D-pad</b> towards it"}
+      and press the button its lamp shows: <b class="blue">A</b> for blue, <b class="green">B</b> for green. Each
+      right press charges your Pichu; the wrong button, or one at an Electrode that's
       gone back in, <b class="volt">shocks</b> it for a moment. The first to fully charge wins!`,
     keys: "Keyboard: <kbd>←</kbd> <kbd>↑</kbd> <kbd>↓</kbd> <kbd>→</kbd> hold, <kbd>X</kbd> A, <kbd>Z</kbd> B",
     unit: (n) => `${n}<small>/80</small>`,
