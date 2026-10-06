@@ -5,7 +5,7 @@
 // controls, HUD and online messages; it's loaded the first time it's picked.
 import * as THREE from "three";
 import { GAMES, ORDER } from "./games.js";
-import { sfx, music, sound, stopSound, hush, unlock, useSounds, setMuted, isMuted, SHARED_STAND_INS, debug as audioDebug } from "./audio.js";
+import { sfx, music, musicTempo, sound, stopSound, hush, unlock, useSounds, setMuted, isMuted, SHARED_STAND_INS, debug as audioDebug } from "./audio.js";
 import { telegram } from "./telegram.js";
 import { Net } from "./net.js";
 import { startDelay } from "./lag.js";
@@ -144,6 +144,7 @@ const shell = {
   haptic: (k) => telegram.haptic(k),
   sound: (name, seat) => { if (!catchingUp) sound(name, seat); },
   music: (name, fade, once) => { if (!catchingUp) music(name, fade, once); },
+  tempo: (bpm) => musicTempo(bpm), // the song on, this much faster (0: as it is)
   stopSound,
   hush: (on) => { if (!on || !catchingUp) hush(on); },
   // online: a message for the round, to the others (kept while offline, sent on reconnecting)

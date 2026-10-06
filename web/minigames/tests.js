@@ -28,6 +28,12 @@ const TOGEPI_SCRIPT = [[0, 0, -60], [100, 45, -60], [160, 0, -60], [260, -60, -4
 // world's digest() every 50 frames, the end and the hearts: the same as JS_GOLBAT in tools/test_rooms.py
 const GOLBAT = { 1: "7f7fc535a3084587", 12345: "1187f3c1ce14e6a9", 2147483647: "25353e1685cb6a40" };
 const GOLBAT_LEVEL = { 1: "normal", 12345: "hard", 2147483647: "easy" };
+// Barrier Ball: a round with seats 0 and 2 on barrierPad() and two CPUs (normal, hard, easy), the
+// world's digest() every 50 frames, the end and the points: the same as JS_BARRIER in tools/test_rooms.py
+const BARRIER = { 1: "ca35d34d47129b07", 12345: "75e7b264d9ec3e9b", 2147483647: "fb92cf612a8219ec" };
+const BARRIER_LEVEL = { 1: "normal", 12345: "hard", 2147483647: "easy" };
+const barrierPad = (z, t) => (z === 0 ? [[64, 0, -64, 32, -32, 0][Math.floor(t / 40) % 6], t % 23 === 0 || t % 61 === 7]
+  : [[-64, 64][Math.floor(t / 70) % 2], t % 19 === 0]);
 const golbatPad = (z, t) => (z === 0 ? [[64, 0, -64, 32, -32, 0][Math.floor(t / 90) % 6], t % 12 === 0 || t % 47 === 5]
   : [[-64, 64][Math.floor(t / 70) % 2], t % 9 === 0]);
 // the frame the first of three CPUs gets to full charge, the middle of 41 rounds (rules.js cpuPresses)
@@ -225,6 +231,21 @@ function autoflap(w) {
       const t = g.lastFrame + 1;
       g.setStick(Math.round(Math.sin(t / 37 + w.mg.me()) * 4) * 16);
       if (t % 10 === w.mg.me() % 10 && g.flaps === 0) g.flap();
+    }
+    step.call(api, dt, on);
+  };
+  return () => { api.step = step; };
+}
+
+// a Barrier Ball player: slides along its lane and back, smashing every 20 frames or so
+function autoslide(w) {
+  const api = w.mg.mini, step = api.step;
+  api.step = function (dt, on) {
+    const g = api.game;
+    if (on && g.state === "play") {
+      const t = g.lastFrame + 1;
+      g.setStick(Math.round(Math.sin(t / 23 + w.mg.me()) * 4) * 16);
+      if (t % 20 === w.mg.me() * 5 && g.smashes === 0) g.smash();
     }
     step.call(api, dt, on);
   };
@@ -900,13 +921,129 @@ await test("Gutsy Golbat: a finger on the left steers, a tap on the right flaps"
   assert(got.join() === "48,-64,1,0", "stick, stick, flaps, stick: " + got.join());
 });
 
+await test("Barrier Ball: the world and the CPUs are the same as the server's copy of them", async () => {
+  const R = await moduleOf(solo, "./src/barrier/rules.js");
+  for (const [seed, want] of Object.entries(BARRIER)) {
+    const w = new R.World(+seed, BARRIER_LEVEL[seed], [false, true, false, true]), parts = [];
+    for (let t = 0; w.end === null; t++) {
+      w.step(t, [barrierPad(0, t), null, barrierPad(2, t), null]);
+      w.events = [];
+      if (t % 50 === 0) parts.push(w.digest());
+    }
+    parts.push(w.end + ":" + w.scores.join(","));
+    const got = await sha16(parts.join(";"));
+    assert(got === want, `seed ${seed}: ${got}; tools/barrier_rules.py expects ${want} (update both, and the digests)`);
+  }
+  // its sines are the main program's table's (0x80087FB0), to the last bit
+  const s = [0, 1024, 2048, 3072, 512].map((i) => R.sine(i));
+  assert(s.join() === `0,1,0,-1,${Math.fround(Math.SQRT1_2)}`, "sines " + s);
+});
+
+await test("Barrier Ball: its music and sound effects play from sound.bin", () => soundTest("assets/barrier/sound.bin", [
+  ["main", 6, (r) => assert(r.notes > 10 && r.peak > 0.05 && r.peak < 1, `song 35: ${r.notes} notes, peak ${r.peak.toFixed(2)}`)],
+]));
+
+await test("Barrier Ball: online, the others' pads coming in late run the world again to the same place", async () => {
+  await solo.mg.show("barrier");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners, R = await moduleOf(solo, "./src/barrier/rules.js");
+  solo.mg.paused = true;
+  g.listeners = {};
+  try {
+    // seat 0 here, seat 2 someone else whose pads come in 4-12 frames late, 1 and 3 CPUs
+    g.reset("normal", 77, { me: 0, control: ["local", "cpu", "remote", "cpu"], cpus: [false, true, false, true] });
+    g.start();
+    const late = [];
+    let lastX = null, t = 0;
+    for (; t < 1000 && g.world.end === null; t++) {
+      const [x, a] = barrierPad(2, t);
+      if (x !== lastX || a) { late.push({ at: t + 4 + (t % 9), e: [t, x, a ? 1 : 0] }); lastX = x; }
+      for (const l of late.filter((l) => l.at === t)) g.told("pad", { s: 2, f: l.e[0], x: l.e[1], a: l.e[2] });
+      const [mx, ma] = barrierPad(0, t);
+      g.setStick(mx);
+      g.smashes = ma ? 1 : 0;
+      g.step(t);
+      g.lastFrame = t;
+    }
+    for (const l of late.filter((l) => l.at >= t)) g.told("pad", { s: 2, f: l.e[0], x: l.e[1], a: l.e[2] });
+    g.runTo(g.lastFrame);
+    // the same world with every pad on time
+    const w = new R.World(77, "normal", [false, true, false, true]);
+    for (let f = 0; f <= g.lastFrame; f++) w.step(f, [barrierPad(0, f), null, barrierPad(2, f), null]);
+    assert(g.world.digest() === w.digest(), `at frame ${g.lastFrame}: points ${g.world.scores} here, ${w.scores} on time`);
+    return `frame ${g.lastFrame}: points ${w.scores.join(", ")}; ${g.snaps.length} saved frames`;
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+});
+
+await test("Barrier Ball: a solo round, played headless: it ends at 5 points or the minute, places by points", async () => {
+  await solo.mg.show("barrier");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners, { AFTER } = await moduleOf(solo, "./src/barrier/game.js");
+  const R = await moduleOf(solo, "./src/barrier/rules.js");
+  solo.mg.paused = true;
+  g.listeners = {};
+  const out = [];
+  try {
+    for (const [seed, level] of [[11, "easy"], [22, "hard"]]) {
+      g.reset(level, seed, { me: 0, control: ["local", "cpu", "cpu", "cpu"] });
+      g.start();
+      while (g.state === "play" && g.frame < 2500) {
+        const t = g.lastFrame + 1;
+        g.setStick(Math.round(Math.sin(t / 30) * 4) * 16);
+        if (t % 17 === 0) g.smash();
+        g.update(1 / 30);
+      }
+      const res = g.results(), p = g.world.scores, end = g.world.end;
+      assert(g.state === "over" && (end === R.TIME || Math.max(...p) === R.GOAL), `${level}: over ${g.state}, the end at ${end}, points ${p}`);
+      assert(g.frame >= end + AFTER && g.winners, `${level}: over at frame ${g.frame}, winners ${g.winners}`);
+      assert(res.every((r, k) => r.score === p[r.i] && (!k || res[k - 1].place <= r.place)), `${level}: results ${JSON.stringify(res)} for points ${p}`);
+      assert(res.every((r) => r.place === 1 + p.filter((x) => x > p[r.i]).length), `${level}: places ${JSON.stringify(res)}`);
+      assert(p.some((x) => x > 0), `${level}: no one scored: ${p}`);
+      out.push(`${level}: ${p.join(", ")} at frame ${end}`);
+    }
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  return "points: " + out.join("; ");
+});
+
+await test("Barrier Ball: a finger slides Mr. Mime the way it goes on the screen, half as far", async () => {
+  await solo.mg.show("barrier");
+  const api = solo.mg.mini, g = api.game, H = solo.innerHeight, { SEATS } = await moduleOf(solo, "./src/barrier/rules.js");
+  const got = [];
+  try {
+    g.reset("normal", 5, { me: 0, control: ["local", "cpu", "cpu", "cpu"] });
+    g.state = "play";
+    const m = g.world.m[0], at = (x) => api.debug.onScreen(x, SEATS[0].slope * x + m.icpt)[0], sx = at(m.x);
+    api.pointerdown({ pointerId: 1, clientX: sx, clientY: H * 0.8, pointerType: "touch" });
+    api.pointermove({ pointerId: 1, clientX: sx + 20, clientY: H * 0.8, pointerType: "touch" });
+    got.push(Math.round(at(g.target) - sx)); // (10 px right on the screen)
+    api.pointermove({ pointerId: 1, clientX: sx - 400, clientY: H * 0.8, pointerType: "touch" }); // (past the lane's end)
+    got.push(g.target === m.xmin || g.target === m.xmax ? "end" : g.target);
+    api.pointermove({ pointerId: 1, clientX: sx - 380, clientY: H * 0.8, pointerType: "touch" }); // (and back a little: it comes back at once)
+    got.push(Math.round(at(g.target) - at(g.target === m.xmin ? m.xmin : m.xmax)));
+    api.pointerup({ pointerId: 1, pointerType: "touch" });
+    got.push(g.target === null && g.stick === 0 ? "stop" : "on");
+  } finally {
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  assert(got.join() === "10,end,10,stop", "10 px, past the end, back 20 px, let go: " + got.join());
+});
+
 await test("online: rejoining a round, a seat whose player is away is still theirs, not a CPU", async () => {
   // (the server's CPUs are the seats nobody was dealt: a device that took one more would count it itself)
   const round = { online: true, level: "normal", seed: 7, me: 0, control: ["local", "remote", "remote", "cpu"],
                   lineup: [{ seat: 0, here: true }, { seat: 1, here: false }, { seat: 2, here: true }] };
   const out = [];
   try {
-    for (const id of ["stampede", "pichu", "togepi", "golbat"]) {
+    for (const id of ["stampede", "pichu", "togepi", "golbat", "barrier"]) {
       await solo.mg.show(id);
       solo.mg.mini.reset(round);
       out.push(`${id}: ${solo.mg.mini.game.cpus.join()}`);
@@ -977,7 +1114,7 @@ await test("online: Clear Cut Challenge's logs fall together, and a late cut goe
   }
 });
 
-await test("a solo round starts and plays, in all seven games", async () => {
+await test("a solo round starts and plays, in all eight games", async () => {
   solo.document.querySelector("#play").click();
   await until(() => solo.mg.phase() === "play" && solo.mg.game.time > 4, "Egg Emergency's round to be under way");
   let g = solo.mg.game;
@@ -1053,10 +1190,24 @@ await test("a solo round starts and plays, in all seven games", async () => {
   const moved = g.world.g.map((o, z) => Math.round(Math.hypot(o.x - START[z][0], o.y - START[z][1])));
   assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
   assert(moved.every((d) => d > 20) && g.world.mags.length + g.world.hearts.length > 0, `4 s in, the Golbat have moved ${moved}, with ${g.world.mags.length} Magnemite`);
+  solo.mg.title();
+  await solo.mg.show("barrier");
+  solo.document.querySelector("#play").click();
+  const stopSlide = autoslide(solo);
+  try {
+    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > 120, "Barrier Ball's first 4 s", 30000);
+  } finally { stopSlide(); }
+  g = solo.mg.game;
+  const R = await moduleOf(solo, "./src/barrier/rules.js");
+  const slid = g.world.m.map((m) => Math.round(Math.abs(m.x - -R.SEATS[m.z].n[0] * R.STAND)));
+  const served = g.world.balls.filter((b) => !b.serving).length;
+  assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
+  // (a CPU wanders to a random spot in its lane, which may be next to where it started)
+  assert(slid[0] > 5 && slid.slice(1).some((d) => d > 5) && served > 0, `4 s in, the Mr. Mime have slid ${slid}, with ${served} balls in play`);
   solo.frameElement.remove();
   return "Clear Cut's first log: " + first.join(", ") + `; Eevee's first race: ${v ? v.pts.join(", ") : "no one"}` +
     `; Stampede's first answer: ${answer.pts.join(", ")}; Pichu's charges 4 s in: ${charges.join(", ")}` +
-    `; Togepi's progress 4 s in: ${far.join(", ")}%; Golbat moved ${moved.join(", ")} 4 s in`;
+    `; Togepi's progress 4 s in: ${far.join(", ")}%; Golbat moved ${moved.join(", ")} 4 s in; Mr. Mime slid ${slid.join(", ")}`;
 }, { live: true });
 
 const code = Array.from({ length: 4 }, () => "BCDFGHJKLMNPQRSTVWXZ"[Math.floor(Math.random() * 20)]).join("");
@@ -1345,6 +1496,40 @@ await test("online: a Gutsy Golbat round, the same on both devices, and cheating
     stop.forEach((s) => s());
   }
 }, { live: true });
+
+await test("online: a Barrier Ball round, the same on both devices, and cheating doesn't work", async () => {
+  await until(() => ann.mg.room()?.state === "lobby", "the Gutsy Golbat round to end", 180000);
+  ann.document.querySelector("#menu").click();
+  bob.document.querySelector("#menu").click();
+  ann.document.querySelector(`#lobby .games button[data-game="barrier"]`).click();
+  await until(() => bob.mg.room()?.game === "barrier" && bob.document.title === "Barrier Ball", "Barrier Ball in the lobby");
+  const stop = [];
+  try {
+    ann.mg.net().send("start");
+    await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the round", 20000);
+    stop.push(autoslide(ann), autoslide(bob));
+    const net = bob.mg.net(), r = ann.mg.room().round, g = bob.mg.game;
+    await until(() => g.frame > 60, "two seconds in", 20000);
+    // Bob slides Ann's Mr. Mime, says a pad he didn't press was long ago, and sends one off the stick's range
+    net.send("pad", { r, s: 0, f: g.frame, x: -64, a: 1 });
+    net.send("pad", { r, s: 1, f: 5, x: 64, a: 1 });
+    net.send("pad", { r, s: 1, f: g.frame + 1, x: 90, a: 0 });
+    await until(() => [ann, bob].every((w) => w.mg.game.result), "the end, on both devices", 120000);
+    const res = (w) => JSON.stringify(w.mg.game.result);
+    assert(res(ann) === res(bob), `the end: ${res(ann)} / ${res(bob)}`);
+    const f = ann.mg.game.result;
+    // each device's run of the world comes to the server's points: so the server took the same
+    // pads (Bob's made-up old one on the frame it counts on, as told back to him)
+    const points = (w) => w.mg.game.world.scores.join();
+    assert(points(ann) === f.p.join() && points(bob) === f.p.join(), `points: Ann's ${points(ann)}, Bob's ${points(bob)}, the server's ${f.p}`);
+    await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 30000);
+    assert(ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
+    return `points ${f.p.join(", ")} at frame ${f.f}`;
+  } finally {
+    stop.forEach((s) => s());
+  }
+}, { live: true });
+
 const passed = results.filter((r) => r.ok).length, failed = results.filter((r) => r.ok === false).length;
 const verdict = failed ? "FAIL" : passed < results.length ? "INCONCLUSIVE" : "PASS";
 document.title = `${verdict} ${passed}/${results.length}: minigames tests`;

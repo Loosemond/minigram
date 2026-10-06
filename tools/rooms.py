@@ -9,11 +9,11 @@ clock (the clients sync to it with ping/pong). Each device plays its own
 player, and the host's device also plays the CPUs; they send what their players
 do (Egg Emergency: the leans; Clear Cut Challenge: the cuts; Eager Eevee: the
 dashes and feints; Streaming Stampede: the counts; Pichu's Power Plant: the
-presses; Tumbling Togepi: the stick; Gutsy Golbat: the pad), which the server
+presses; Tumbling Togepi: the stick; Gutsy Golbat and Barrier Ball: the pad), which the server
 passes on to the others. The server keeps the score itself from those
 (tools/egg_rules.py, tools/clearcut_rules.py, tools/eevee_rules.py,
 tools/stampede_rules.py, tools/pichu_rules.py, tools/togepi_rules.py,
-tools/golbat_rules.py), so a
+tools/golbat_rules.py, tools/barrier_rules.py), so a
 device can't claim points its player didn't make,
 and announces the ranking at the end. A dropped
 connection keeps its seat for a few seconds, so a reload or a network blip
@@ -40,6 +40,7 @@ import time
 import urllib.parse
 import urllib.request
 
+import barrier_rules
 import clearcut_rules
 import eevee_rules
 import egg_rules
@@ -49,7 +50,7 @@ import stampede_rules
 import togepi_rules
 
 SEATS = egg_rules.SEATS
-GAMES = ("egg", "clearcut", "eevee", "stampede", "pichu", "togepi", "golbat")  # the minigames, as web/minigames/src/games.js names them
+GAMES = ("egg", "clearcut", "eevee", "stampede", "pichu", "togepi", "golbat", "barrier")  # the minigames, as web/minigames/src/games.js names them
 LETTERS = "BCDFGHJKLMNPQRSTVWXZ"  # no vowels, so no code spells a word
 LEVELS = ("easy", "normal", "hard")
 GRACE = 8  # s a dropped connection keeps its seat
@@ -241,7 +242,7 @@ class Room:
         g = self.game
         msg = dict(t="start", game=self.minigame, round=self.round, seed=self.seed, level=self.level, at=self.at,
                    go=self.go, host=self.host(), lineup=self.lineup_info(), rtt=[self.rtt(s) for s in range(SEATS)])
-        if self.minigame in ("clearcut", "eevee", "stampede", "pichu", "togepi", "golbat"):
+        if self.minigame in ("clearcut", "eevee", "stampede", "pichu", "togepi", "golbat", "barrier"):
             msg.update(g.wire())
         else:
             msg.update(drops=g.wire(), scores=g.scores, leans=[g.last_lean(s) for s in range(SEATS)], settled=g.next,
@@ -425,6 +426,8 @@ def start(room):
         room.game = togepi_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
     elif room.minigame == "golbat":
         room.game = golbat_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
+    elif room.minigame == "barrier":
+        room.game = barrier_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
     else:
         room.game = egg_rules.Round(room.seed)
     room.started = time.monotonic()
@@ -507,7 +510,7 @@ def relay(room, m, t, msg):
                     m.send(dict(t="stick", r=room.round, s=s, f=got, o=f, x=x, y=y))
             finishes(room)
         return
-    if room.minigame == "golbat":
+    if room.minigame in ("golbat", "barrier"):
         if t == "pad" and room.playing(s):
             f, x, a = msg.get("f"), msg.get("x"), msg.get("a")
             got = g.pad(s, f, x, a, room.now(), room.allow(s))
@@ -593,10 +596,10 @@ def finishes(room, now=None):
     """Pichu's Power Plant: say who finished first once it's decided (no
     press still on its way could make someone full sooner); Tumbling Togepi:
     how the race ended (no stick change on its way could alter it); Gutsy
-    Golbat: run the world on as far as the pads in allow, and its hearts at
-    the end. And set a timer for when it can be."""
+    Golbat and Barrier Ball: run the world on as far as the pads in allow,
+    and its hearts or points at the end. And set a timer for when it can be."""
     g = room.game
-    if room.state != "playing" or not isinstance(g, (pichu_rules.Round, togepi_rules.Round, golbat_rules.Round)):
+    if room.state != "playing" or not isinstance(g, (pichu_rules.Round, togepi_rules.Round, golbat_rules.Round, barrier_rules.Round)):
         return
     allow = room.allow()
     if g.settle(room.now() if now is None else now, allow):
@@ -625,7 +628,7 @@ def settle(room, s, upto):
         prizes(room, 1e9 if upto == math.inf else None)
     elif room.minigame == "stampede":
         answers(room, 1e9 if upto == math.inf else None)
-    elif room.minigame in ("pichu", "togepi", "golbat"):
+    elif room.minigame in ("pichu", "togepi", "golbat", "barrier"):
         finishes(room, 1e9 if upto == math.inf else None)
     else:
         judge(room, s, upto)

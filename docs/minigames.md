@@ -45,7 +45,7 @@ characters' models.
 | Topsy-Turvy | Hitmontop 115 | (Hitmontop 052 and 123 *by appearance*: no code loads them by number) |
 | Clear Cut Challenge | Scyther 122, Pinsir 055, Scizor 179 | signpost 059, log slices 081 and 111, cut line 112, effects 130 and 131, dizzy stars 190 |
 | Furret's Frolic | Furret 142, Girafarig 223 | Poké Balls 153, leaf pile / shards / chips 155, bush 183 |
-| Barrier Ball | Mr. Mime 129, 218 | court pieces 120 (7 layouts), mesh panels 141, 146, Poké Balls 154 |
+| Barrier Ball | Mr. Mime 218 (the play), 129 (the countdown and the end) | the court 120 (7 layouts: its floor, lines and hole, and its four walls), the barrier 141 (named mesh panels by appearance before), 146 (loaded; nothing found draws it), Poké Ball 154 |
 | Pichu's Power Plant | Pichu 107, Pikachu 201 | the power plant's frame 056 (a window of four rooms by appearance before), the electrode lamps 057, dizzy stars 190 (wall pieces by appearance before) |
 | Rampage Rollout | Donphan 108 (walking, rolling) | track 113 (2 layouts) |
 | Streaming Stampede | Cleffa 114 (186 shiny), Igglybuff 119 (205 shiny) | the players' booths 080 and 100–102 (named Game Paks by appearance before), ramp 116, circus backdrop 117, books 118; the Pokémon that go by are sprites (image banks 201–220) |
@@ -1050,6 +1050,119 @@ The browser remake runs this world in every device and on the server, from
 everyone's pads (the CPUs think in it), and shows the screen at 92% of the
 game's width and height, as a TV did, and more of the cave either side on a
 wide screen ([web/README.md](../web/README.md#gutsy-golbat)).
+
+## Barrier Ball
+
+Module #51 (ROM `0x2761A0`, linked at `0x86300000`; code to `0x6E9C`, data
+from `0x6EA0`, constants and strings from `0x7490`) was read with `m2c` on a
+`spimdisasm` listing (given the shared vector helpers' prototypes, module #65
+at `0x87D00000`: `0x87D0059C` normalises x, y in place and returns the length,
+`0x87D00648` a segment's perpendicular, `0x87D00670` where two lines meet,
+`0x87D00720` how far a point is from a line), and the remake
+(`web/minigames/src/barrier/`) plays by its rules. Its variables: W at
+`0x863075E0` (a pointer to it at `0x863075D8`; +0 the state), and in it object
+pools: Mr. Mime at +0x12C (4), their barriers at +0x770, the balls at +0xDB4
+(4; +0xDB8 how many), each ball's glow at +0x8298 and its trail at +0x1F84
+(64). Each player's record (`0x863072F8` + 0x4C·p) holds its corner: +4 the
+way Mr. Mime faces (45°, 315°, 135°, 225°), +8 its lane's slope (±1), +0xC
+where the lane crosses x = 0, +0x10/+0x14 how far it may slide, +0x18 the
+barrier's way along, +0x20 its normal (towards the middle), +0x28 where it was
+a step ago, +0x30 a CPU's spot to go to, +0x34/+0x38 a CPU's aim, +0x3C its
+points. The instructions (text 50.10): "Use the Control Stick to move and hit
+the ball back. Press the A Button to hit a smash. Earn a point for getting
+the ball in an opponent's court, and lose a point when scored on. Get five
+points to win."
+
+**Its tuning** (a debug menu, `0x86303C00`): TIME 60 s, GOAL SCORE 5, BALL
+SPEED 4 (the most a ball goes in a step), SMASH DEC 1 (what a smash's push
+keeps each step); the scoring is type 2 (below).
+
+**The scene** (geo layout `0x86306EA0`): the camera (command 0x0B) 2000
+straight above the middle, fov 15, 320 × 240: the court is the plane z = 0,
+seen from above (x −351 to 351, y −263 to 263), and the models stand up out
+of it (Mr. Mime turned up by a fixed matrix, `0x86300EF8`). A white light and
+a grey (155) ambient one.
+
+- **The court** (object 120 at 0.1, `0x863006F8`): its floor, lines and the
+  hole in the middle (layouts 0-2), and four walls (3-6), wedges pointing in
+  with their tips 180 from the middle (top, left, bottom, right). Between them
+  run the four corners' lanes, 254.6 wide: a corner past x or y ±250 is a
+  goal.
+- **Mr. Mime** (`0x86301B3C`, at 0.15): 220 from the middle, facing in, its
+  barrier (object 141, drawn in Mr. Mime's place) 57.87 in front; it slides
+  across its lane, 67.3 either way. In the play it's object 218 (clip 0
+  behind its barrier, 1 a smash); for the countdown and the end, object 129
+  (0 miming, 1 putting up its barrier, 2 a win, 3 a loss at 0x28/0x40 of the
+  speed). The barrier's clips: 0 a smash, 1 coming up, 2 held, 3 and 4 gone.
+- **A ball** (object 154's Poké Ball) flies 100 above the court, with a glow
+  (image bank 151 at 2.6 × the ball) in its last hitter's colour (grey for
+  nobody: `0x86306FB8`) and a trail of 8 fading copies.
+
+**The play runs three steps a frame** (`0x86302404`): the Mr. Mime, then the
+balls, then the balls off each barrier. Each frame (`0x8630352C`): with time
+left, a counter adds one; past 90, the balls wanted go up by one (to three)
+and it starts again; with fewer balls than wanted, one comes (`0x86306D3C`,
+0x6F02); then the steps; then the clock goes down (`0x8630328C`), and the play
+ends when it's run out or someone has 5 points. The last three seconds sound
+the shared count (0xCF00). In the last 30 seconds the tune speeds up
+(`0x80028108(6)`: the main program's `0x80027628` sends audio command 0x49 with
+one beat a minute more every 25 frames, up to 18).
+
+**A ball** comes up in the hole spinning (`0x863060FC`): 7.5° a step (from
+−45°; one about to point within 5° of a corner or a side is nudged on to 5°
+past it), growing to 0.7, for 96-144 steps, then flies off the way it faces
+at 2.3 (the main program's sine table, `0x80087FB0`; 0x6F06). In flight
+(`0x86306710`) its curl (× 0.998 a step) turns it, a smash's push adds on, and
+it bounces off the walls' edges (or, missing those, off a post at each tip:
+a circle of 21), each bounce off a normal give or take 0.0025 and faster by 1
+(to BALL SPEED; 0x6F04). Past ±250 it's a goal (`0x863001BC`, 0x6F05 and
+0x6F0B): in the scoring the game uses (type 2), the corner's player loses a
+point (not below 0) and the ball's last hitter, if someone else, gets one; the
+ball fades for 16 steps and goes, and the balls wanted go back to one. A hit
+counts as its hitter's only once the ball's in the middle diamond (tips
+(0, 180), (−180, 0), (0, −180), (180, 0): `0x86306690`).
+
+**A barrier** (`0x86305A04`) is 120 across. A ball about to cross it (from the
+side it was on) is brought to touch it and goes off (`0x86305144`) from Mr.
+Mime (or from its mirror image, for one hit from behind) through the spot
+t × 1.3 − 0.15 along it, faster by 1; the barrier's slide (and its normal)
+give it curl. A ball within 21 of its ends does the same from there, and one
+behind it, at Mr. Mime, is pushed out to the side and sent back. The sound is
+by the curl (0x6F03, 0x6F08-0x6F0A) or 0x6F07 for a smash. **A smash** (A:
+`0x863013C8`, 0x6F00) lasts 31 steps: the barrier pushes out (to 81.7 at its
+most, over 11 steps: `0x86307464`), and a ball it hits in steps 3-23 gets a
+push of 2 on top of its speed (halved with each hit after).
+
+**Mr. Mime** (`0x863013C8`): a step's slide is 0.09 × the stick (−64 to 64:
+the stick across, or up and down, whichever is pushed more; the D-pad 48 and
+64), and moving more than 4.032 in a step sounds 0x6F01 once. **The CPUs**
+(`0x86300DD4`), each step, go for the ball they reckon reaches their line
+soonest (by where its path crosses it, `0x86300818`), of those coming their
+way that they can handle: no faster than their level's reach (Easy 4.8, Normal
+5.4, Hard 6, × 0.83, 0.93, 0.98 for each other ball on the court; level 0,
+5.4, × 0.1 for a ball a person hit, isn't reachable), or already past; aiming
+a little off its middle (a random aim after each hit; the game's sum for y
+uses x's numbers). Near one (within 42 of the line) they smash with a chance
+of 0.4, 0.7 or 1. With none to go for they wander to a random spot in their
+lane and wait there. With four people the level is Easy.
+
+**The end** (state 5, `0x863024A8`): the steps run on (the balls slow, × 0.975
+a step); 8 frames on, the results. The most points win (a four-way tie: no
+one): they dance (clip 2), the others flop (clip 3).
+
+**The HUD** (`0x8630271C`): the badges (bank 434 at 0.8) in the screen's
+corners, each player's points beside them in its colour, and the seconds left
+at the right. The song is 35 (sequence 74), from GO; the count and GO are
+0x2F00 and 0x2F01 ([audio.md](audio.md)). Its name banner is image bank 374
+(by appearance; 375 is Delibird's Delivery's).
+
+**The states** (`0x863036FC`): 0-2 the instructions and the fade, 3 the
+countdown (Mr. Mime mimes, then puts up its barrier), 4 the play, 5 the end,
+6 the results, 7 the menu after.
+
+The browser remake runs this world on every device and on the server, from
+everyone's pads (the CPUs think in it), and turns the view so each player's
+own corner is at the bottom ([web/README.md](../web/README.md#barrier-ball)).
 
 ## How this was found
 

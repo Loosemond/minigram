@@ -14,6 +14,7 @@ have a game picker; a game's code and files load the first time it's picked.
 | Pichu's Power Plant | [minigames/src/pichu/](minigames/src/pichu/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#pichus-power-plant)) |
 | Tumbling Togepi | [minigames/src/togepi/](minigames/src/togepi/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#tumbling-togepi)) |
 | Gutsy Golbat | [minigames/src/golbat/](minigames/src/golbat/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#gutsy-golbat)) |
+| Barrier Ball | [minigames/src/barrier/](minigames/src/barrier/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#barrier-ball)) |
 
 ## Run it
 
@@ -43,6 +44,7 @@ game's round), `mg.mini` (the game's module), `mg.paused = true`, `mg.tick(dt)`
 `mg.mini.debug.press(dir, "a" | "b")` (Pichu's Power Plant: dir 1 up, 2 down, 3 right, 4 left),
 `mg.mini.debug.stick(x, y)` (Tumbling Togepi: -60-60 each, x right, y up; `mg.mini.debug.lanes` the four lanes),
 `mg.mini.debug.stick(x)` and `.flap()` (Gutsy Golbat: x -64-64; `mg.mini.debug.world` the world),
+`mg.mini.debug.stick(x)`, `.target(x)` and `.smash()` (Barrier Ball: x -64-64 along your lane, or the lane x to go to; `mg.mini.debug.world` the world),
 `mg.show("clearcut")`, `mg.title()`, `mg.net()`, `mg.room()`,
 `mg.sound.engine` (the audio engine, once it's loaded). It works on localhost
 only, unless `debug` is true in `src/config.js`. `clips.html` plays every clip
@@ -558,6 +560,61 @@ the world again, and its scene), `src/golbat/assets.js` the models and
 pictures and `src/golbat/index.js` the layout, the controls, its HUD and its
 online messages.
 
+## Barrier Ball
+
+Four Mr. Mime guard the four corners of a square court, each with a barrier
+across its lane. Poké Balls come up out of the hole in the middle, spin, and
+fly off; they bounce off the walls and the barriers, faster with each bounce.
+Let one past into your corner and you lose a point; the last one to hit it
+back, if it's someone else, gets one. Press A to smash: the barrier pushes
+out, and a ball it hits flies off faster. First to 5 points, or the most
+when the minute's up, wins. It follows the game's own code (module #51:
+[docs/minigames.md](../docs/minigames.md#barrier-ball) has where each number
+is):
+
+- **One court for all four.** As in Gutsy Golbat, every device runs the
+  whole world from everyone's pads, and the server too (below). It runs three
+  steps a frame, as the game does, with its tuning (BALL SPEED 4, GOAL SCORE
+  5, TIME 60): more balls as the play goes on (up to three), a ball's curl,
+  the walls' edges and posts, the barriers (a hit sends the ball off from Mr.
+  Mime through the spot it hit; a smash's push) and the scoring.
+- **The CPUs** are the game's: each step they go for the ball they reckon
+  reaches their line first, if it's no faster than their level lets them
+  handle, aiming a little off their barrier's middle, and smash near one
+  (Easy 40% of the time, Normal 70%, Hard always); with none to go for they
+  wander their lane.
+
+The screen is the game's view from straight above, turned so your own
+corner is at the bottom and your lane runs across (the game's has 1P's at
+the top left). Each player's badge and points are in the court's corner just
+round from their goal; the clock is beside the court (below it in portrait).
+On a phone: slide a finger anywhere to slide Mr. Mime (half as far as the
+finger goes), and the A button smashes. With a mouse Mr. Mime follows it and
+a click smashes; with a keyboard, ← → move and Space (or ↑) smashes. In the
+countdown the Mr. Mime mime, then put up their barriers; at the end the
+winners dance and the others flop.
+
+**Sound**: the game's (`assets/barrier/sound.bin`, 381 KB): song 35 from GO,
+18 beats a minute faster over the last 30 s as the game makes it, bank 6's
+effects (the smash, the hits by how much they curl the ball, the walls, the
+goals, a ball coming up and flying off), placed by where they happen, the
+count and GO (Pichu's Power Plant's) and the shared count for the last three
+seconds.
+
+What comes from the ROM and what is made up:
+
+| From the game | Made for the remake |
+|---|---|
+| the court, the balls (their coming, spin and serve, curl, bounces and speed), the barriers and smashes, the scoring, the clock, the CPUs, the tune's hurry (module #51's code) | the view turned to your corner, the countdown's 2.65 s (miming, then the barrier going up), how a glow and its trail look (their size and fade, by eye), the winners' dance's length |
+| Mr. Mime (218, 129) and their clips, the barrier (141), the court (120), the Poké Ball (154), the glow (151), the badges (434), the camera | the touch slide and A button (the menus' A, bank 51), the mouse, the title's art (the court, flat) |
+| song 35, bank 6's effects, the count | |
+
+Code: `src/barrier/rules.js` has the world (and `tools/barrier_rules.py`, the
+server's copy, line for line), `src/barrier/game.js` the game (the pads,
+running the world again, and its scene), `src/barrier/assets.js` the models
+and `src/barrier/index.js` the layout, the controls, its HUD and its online
+messages.
+
 ## Online play
 
 **Play with friends** on the title screen makes a room with a four-letter
@@ -634,6 +691,10 @@ How it works:
   flap, till their pad comes in a few frames late; then it runs the world
   again from a frame it saved before then, and eases the others' Golbat to
   where they turn out to be.
+- **Barrier Ball**: the same as Gutsy Golbat (`pad`, `won`), with
+  `tools/barrier_rules.py`; the play can end on any frame (a fifth point), so
+  the server looks again every half second, and says each one's points
+  (`won`).
 - **Eager Eevee**: devices send each dash and feint, with the frame their
   player pressed on, and the server checks it could have happened then (the
   Eevee at its place, not bouncing back or blown away: `tools/eevee_rules.py`,
@@ -754,11 +815,11 @@ Messages are JSON objects with their type in `t`. From the client:
 
 | `t` | Fields | |
 |---|---|---|
-| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat`) |
+| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat`, `barrier`) |
 | `ping` | `c`, `rtt` | the client's clock; answered with `pong`. `rtt`: a round trip it can count on, ms (from the last pongs) |
 | `name` | `name` | rename |
 | `level` | `level` | host, in the lobby: `easy`, `normal` or `hard` |
-| `game` | `game` | host, in the lobby: `egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi` or `golbat` |
+| `game` | `game` | host, in the lobby: `egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat` or `barrier` |
 | `start` | | host, in the lobby |
 | `lean` | `r`, `s`, `g`, `l` | in round `r`, seat `s` leans `l` (−1, 0, 1) from round time `g` (s) |
 | `ev` | `r`, `s`, `g`, `n`, `k`, `e` | seat `s` caught its drop `n` (`k: "c"`) or was shocked by it (`"h"`), as this device judged it; `e` is its egg count after. The server answers only if it disagrees |
@@ -767,7 +828,7 @@ Messages are JSON objects with their type in `t`. From the client:
 | `count` | `r`, `s`, `n`, `f` | Streaming Stampede: seat `s` pressed (counted one) on frame `f` of question `n`'s counting |
 | `press` | `r`, `s`, `f`, `d`, `b` | Pichu's Power Plant: seat `s` pressed A (`b: 5`) or B (`6`) on frame `f` from GO, held towards `d` (1 up, 2 down, 3 right, 4 left) |
 | `stick` | `r`, `s`, `f`, `x`, `y` | Tumbling Togepi: seat `s`'s stick is at `x`, `y` (-60-60 each, right and up) from frame `f` from GO |
-| `pad` | `r`, `s`, `f`, `x`, `a` | Gutsy Golbat: seat `s`'s stick is at `x` (-64-64, right) from frame `f` from GO, and A was pressed on it (`a: 1`) or not (`0`) |
+| `pad` | `r`, `s`, `f`, `x`, `a` | Gutsy Golbat: seat `s`'s stick is at `x` (-64-64, right) from frame `f` from GO, and A was pressed on it (`a: 1`) or not (`0`). Barrier Ball: the same, `x` along the seat's lane (+ is the court's +x) and A a smash |
 | `done` | `r` | this device's round is over |
 | `leave` | | |
 
@@ -791,7 +852,8 @@ and `presses`, the people's so far, `[f, d, b]` by seat, to rejoin. Tumbling
 Togepi: `tg`, with `done`, the end as `won` gives it (null till then), and
 `sticks`, the people's stick changes so far, `[f, x, y]` by seat, to rejoin.
 Gutsy Golbat: `gb`, with `done`, the end as `won` gives it (null till then),
-and `pads`, the people's so far, `[f, x, a]` by seat, to rejoin);
+and `pads`, the people's so far, `[f, x, a]` by seat, to rejoin. Barrier
+Ball: `bb`, the same as `gb`);
 `pong` (`c`, `s`); `cut` (`r`, `s`, `n`, `f`, `p`, `e`), the server's word on
 a seat's swing at a log: the frame (null: no swing), the points and the
 total after, and `a: 1` for a miss that doesn't count yet (the seat may swing
@@ -811,7 +873,8 @@ device with `o`, the frame it said, if it counts from another one; `won`
 seat's finish frame (null: not in) and how far each got (‰); `pad` as above,
 passed on to the others, and to its own device with `o`, the frame it said, if
 it counts on another one; `won` (`r`, `f`, `h`), Gutsy Golbat's end: the
-frame the play ended on and each seat's hearts;
+frame the play ended on and each seat's hearts; `won` (`r`, `f`, `p`),
+Barrier Ball's end: the frame the play ended on and each seat's points;
 `lean` as above (with the time the server kept: never before the seat's last
 lean); `ev` (`r`, `s`, `n`, `k`, `e`, `g`), the server's verdict on a drop:
 `c` caught, `h` a shock, or `m`, not a catch after all, with the egg count

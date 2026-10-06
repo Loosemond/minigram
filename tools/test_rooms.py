@@ -1,6 +1,6 @@
 """Tests for the rooms server (tools/rooms.py) and its rules (tools/egg_rules.py,
 tools/clearcut_rules.py, tools/eevee_rules.py, tools/stampede_rules.py,
-tools/pichu_rules.py, tools/togepi_rules.py, tools/golbat_rules.py).
+tools/pichu_rules.py, tools/togepi_rules.py, tools/golbat_rules.py, tools/barrier_rules.py).
 
     python3 tools/test_rooms.py
 
@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import clearcut_rules  # noqa: E402
 import eevee_rules  # noqa: E402
 import egg_rules  # noqa: E402
+import barrier_rules  # noqa: E402
 import golbat_rules  # noqa: E402
 import pichu_rules  # noqa: E402
 import rooms  # noqa: E402
@@ -69,6 +70,18 @@ def golbat_pad(z, t):
     if z == 0:
         return [[64, 0, -64, 32, -32, 0][t // 90 % 6], t % 12 == 0 or t % 47 == 5]
     return [[-64, 64][t // 70 % 2], t % 9 == 0]
+
+# web/minigames/src/barrier/rules.js: a round with seats 0 and 2 on
+# barrier_pad() and two CPUs (normal, hard and easy), the world's digest()
+# every 50 frames, the end and the points (web/minigames/tests.js has the same)
+JS_BARRIER = {1: "ca35d34d47129b07", 12345: "75e7b264d9ec3e9b", 2 ** 31 - 1: "fb92cf612a8219ec"}
+BARRIER_LEVEL = {1: "normal", 12345: "hard", 2 ** 31 - 1: "easy"}
+
+
+def barrier_pad(z, t):
+    if z == 0:
+        return [[64, 0, -64, 32, -32, 0][t // 40 % 6], t % 23 == 0 or t % 61 == 7]
+    return [[-64, 64][t // 70 % 2], t % 19 == 0]
 
 # a short round, the same for every seat: (t, col, kind, fall); they reach the
 # hands at 0.5, 0.8, 1.1 (the Voltorb), 1.4 and 2.1
@@ -933,6 +946,96 @@ def _():
         a.close()
     finally:
         golbat_rules.TIME, golbat_rules.BACKDROPS_AT, golbat_rules.MEADOW_STOP, golbat_rules.END = saved
+
+
+def barrier_digest(seed):
+    w = barrier_rules.World(seed, BARRIER_LEVEL[seed], [False, True, False, True])
+    parts, t = [], 0
+    while w.end is None:
+        w.step(t, [barrier_pad(0, t), None, barrier_pad(2, t), None])
+        w.events = []
+        if t % 50 == 0:
+            parts.append(w.digest())
+        t += 1
+    parts.append("%d:%s" % (w.end, ",".join(map(str, w.scores))))
+    return hashlib.sha256(";".join(parts).encode()).hexdigest()[:16]
+
+
+@check("Barrier Ball: the world (the CPUs too) matches the browser's, bit for bit; the round")
+def _():
+    for seed, want in JS_BARRIER.items():
+        assert barrier_digest(seed) == want, seed
+    # the ball table's sines, as the main program has them (0x80087FB0): a few, and none of the last bits off
+    assert [barrier_rules.sine(i) for i in (0, 1024, 2048, 3072, 512)] == [0, 1, 0, -1, barrier_rules.fround(0.5 ** 0.5)]
+    # the harder CPUs let fewer goals in (the people's seat holds still)
+    def conceded(seed, level):
+        w = barrier_rules.World(seed, level, [False, True, True, True])
+        t, n = 0, 0
+        while w.end is None:
+            w.step(t, [[0, False], None, None, None])
+            n += sum(1 for e in w.events if e[0] == "goal" and e[1] > 0)
+            w.events = []
+            t += 1
+        return n
+    let_in = {lv: sum(conceded(s, lv) for s in range(8)) for lv in ("easy", "hard")}
+    assert let_in["hard"] < let_in["easy"], let_in
+    # a round ends at 5 points, or when the minute's up
+    w = barrier_rules.World(3, "hard", [True] * 4)
+    t = 0
+    while w.end is None:
+        w.step(t, [])
+        t += 1
+    assert w.end == barrier_rules.TIME or max(w.scores) == barrier_rules.GOAL, (w.end, w.scores)
+
+
+@check("Barrier Ball: the server runs the world from the pads, says how it ended and stops cheats")
+def _():
+    saved = barrier_rules.TIME, barrier_rules.LONGEST
+    barrier_rules.TIME = 45  # (a short round)
+    barrier_rules.LONGEST = barrier_rules.TIME + 1
+    try:
+        a, b = Client("BA"), Client("BB")
+        a.send("hello", id="ba", name="Mia", game="barrier")
+        code = a.wait("welcome")["room"]
+        b.send("hello", id="bb", name="Max", room=code)
+        b.wait("welcome")
+        time.sleep(rooms.CHANGE_GAP)
+        a.drain()
+        b.drain()
+        a.send("start")
+        st = a.wait("start")
+        assert st["game"] == "barrier" and st["bb"] == dict(done=None, pads=[[], [], None, None]), st
+        go, r = st["go"], st["round"]
+        g = rooms.rooms[code].game
+        assert g.cpus == [False, False, True, True]
+        at(go, 0.05)
+        a.send("pad", r=r, s=0, f=0, x=64, a=1)  # Mia slides along, smashing
+        a.send("pad", r=r, s=1, f=1, x=0, a=1)  # someone else's Mr. Mime: ignored
+        b.send("pad", r=r, s=1, f=2, x=90, a=0)  # out of range: ignored
+        b.send("pad", r=r, s=1, f=2, x=10, a=2)  # not a smash or none: ignored
+        at(go, 25 / barrier_rules.FPS)
+        b.send("pad", r=r, s=1, f=0, x=-64, a=1)  # Max's, older than the way here allows: it counts as late as that does
+        late = 25 - int(rooms.ALLOW_GUESS * barrier_rules.FPS)
+        mine = [(m["s"], m["f"], m.get("o")) for m in b.drain(0.3) if m["t"] == "pad"]
+        assert mine == [(0, 0, None), (1, late, 0)], mine  # (Mia's; and Max's own, from where it counts)
+        heard = [(m["s"], m["f"], m["x"], m["a"]) for m in a.drain(0.1) if m["t"] == "pad"]
+        assert heard == [(1, late, -64, 1)], heard
+        won = a.wait("won", timeout=8)
+        # the same round, here
+        want = barrier_rules.Round(rooms.rooms[code].seed, "normal", cpus=[False, False, True, True])
+        want.pads = [[[0, 64, 1]], [[late, -64, 1]], [], []]
+        said = {k: won[k] for k in ("f", "p")}
+        assert want.settle(100, 0) == said and said["f"] == barrier_rules.TIME, (won, want.done)
+        assert g.end == (barrier_rules.TIME + barrier_rules.AFTER) / barrier_rules.FPS
+        a.send("pad", r=r, s=0, f=won["f"] + 5, x=-64, a=1)  # after the end: nothing
+        a.send("done", r=r)
+        b.send("done", r=r)
+        res = a.wait("results", timeout=10)
+        assert res["scores"] == won["p"], res
+        b.close()
+        a.close()
+    finally:
+        barrier_rules.TIME, barrier_rules.LONGEST = saved
 
 
 @check("Telegram logins: checked, and no one can pose as a Telegram player")

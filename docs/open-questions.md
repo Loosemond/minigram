@@ -18,6 +18,12 @@ What isn't known yet, roughly by how useful it would be.
   (the UI layouts' own animation); whether a player without a Game Pak is
   Cleffa or Igglybuff (decided outside module #59; the remake has both, 1P
   and 3P Cleffa).
+- **Barrier Ball's loose ends** (its rules are read: [minigames.md](minigames.md#barrier-ball)):
+  object 146 (loaded by module #51, but nothing found draws it); two geo
+  layouts in the module that nothing points to (`0x86307088`: a 120 × 60
+  quad that flashes red with a smash; `0x86307158`: a big triangle with image
+  bank 147's star); how big a ball's glow and trail are drawn (bank 151 on
+  `0x87F08E3C`'s quad); and the countdown's length (`0x87F00688`).
 - **Audio:** the voices' codec (5, in sample banks 4–6), the reverb
   settings, the game's custom sequence function (`0x800275D8`), and the
   0x28-byte records at `0x49B780` ([audio.md](audio.md)).

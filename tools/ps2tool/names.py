@@ -52,7 +52,7 @@ OBJECTS = {
     123: "Hitmontop", 125: "Rope Ring", 126: "Grass Arc", 128: "Floor Marks", 129: "Mr. Mime",
     132: "Rainbow Arc", 133: "Small Plants", 134: "Grass Arc", 135: "Cacti", 136: "Thin Arc",
     137: "Grass Ring", 138: "Grass Ring", 139: "Grass Pieces", 140: "Grass Arc",
-    141: "Mesh Panels", 142: "Furret", 143: "Eevee", 144: "Chansey", 145: "Egg",
+    141: "Barrier", 142: "Furret", 143: "Eevee", 144: "Chansey", 145: "Egg",
     147: "Course Corner", 148: "Course Stage", 149: "Grass Field Ring", 150: "Aipom on a Rope", 151: "Pineco",
     152: "Lid Box", 155: "Debris", 156: _TV + " (Wave Race 64)", 157: _TV + " (Super Mario 64)",
     158: _TV + " (castle)", 159: _TV + " (Super Mario Bros.)", 160: _TV + " (maze)",
@@ -74,14 +74,16 @@ for _i in range(88, 100):
     OBJECTS.setdefault(_i, "Gift Box")
 LAYOUTS = {
     (108, 0): "Donphan", (108, 1): "Donphan (rolling)", (113, 0): "Green Field", (113, 1): "Red Frame",
-    (120, 0): "Cross Piece", (120, 1): "Cross Lines", (120, 2): "Hole", (127, 0): "Delibird",
+    (120, 0): "Court Floor", (120, 1): "Court Lines", (120, 2): "Court Hole", (127, 0): "Delibird",
     (127, 1): "Delibird Prop", (142, 0): "Furret", (142, 1): "Furret", (153, 0): "Poké Ball",
     (153, 1): "Great Ball", (153, 2): "Ultra Ball", (153, 3): "Master Ball", (154, 0): "Poké Ball",
     (154, 1): "Ultra Ball", (154, 2): "Master Ball", (154, 3): "Great Ball", (155, 0): "Leaf Pile",
     (155, 1): "Shards", (155, 2): "Chips",
 }
-for _k in range(3, 7):
-    LAYOUTS[(120, _k)] = "Triangle Piece"
+# Barrier Ball's court (module #51 draws 0-2 in the middle, and 3-6 as the
+# four walls, placed at the top, left, bottom and right)
+for _k, _side in enumerate(["top", "left", "bottom", "right"]):
+    LAYOUTS[(120, 3 + _k)] = "Court Wall (%s)" % _side
 # The minigames, in the game's order and with its names (text table 57), and
 # the objects each one uses. Read from the code: every minigame's overlay
 # (code modules #47-#61, run at 0x86000000-0x86B00000; docs/minigames.md)
@@ -117,7 +119,7 @@ BANKS = {
     383: "banner Rampage Rollout", 388: "banner Eager Eevee", 395: "banner Gutsy Golbat",
     396: "banner Clear Cut Challenge", 400: "banner Topsy-Turvy", 403: "banner Egg Emergency",
     405: "banner Furret's Frolic", 408: "banner Pichu's Power Plant", 411: "banner Streaming Stampede",
-    417: "banner Tumbling Togepi",
+    417: "banner Tumbling Togepi", 374: "banner Barrier Ball", 375: "banner Delibird's Delivery",  # (374, 375 by appearance)
     385: "Rampage Rollout final lap", 386: "Rampage Rollout lap",  # (by appearance)
     389: "Eager Eevee prizes", 390: "Eager Eevee digits", 392: "Eager Eevee rounds",
     393: "Eager Eevee sec box", 394: "Eager Eevee time digits",
@@ -144,6 +146,10 @@ BANKS = {
     # outlined in 1P-4P's colours) and the glow behind each Golbat
     69: "Gutsy Golbat Magnemite", 221: "Gutsy Golbat backdrops", 222: "Gutsy Golbat hearts",
     343: "Gutsy Golbat glow",
+    # Barrier Ball (module #51): the glow round a ball (and its trail), in its
+    # last hitter's colour; it also loads 260 (1P-4P and COM, the module the
+    # minigames share draws them) and 434
+    151: "Barrier Ball glow", 260: "player labels",
     412: "Streaming Stampede all", 413: "Streaming Stampede names", 414: "Streaming Stampede answer digits",
     # shared by menus and boards (by appearance, and Streaming Stampede's question board)
     51: "buttons", 165: "board rod and chain", 345: "arrows",

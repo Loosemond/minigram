@@ -125,5 +125,22 @@ export const GAMES = {
     messages: ["pad", "won"],
     load: () => import("./golbat/index.js"),
   },
+  barrier: {
+    id: "barrier",
+    name: "Barrier Ball",
+    banner: "assets/ui/title_barrier.png", // image bank 374
+    art: "assets/barrier/art.png", // (its court, drawn flat: tools/web_assets.py)
+    color: "#22232e",
+    how: `Guard your corner with Mr. Mime's <b>barrier</b>! Slide a finger to move it across your lane, and
+      press <b>A</b> to <b>smash</b>: the ball flies back faster. Each bounce speeds a ball up. Let one past
+      and you <b class="volt">lose</b> a point; knock one into someone else's corner and you get one.
+      First to 5 points, or the most when the minute's up, wins!`,
+    keys: "Mouse or <kbd>←</kbd> <kbd>→</kbd> move, click or <kbd>Space</kbd> smash",
+    unit: (n) => `${n}<small>pts</small>`,
+    invite: "Play Barrier Ball with me!",
+    store: "barrier_",
+    messages: ["pad", "won"],
+    load: () => import("./barrier/index.js"),
+  },
 };
-export const ORDER = ["egg", "clearcut", "eevee", "stampede", "pichu", "togepi", "golbat"];
+export const ORDER = ["egg", "clearcut", "eevee", "stampede", "pichu", "togepi", "golbat", "barrier"];

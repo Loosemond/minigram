@@ -102,6 +102,13 @@ export function startSong(engine, name) {
   if (engine.bank.tempo?.[name]) p.tempoChange = engine.bank.tempo[name] * 48; // (a song the game plays faster)
 }
 
+// The song playing, faster by bpm beats a minute (audio command 0x49, as
+// 0x80027628 sends it: Barrier Ball's last 30 seconds)
+export function musicTempo(bpm) {
+  const p = pack?.engine?.players[MUSIC];
+  if (p?.enabled) p.tempoChange = bpm * 48;
+}
+
 // ---- sound effects ----
 
 // One of the game's sounds on the effects sequence, as the game plays it: it

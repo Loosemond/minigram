@@ -218,9 +218,26 @@ GOLBAT = {
 }
 UI["title_golbat.png"] = bank(395, 0)
 
+# Barrier Ball is code module #51. It loads the court (object 120: its floor,
+# lines and hole, layouts 0-2, and its four walls, 3-6), Mr. Mime (218 in the
+# play, 129 for the countdown and the end: each has its own clips), the
+# barrier (141), the Poke Ball (154's first layout) and image bank 151 (the
+# glow round a ball and its trail). Its name banner is bank 374.
+_BB = "objects/120_court_floor/120_court_%s.glb"
+BARRIER = {
+    "mime.glb": "objects/218_mr_mime/218_mr_mime.glb",
+    "mime_show.glb": "objects/129_mr_mime/129_mr_mime.glb",
+    "barrier.glb": "objects/141_barrier/141_barrier.glb",
+    "ball.glb": "objects/154_poke_ball/154_poke_ball.glb",
+    **{name + ".glb": _BB % name for name in ("floor", "lines", "hole", "wall_top", "wall_left", "wall_bottom", "wall_right")},
+    "glow.png": bank(151, 0),
+    "button_a.png": bank(51, 0),  # (the menus' A button: the smash button on a phone)
+}
+UI["title_barrier.png"] = bank(374, 0)
+
 # folder -> {asset name: file under out/}
 FILES = {"ui": UI, "egg": EGG, "clearcut": CLEARCUT, "eevee": EEVEE, "stampede": STAMPEDE, "pichu": PICHU,
-         "togepi": TOGEPI, "golbat": GOLBAT}
+         "togepi": TOGEPI, "golbat": GOLBAT, "barrier": BARRIER}
 
 # Sound (docs/audio.md). A game asks for song n, which the game plays as
 # sequence n + 39. The effects are sounds of sequence 9, the one the game runs
@@ -365,109 +382,146 @@ SOUNDS = {
         "count": _sound(0x05, 100, 5, 0x0010),  # 0x0F06, the minigame's own count
         "go": _sound(0x06, 127, 5, 0x0010),  # 0x0F07, and GO (with song 13)
     }),
+    # Barrier Ball asks for song 35 (sequence 74) at GO. Its effects are bank
+    # 6's (0x6Fxx), placed by where they happen; 0x42-0x47 share a script that
+    # picks its effect from the sound number as it plays (effect = sound - 25),
+    # so those are listed by hand. Its count and GO are Pichu's Power Plant's
+    # (0x2F00, 0x2F01); the shared count (0xCF00) sounds the last three seconds
+    "barrier": ({"main": 74, "win": 94}, {
+        "smash": dict(_sound(0x42, 100, 4, 0x0030, sfx=[41]), pitch=1.08),  # 0x6F00, a smash (panned to the player)
+        "swish": _sound(0x43, 75, 4, 0x0030, sfx=[42]),  # 0x6F01, a Mr. Mime moving fast
+        "spawn": _sound(0x44, 100, 1, 0x0003, sfx=[43]),  # 0x6F02, a ball comes up in the hole
+        "hit": _sound(0x45, 100, 4, 0x0003, sfx=[44]),  # 0x6F03, a barrier hits a ball
+        "wall": _sound(0x46, 100, 4, 0x0003, sfx=[45]),  # 0x6F04, a ball off a wall
+        "goal": _sound(0x47, 122, 4, 0x0003, sfx=[46]),  # 0x6F05, a goal...
+        "goal2": _sound(0x6D, 100, 3, 0x0300),  # 0x6F0B, ...with this
+        "serve": _sound(0x48, 95, 1, 0x0003),  # 0x6F06, a ball flies off out of the hole
+        "hitSmash": dict(_sound(0x49, 95, 1, 0x0003), pitch=0.7),  # 0x6F07, a smashing barrier hits it
+        "hit1": dict(_sound(0x4A, 85, 1, 0x0003), pitch=0.9),  # 0x6F08, a hit that curls it a little
+        "hit2": dict(_sound(0x4B, 85, 4, 0x0003), pitch=0.75),  # 0x6F09, more
+        "hit3": dict(_sound(0x4C, 93, 4, 0x0003), pitch=1.1),  # 0x6F0A, a lot
+        "zing": _sound(0xAF, 100, 4, 0x0030),  # 0x6F0C, with 0x6F07 and 0x6F0A
+        **SHARED,
+        "lastCount": SHARED["count"],
+        "count": _sound(0x13, 100, 5, 0x0100, sfx=[16]),  # 0x2F00
+        "go": _sound(0x14, 100, 5, 0x0100, sfx=[17]),  # 0x2F01 (with song 35)
+    }),
 }
 
-def flat_picture(glb_path, width):
+def flat_picture(glb_path, width, more=(), box=None):
     """A model drawn front on (looking down -z, no perspective) into a picture
     width pixels wide: (w, h, RGBA). Its parts go where its bones put them,
     and the nearest wins (a depth buffer). For the title's art, where a
     minigame has no background picture (Streaming Stampede's circus backdrop,
-    Pichu's Power Plant's frame)."""
+    Pichu's Power Plant's frame, Barrier Ball's court). more: other models
+    with it, (path, dx, dy) each; box: (x0, y0, x1, y1), the part of it to
+    draw (else all of it)."""
     import json
     import struct
     import zlib
-    d = open(glb_path, "rb").read()
-    n = struct.unpack_from("<I", d, 12)[0]
-    j = json.loads(d[20:20 + n])
-    blob = d[28 + n:]
 
-    def view(i):
-        bv = j["bufferViews"][i]
-        return blob[bv.get("byteOffset", 0):bv.get("byteOffset", 0) + bv["byteLength"]]
+    def parse(path, dx, dy):
+        d = open(path, "rb").read()
+        n = struct.unpack_from("<I", d, 12)[0]
+        j = json.loads(d[20:20 + n])
+        blob = d[28 + n:]
 
-    def accessor(i):
-        a = j["accessors"][i]
-        size = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4}[a["type"]]
-        fmt = {5126: "f", 5123: "H", 5121: "B"}[a["componentType"]]
-        raw = view(a["bufferView"])[a.get("byteOffset", 0):]
-        vals = struct.unpack_from("<%d%s" % (a["count"] * size, fmt), raw)
-        return [vals[k:k + size] for k in range(0, len(vals), size)]
+        def view(i):
+            bv = j["bufferViews"][i]
+            return blob[bv.get("byteOffset", 0):bv.get("byteOffset", 0) + bv["byteLength"]]
 
-    def image(i):  # the extractor's own PNGs: RGBA, filter 0 on every row
-        png = view(j["images"][i]["bufferView"])
-        w, h = struct.unpack_from(">II", png, 16)
-        o, idat = 8, b""
-        while o < len(png):
-            ln, typ = struct.unpack_from(">I4s", png, o)
-            if typ == b"IDAT":
-                idat += png[o + 8:o + 8 + ln]
-            o += 12 + ln
-        raw = zlib.decompress(idat)
-        assert all(raw[y * (w * 4 + 1)] == 0 for y in range(h))
-        return w, h, b"".join(raw[y * (w * 4 + 1) + 1:(y + 1) * (w * 4 + 1)] for y in range(h))
+        def accessor(i):
+            a = j["accessors"][i]
+            size = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4}[a["type"]]
+            fmt = {5126: "f", 5123: "H", 5121: "B"}[a["componentType"]]
+            raw = view(a["bufferView"])[a.get("byteOffset", 0):]
+            vals = struct.unpack_from("<%d%s" % (a["count"] * size, fmt), raw)
+            return [vals[k:k + size] for k in range(0, len(vals), size)]
 
-    # each node's place: translation, rotation (a quaternion) and scale, down the tree
-    def local(nd):
-        tx, ty, tz = nd.get("translation", (0, 0, 0))
-        qx, qy, qz, qw = nd.get("rotation", (0, 0, 0, 1))
-        sx, sy, sz = nd.get("scale", (1, 1, 1))
-        r = [[1 - 2 * (qy * qy + qz * qz), 2 * (qx * qy - qz * qw), 2 * (qx * qz + qy * qw)],
-             [2 * (qx * qy + qz * qw), 1 - 2 * (qx * qx + qz * qz), 2 * (qy * qz - qx * qw)],
-             [2 * (qx * qz - qy * qw), 2 * (qy * qz + qx * qw), 1 - 2 * (qx * qx + qy * qy)]]
-        return [[r[i][0] * sx, r[i][1] * sy, r[i][2] * sz, (tx, ty, tz)[i]] for i in range(3)]
+        def image(i):  # the extractor's own PNGs: RGBA, filter 0 on every row
+            png = view(j["images"][i]["bufferView"])
+            w, h = struct.unpack_from(">II", png, 16)
+            o, idat = 8, b""
+            while o < len(png):
+                ln, typ = struct.unpack_from(">I4s", png, o)
+                if typ == b"IDAT":
+                    idat += png[o + 8:o + 8 + ln]
+                o += 12 + ln
+            raw = zlib.decompress(idat)
+            assert all(raw[y * (w * 4 + 1)] == 0 for y in range(h))
+            return w, h, b"".join(raw[y * (w * 4 + 1) + 1:(y + 1) * (w * 4 + 1)] for y in range(h))
 
-    def mul(a, b):
-        return [[sum(a[i][k] * b[k][jj] for k in range(3)) + (a[i][3] if jj == 3 else 0) for jj in range(4)] for i in range(3)]
-    world = {}
+        # each node's place: translation, rotation (a quaternion) and scale, down the tree
+        def local(nd):
+            tx, ty, tz = nd.get("translation", (0, 0, 0))
+            qx, qy, qz, qw = nd.get("rotation", (0, 0, 0, 1))
+            sx, sy, sz = nd.get("scale", (1, 1, 1))
+            r = [[1 - 2 * (qy * qy + qz * qz), 2 * (qx * qy - qz * qw), 2 * (qx * qz + qy * qw)],
+                 [2 * (qx * qy + qz * qw), 1 - 2 * (qx * qx + qz * qz), 2 * (qy * qz - qx * qw)],
+                 [2 * (qx * qz - qy * qw), 2 * (qy * qz + qx * qw), 1 - 2 * (qx * qx + qy * qy)]]
+            return [[r[i][0] * sx, r[i][1] * sy, r[i][2] * sz, (tx, ty, tz)[i]] for i in range(3)]
 
-    def walk(i, parent):
-        world[i] = mul(parent, local(j["nodes"][i]))
-        for ch in j["nodes"][i].get("children", []):
-            walk(ch, world[i])
-    ident = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]
-    for root in j["scenes"][j.get("scene", 0)]["nodes"]:
-        walk(root, ident)
-    joints = j["skins"][0]["joints"] if j.get("skins") else []
+        def mul(a, b):
+            return [[sum(a[i][k] * b[k][jj] for k in range(3)) + (a[i][3] if jj == 3 else 0) for jj in range(4)] for i in range(3)]
+        world = {}
 
-    def place(p, jn):
-        m = world[joints[jn]] if joints else ident
-        return tuple(m[i][0] * p[0] + m[i][1] * p[1] + m[i][2] * p[2] + m[i][3] for i in range(3))
+        def walk(i, parent):
+            world[i] = mul(parent, local(j["nodes"][i]))
+            for ch in j["nodes"][i].get("children", []):
+                walk(ch, world[i])
+        ident = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]
+        for root in j["scenes"][j.get("scene", 0)]["nodes"]:
+            walk(root, ident)
+        joints = j["skins"][0]["joints"] if j.get("skins") else []
 
-    prims = []
-    for m in j["meshes"]:
-        for p in m["primitives"]:
-            pos = accessor(p["attributes"]["POSITION"])
-            jn = accessor(p["attributes"]["JOINTS_0"]) if "JOINTS_0" in p["attributes"] else [(0,)] * len(pos)
-            prims.append((p, [place(v, k[0]) for v, k in zip(pos, jn)]))
-    x0 = min(v[0] for _, ps in prims for v in ps)
-    x1 = max(v[0] for _, ps in prims for v in ps)
-    y0 = min(v[1] for _, ps in prims for v in ps)
-    y1 = max(v[1] for _, ps in prims for v in ps)
+        def place(p, jn):
+            m = world[joints[jn]] if joints else ident
+            x, y, z = (m[i][0] * p[0] + m[i][1] * p[1] + m[i][2] * p[2] + m[i][3] for i in range(3))
+            return x + dx, y + dy, z
+
+        parts = []
+        for m in j["meshes"]:
+            for p in m["primitives"]:
+                pos = accessor(p["attributes"]["POSITION"])
+                jn = accessor(p["attributes"]["JOINTS_0"]) if "JOINTS_0" in p["attributes"] else [(0,)] * len(pos)
+                ps = [place(v, k[0]) for v, k in zip(pos, jn)]
+                tx = j["materials"][p["material"]]["pbrMetallicRoughness"].get("baseColorTexture")
+                if "TEXCOORD_0" not in p["attributes"] or not tx:
+                    parts.append((ps, None))
+                    continue
+                tex = j["textures"][tx["index"]]
+                smp = j["samplers"][tex["sampler"]] if "sampler" in tex else {}
+                parts.append((ps, (accessor(p["attributes"]["TEXCOORD_0"]), [i[0] for i in accessor(p["indices"])],
+                                   image(tex["source"]), smp.get("wrapS", 10497), smp.get("wrapT", 10497))))
+        return parts
+
+    prims = parse(glb_path, 0, 0)
+    for path, dx, dy in more:
+        prims += parse(path, dx, dy)
+    if box:
+        x0, y0, x1, y1 = box
+    else:
+        x0 = min(v[0] for ps, _ in prims for v in ps)
+        x1 = max(v[0] for ps, _ in prims for v in ps)
+        y0 = min(v[1] for ps, _ in prims for v in ps)
+        y1 = max(v[1] for ps, _ in prims for v in ps)
     k = width / (x1 - x0)
     W, H = width, int(round((y1 - y0) * k))
     out = bytearray(W * H * 4)
     depth = [-math.inf] * (W * H)
-    for p, ps in prims:
-        if "TEXCOORD_0" not in p["attributes"]:
-            continue
-        uv = accessor(p["attributes"]["TEXCOORD_0"])
-        idx = [i[0] for i in accessor(p["indices"])]
-        mat = j["materials"][p["material"]]
-        tx = mat["pbrMetallicRoughness"].get("baseColorTexture")
-        if not tx:
-            continue
-        tex = j["textures"][tx["index"]]
-        smp = j["samplers"][tex["sampler"]] if "sampler" in tex else {}
-        tw, th, texels = image(tex["source"])
 
-        def wrap(c, n, mode):
-            i = int(math.floor(c * n))
-            if mode == 33071:
-                return min(n - 1, max(0, i))
-            if mode == 33648:
-                i %= 2 * n
-                return i if i < n else 2 * n - 1 - i
-            return i % n
+    def wrap(c, n, mode):
+        i = int(math.floor(c * n))
+        if mode == 33071:
+            return min(n - 1, max(0, i))
+        if mode == 33648:
+            i %= 2 * n
+            return i if i < n else 2 * n - 1 - i
+        return i % n
+    for ps, drawn in prims:
+        if not drawn:
+            continue
+        uv, idx, (tw, th, texels), wrap_s, wrap_t = drawn
         for t in range(0, len(idx), 3):
             a, b, c = idx[t:t + 3]
             (ax, ay), (bx, by), (cx, cy) = [((ps[i][0] - x0) * k, (y1 - ps[i][1]) * k) for i in (a, b, c)]
@@ -487,7 +541,7 @@ def flat_picture(glb_path, width):
                         continue
                     u = wa * uv[a][0] + wb * uv[b][0] + wc * uv[c][0]
                     v = wa * uv[a][1] + wb * uv[b][1] + wc * uv[c][1]
-                    o = (wrap(v, th, smp.get("wrapT", 10497)) * tw + wrap(u, tw, smp.get("wrapS", 10497))) * 4
+                    o = (wrap(v, th, wrap_t) * tw + wrap(u, tw, wrap_s)) * 4
                     if texels[o + 3] < 128:
                         continue
                     depth[py * W + px] = z
@@ -528,6 +582,16 @@ _frame = os.path.join(site, "pichu", "frame.glb")
 if os.path.exists(_frame):
     with open(os.path.join(site, "pichu", "art.png"), "wb") as fh:
         fh.write(png.encode_rgba(*flat_picture(_frame, 400)))
+
+# Barrier Ball's art for the title and the lobby: its court from above, as
+# the game puts it (the pieces at 0.1, the walls 180 from the middle)
+_court = os.path.join(site, "barrier", "floor.glb")
+if os.path.exists(_court):
+    _walls = [(os.path.join(site, "barrier", name), dx, dy) for name, dx, dy in (
+        ("lines.glb", 0, 0), ("hole.glb", 0, 0), ("wall_top.glb", 0, 18), ("wall_left.glb", -18, 0),
+        ("wall_bottom.glb", 0, -18), ("wall_right.glb", 18, 0))]
+    with open(os.path.join(site, "barrier", "art.png"), "wb") as fh:
+        fh.write(png.encode_rgba(*flat_picture(_court, 400, _walls, (-27, -27, 27, 27))))
 
 if roms:
     rom = Rom(roms[0])

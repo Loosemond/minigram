@@ -235,6 +235,35 @@ go (`0x86100020`), and the shared count for the play's last seconds:
 
 `0x0F00` (sound `0x2F`) isn't asked for by module #49.
 
+Barrier Ball's (module #51) are bank 6's (`0x6F00`-`0x6F0C`), placed by
+where they happen (`0x87C03B60` works out the pan from the position, then
+`0x800277E0` plays it); a Mr. Mime's own are panned to its player
+(`0x80027A18`). Sounds `0x42`-`0x47` share a script that picks its effect
+from the sound number as it plays (effect = sound − 0x42 + 0x29: `c8 42`,
+`c7 29 06 3b`), so `tools/web_assets.py` lists those by hand:
+
+| Id | Sound | Effects of font 12 | When (from the code) |
+|---|---|---|---|
+| `0x6F00` | `0x42` (pitch 1.08) | 41 | a smash |
+| `0x6F01` | `0x43` (volume 75) | 42 | a Mr. Mime moving fast (once, till it slows) |
+| `0x6F02` | `0x44` | 43 | a ball comes up in the hole |
+| `0x6F03` | `0x45` | 44 | a barrier hits a ball (no curl) |
+| `0x6F04` | `0x46` | 45 | a ball off a wall |
+| `0x6F05`, `0x6F0B` | `0x47`; `0x6D` | 46; 70, 83 | a goal |
+| `0x6F06` | `0x48` | instrument 21 | a ball flies off out of the hole |
+| `0x6F07` | `0x49` (pitch 0.7) | 44, instrument 21 | a smashing barrier hits a ball (with `0x6F0C`) |
+| `0x6F08`-`0x6F0A` | `0x4A`-`0x4C` (pitch 0.9, 0.75, 1.1) | 44, instrument 21 | a hit that curls the ball a little, more, a lot (curl over 0.012, 0.03, 0.057; `0x6F0A` with `0x6F0C`) |
+| `0x6F0C` | `0xAF` | 98 | with `0x6F07` and `0x6F0A` |
+| `0x2F00`, `0x2F01` | `0x13`, `0x14` | 16, 17 | each count tick; GO (with song 35): Pichu's Power Plant's |
+| `0xCF00` | `0x7C` | 96 | 3, 2 and 1 seconds before the time's up |
+
+In the last 30 seconds the module calls `0x80028108(6)` every frame: that
+sets `0x80090D14` to 7, which `0x80027628` turns into audio command 0x49
+(the song's tempo change, in beats a minute) one higher every 25 frames
+(450 / 18, the 7th entry of `0x800A3B30`'s table), for 450 frames: the tune
+ends up 18 beats a minute faster. The remake does the same
+(`musicTempo` in `web/minigames/src/audio.js`).
+
 ## Timing
 
 What `n64audio.js` uses, from the decomp (`AudioHeap_ResetStep`), for an
