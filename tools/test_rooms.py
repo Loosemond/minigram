@@ -1,6 +1,6 @@
 """Tests for the rooms server (tools/rooms.py) and its rules (tools/egg_rules.py,
 tools/clearcut_rules.py, tools/eevee_rules.py, tools/stampede_rules.py,
-tools/pichu_rules.py).
+tools/pichu_rules.py, tools/togepi_rules.py).
 
     python3 tools/test_rooms.py
 
@@ -31,6 +31,7 @@ import egg_rules  # noqa: E402
 import pichu_rules  # noqa: E402
 import rooms  # noqa: E402
 import stampede_rules  # noqa: E402
+import togepi_rules  # noqa: E402
 
 # makeSchedules() in web/minigames/src/egg/game.js, run in a browser: the
 # first 16 hex digits of the SHA-256 of every drop (the bits of t and fall)
@@ -50,6 +51,12 @@ JS_STAMPEDE = {1: "84a6cb28cd987d1d", 12345: "2a9b704b839d8309", 2 ** 31 - 1: "1
 # over 3000 frames: every Electrode (its direction, button and frames) and the
 # CPUs' presses and finishes (web/minigames/tests.js has the same)
 JS_PICHU = {1: "e27615795ea9a2a3", 12345: "daf3601d2ace0952", 2 ** 31 - 1: "ecb9ea996496d4dd"}
+# web/minigames/src/togepi/rules.js: a race with seat 0 on TOGEPI_SCRIPT and
+# three normal CPUs, every lane's x, z, track, progress and state every 50
+# frames till it's in, and the finishes (web/minigames/tests.js has the same)
+JS_TOGEPI = {1: "efcaeb571cb83ba1", 12345: "98649f14c45fb285", 2 ** 31 - 1: "897e6c53dd29b182"}
+TOGEPI_SCRIPT = [[0, 0, -60], [100, 45, -60], [160, 0, -60], [260, -60, -45], [300, 0, -60], [500, 30, 0], [530, 0, -60],
+                 [700, -45, -45], [760, 60, -60], [800, 0, -60]]
 
 # a short round, the same for every seat: (t, col, kind, fall); they reach the
 # hands at 0.5, 0.8, 1.1 (the Voltorb), 1.4 and 2.1
@@ -733,6 +740,104 @@ def _():
         a.close()
     finally:
         pichu_rules.FULL, pichu_rules.cpu_presses = saved
+
+
+def togepi_digest(seed):
+    def q(v):
+        return math.floor(v * 1000 + 0.5)
+    C = togepi_rules.course(seed)
+    lanes = [togepi_rules.Lane(seed, z, C, 2 if z else 0) for z in range(4)]
+    s = ",".join(map(str, C["pattern"])) + "/" + ",".join(map(str, C["flip"])) + ";"
+    k, stick = 0, [0, 0]
+    for t in range(3000):
+        while k < len(TOGEPI_SCRIPT) and TOGEPI_SCRIPT[k][0] <= t:
+            stick = TOGEPI_SCRIPT[k][1:]
+            k += 1
+        for lane in lanes[1:]:
+            lane.step(t)
+        togepi_rules.rank_cpus(lanes)
+        lanes[0].step(t, stick[0], stick[1])
+        if t % 50 == 0:
+            s += "|".join("F" if lane.finish is not None else ",".join(
+                map(str, [q(lane.x), q(lane.z), lane.tile, q(lane.px), q(lane.progress), lane.state])) for lane in lanes) + ";"
+        if all(lane.finish is not None for lane in lanes):
+            break
+    s += ",".join(map(str, [lane.finish for lane in lanes]))
+    return hashlib.sha256(s.encode()).hexdigest()[:16]
+
+
+@check("Tumbling Togepi: the lanes and the CPUs match the browser's, bit for bit; the race")
+def _():
+    for seed, want in JS_TOGEPI.items():
+        assert togepi_digest(seed) == want, seed
+    # every level's CPUs get there, the harder ones sooner (the course is the same for all)
+    def finish(seed, lv):
+        C = togepi_rules.course(seed)
+        lanes = [togepi_rules.Lane(seed, z, C, lv) for z in range(4)]
+        for t in range(4000):
+            for lane in lanes:
+                lane.step(t)
+            togepi_rules.rank_cpus(lanes)
+            if all(lane.finish is not None for lane in lanes):
+                break
+        return sorted(lane.finish for lane in lanes)[1]
+    firsts = {lv: sorted(finish(s, lv) for s in range(8))[4] for lv in (1, 2, 3)}
+    assert firsts[1] < firsts[3] < 1500, firsts
+    # someone who stands still doesn't move; one who runs gets there
+    C = togepi_rules.course(5)
+    still, runner = togepi_rules.Lane(5, 0, C), togepi_rules.Lane(5, 1, C)
+    for t in range(1500):
+        still.step(t, 0, 0)
+        runner.step(t, 0, -60)
+    assert still.progress < 1 and still.tile == 1 and runner.finish is not None, (still.progress, runner.finish)
+
+
+@check("Tumbling Togepi: the server runs the lanes from the sticks, says how it ended and stops cheats")
+def _():
+    saved = togepi_rules.END_TILE, togepi_rules.CALL
+    togepi_rules.END_TILE, togepi_rules.CALL = 2, 45  # (a short course: in after about 60 frames; called 45 after the first)
+    try:
+        a, b = Client("TA"), Client("TB")
+        a.send("hello", id="ta", name="Tam", game="togepi")
+        code = a.wait("welcome")["room"]
+        b.send("hello", id="tb", name="Tod", room=code)
+        b.wait("welcome")
+        time.sleep(rooms.CHANGE_GAP)
+        a.drain()
+        b.drain()
+        a.send("start")
+        st = a.wait("start")
+        assert st["game"] == "togepi" and st["tg"] == dict(done=None, sticks=[[], [], None, None]), st
+        go, r = st["go"], st["round"]
+        g = rooms.rooms[code].game
+        assert g.cpus == [False, False, True, True]
+        at(go, 0.05)
+        a.send("stick", r=r, s=0, f=0, x=0, y=-60)  # Tam runs from GO
+        a.send("stick", r=r, s=1, f=1, x=0, y=-60)  # someone else's player: ignored
+        b.send("stick", r=r, s=1, f=2, x=90, y=-60)  # out of range: ignored
+        at(go, 30 / togepi_rules.FPS)
+        b.send("stick", r=r, s=1, f=0, x=0, y=-60)  # Tod's, older than the way here allows: it counts as late as that does
+        late = 30 - int(rooms.ALLOW_GUESS * togepi_rules.FPS)
+        mine = [(m["s"], m["f"], m.get("o")) for m in b.drain(0.3) if m["t"] == "stick"]
+        assert mine == [(0, 0, None), (1, late, 0)], mine  # (Tam's; and Tod's own, from where it counts)
+        heard = [(m["s"], m["f"], m["x"], m["y"]) for m in a.drain(0.1) if m["t"] == "stick"]
+        assert heard == [(1, late, 0, -60)], heard
+        won = a.wait("won", timeout=8)
+        # the same race, here: who got in when
+        want = togepi_rules.Round(rooms.rooms[code].seed, "normal", cpus=[False, False, True, True])
+        want.sticks = [[[0, 0, -60]], [[late, 0, -60]], [], []]
+        said = {k: won[k] for k in ("f", "fin", "p")}
+        assert want.settle(100, 0) == said and said["fin"][0] is not None and said["fin"][1] > said["fin"][0], (won, want.done)
+        assert g.end == (won["f"] + togepi_rules.END_AFTER) / togepi_rules.FPS
+        a.send("stick", r=r, s=0, f=won["f"] + 5, x=60, y=0)  # after the end: nothing
+        a.send("done", r=r)
+        b.send("done", r=r)
+        res = a.wait("results", timeout=10)
+        assert res["scores"] == [-1 if f is None else round(f * 100 / 30) for f in won["fin"]], res
+        b.close()
+        a.close()
+    finally:
+        togepi_rules.END_TILE, togepi_rules.CALL = saved
 
 
 @check("Telegram logins: checked, and no one can pose as a Telegram player")

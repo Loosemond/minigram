@@ -87,5 +87,23 @@ export const GAMES = {
     messages: ["press", "won"],
     load: () => import("./pichu/index.js"),
   },
+  togepi: {
+    id: "togepi",
+    name: "Tumbling Togepi",
+    banner: "assets/ui/title_togepi.png", // image bank 417
+    art: "assets/togepi/art.png", // (its track, START to GOAL: image bank 226)
+    color: "#2f4a2a",
+    how: `Race your Togepi down its treadmill! <b>Hold</b> on your belt to run: Togepi heads for
+      your finger. Run round the <b>flowers</b> (they slow you), the rocks and the logs (they knock
+      you down), and the Diglett. Step on a <b class="blue">blue arrow</b> to dash: faster, hopping
+      over most things. The first to the goal wins!`,
+    keys: "Or the keyboard: hold <kbd>↓</kbd> to run, <kbd>←</kbd> <kbd>→</kbd> to steer",
+    unit: (n) => (n === null || n === undefined ? "–" : `${(n / 100).toFixed(2)}<small>s</small>`),
+    lower: true, // (a time: the less the better)
+    invite: "Race me in Tumbling Togepi!",
+    store: "togepi_",
+    messages: ["stick", "won"],
+    load: () => import("./togepi/index.js"),
+  },
 };
-export const ORDER = ["egg", "clearcut", "eevee", "stampede", "pichu"];
+export const ORDER = ["egg", "clearcut", "eevee", "stampede", "pichu", "togepi"];

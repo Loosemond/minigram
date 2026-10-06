@@ -49,7 +49,7 @@ characters' models.
 | Pichu's Power Plant | Pichu 107, Pikachu 201 | the power plant's frame 056 (a window of four rooms by appearance before), the electrode lamps 057, dizzy stars 190 (wall pieces by appearance before) |
 | Rampage Rollout | Donphan 108 (walking, rolling) | track 113 (2 layouts) |
 | Streaming Stampede | Cleffa 114 (186 shiny), Igglybuff 119 (205 shiny) | the players' booths 080 and 100–102 (named Game Paks by appearance before), ramp 116, circus backdrop 117, books 118; the Pokémon that go by are sprites (image banks 201–220) |
-| Tumbling Togepi | Togepi 109, Omanyte 206 | platform 060, flower patch 062, rocks 063–064, logs 065–067, pillars 068–070, course pieces 132–140, ice block 188, water 202 |
+| Tumbling Togepi | Togepi 109, Omanyte 206 | the treadmills' platform 060, flower patch 062, rocks 063–064, logs 065–067, pillars 068–070 (on no course), the scenery round it 132–140, the dash's aura 188, the dash arrow 202 (named an ice block and a water plane by appearance before) |
 | Delibird's Delivery | Delibird 127 | Swinub 082 and 103, gift boxes 092 and 096, factory 147 and 148, gifts 169, 170, 174–177, 180, 181, 184 |
 | Egg Emergency | Chansey 144 | egg 145, 185 |
 | Eager Eevee | Eevee 143 | field 149, Aipom 150, Pineco 151, effects 203, 204, 207, fruit 209, 211, 213, 216 (and 208, 210, 212, 215 *by appearance*) |
@@ -778,6 +778,153 @@ CPUs every time, every 4 frames about 40% of the time, every 5 never.
 `0x2F01` the count and GO, `0x2F03` a pop-out, `0x2F04`-`0x2F07` a turn,
 `0x2F08` a shock, `0x200B` the hum, `0x2F09`-`0x2F11` the results. Song 21
 from GO.
+
+## Tumbling Togepi
+
+Module #55 (ROM `0x2A2860`, linked at `0x86700000`; code to `0xAB5C`, data
+from `0xAB60`) was read with the help of a decompiler (`m2c`, on a
+`spimdisasm` listing of the module), checked against the instructions, and
+the remake (`web/minigames/src/togepi/`) plays by its rules. Its variables: G
+at `0x8670BB48` (+0 the state), the players at `0x86728408` + 0xAC·p, the
+CPUs at `0x86728328` + 0x38·p, the obstacles' records at `0x8670C980` +
+0x3C0·p (60 of 16 bytes: the type, a column for the CPUs) and their objects at
+`0x86711760` + 0x5460·p (60 of 0x168), the Togepi at `0x86710C20` + 0x168·p.
+The instructions (text 50.3): "Run downward, using the Control Stick to avoid
+flowers, boulders and logs. Step on an arrow to speed up. You can jump over
+logs, but you will slow down. The first one to the goal wins."
+
+**In short.** Four treadmills stand side by side on a platform (object 60, at
+0.8x), each a lane 276 units wide (lane p's left edge at (120p − 240) × 2.3;
+its belt 248 wide, x = the Togepi's start + −2, −1, 1, 2). Each Togepi
+(0.75x) stands near the far end of its belt, at z = −280, facing the camera,
+which is high in front (below). Holding the stick down runs: the belt's
+texture scrolls and everything on the belt moves towards the Togepi and past
+it. The belt draws the **track** (image bank 226, one picture 32 × 2048:
+START, the 10 to 90 marks and GOAL, on grass, dirt, sand and brick): four
+quads, 310 × 325 at y 100 (`0x8670B850`), showing four of its 32 × 32 tiles,
+from tile *tile* and *px* rows down (`0x867007B4`: rows tile·32 + px + 3 to
++127, 31 to a quad). The course comes along the belt as **rows** of
+obstacles; everyone's belt has the same course, and nothing on one belt
+touches another.
+
+**The course** (`0x8670211C`): five sections of four rows. Each section picks
+one of 20 patterns (`0x8670B464`: 80 row pointers) from 0-4, 0-14, 5-14, 5-19
+and 15-19 in turn (`rand2 % n + base`, again if it was picked already), and
+is mirrored (column → 18 − column) if `rand2 % 100 >= 51`. A row is a list of
+6-byte entries ending in type 12: [column 0-18, depth, type, and three
+columns for a CPU's way round it]. An obstacle goes at x = the lane's left
+edge + 13 + 13.8 × column (13.8 = 6 × 2.3; 13 is that truncated), z = base
++ 18 × depth: base 400 for the first row, 702 (18 × 39) after. Row k comes on
+once the track has scrolled 83.5·k px (`0x86702E50`), one row a frame at
+most; obstacles are drawn (and a Diglett's clock runs) once nearer than z 450,
+and dropped past −600. The types, with their models and scales
+(`0x8670BDD8`) and half sizes in columns (`0x8670BAE8`):
+
+| Type | What | Model, scale | Half size (across, along) | Running into it | Dashing into it |
+|---|---|---|---|---|---|
+| 0 | flowers | 62, 0.8 | 3.5, 3.5 | state 1: slowed to 0.3 while in them | slowed while in them (and, if the hop ends there, a 32-frame spin that ends the dash) |
+| 1 | small rock | 63, 0.8/1/0.8 | 1, 1.5 | state 3: knocked (on no course) | knocked: the dash ends |
+| 2 | rock | 64, 0.8/1/0.8 | 2, 2.5 | state 4: knocked | knocked: the dash ends |
+| 3-5 | logs, 1, 1.5 and 2 long | 65-67, 0.6 | 3-5, 3 | state 2: tripped | a bounce (`0x68`: 10 frames over it, untouchable), and the dash's speed down to 0.05 |
+| 6-8 | pillars | 68-70, 0.4 | 3-5, 3.2 | blocked (on no course) | |
+| 9 | Voltorb, rolling side to side | sprite, bank 227 | 4, 1 | (on no course) | |
+| 10 | dash arrow | 202, 0.12 | 3, 3 | a dash starts next frame | more speed (below) |
+| 11 | Diglett | sprite, bank 205, 3.5x | 3, 3 | its clock 7-12 (coming up): a bounce; 13-26 (up): knocked; else (in its hole) nothing | the same |
+
+What's run into is gone, except flowers, and a Diglett unless it was a dash
+that hit it. Every row ends with an arrow (or two) at depth 37, in column 3,
+9 or 15 (a few patterns have one more). A
+Diglett's clock (`0x8670018C`) counts frames from a start of 0, 18 or 36
+(cycling, a random step); its picture is clock / 3 (0-5 coming up, 6-11 the
+same back down), and from 36 to 71 it's in its hole and the clock gains a
+random extra frame now and then; at 72 it starts again.
+
+**Running** (`0x867043AC`, each frame in the play's state 1, while the
+Togepi is running, in flowers, or hopping in a dash): the stick (or the
+D-pad: ±60, ×0.75 each on a diagonal) is clamped to ±60 and scaled by 0.75. A
+step forward is (0.32 + boost) × the stick's down × slow (`0x8670BD9C`), across
+(0.2 + side boost) × the stick's side (`0x8670BD98`); below 5 either way is
+nothing. Running scrolls the track 0.12 px a unit (`0x8670B384`). Before it
+moves, a Togepi checks the point twice its step ahead against everything
+within 144 units ahead (`0x867037B8`): what it runs into does its thing (the
+table) and stops the step for that frame, except flowers. Its x stays 63.75
+(85 × 0.75) in from its lane's edges. The progress the HUD uses is the track
+scrolled over the course's length, (tile·32 − 1 + px) / (58·32 − 1 + (−280 −
+z) × 0.12) × 100, with a quirk: below 66% it also adds in half of what it had
+(so it runs a little ahead). Past tile 56 and 20 px the belt stops and the
+Togepi runs on off its end; at z −155 it's at the goal (state 12, clip 8),
+then waits (state 11).
+
+- **Knocked** (states 3 and 4, clip 2 at speed 2): for its frames below 5 it's
+  thrown on 75 × (0.32 + boost) a frame (the belt scrolls on: the obstacle
+  is gone), then 7 till frame 24, and aside by its facing (the sine of its
+  turn × that); then running again at the clip's end.
+- **Tripped** (state 2, clip 3 at speed 2): thrown on 180 a frame for frames
+  below 3, 18 till 13, running again at frame 40.
+- **A dash** (an arrow, `0x74`, `0x38`): the boost goes up 0.09 and the side
+  boost 0.028; the Togepi hops along (clip 7, at speed 1 + boost; state 10) at
+  45 forward whatever the stick, with 15 and 30 more on its first two frames,
+  until its progress passes the progress at the arrow + 5.6. Another arrow
+  while dashing adds 0.09 more (if the speed's under 0.75; past it the boost
+  goes back to 0.3) and starts the 5.6 again. When it ends, the boost runs
+  down 0.01 a frame (from −0.01: so the speed fades out) unless the stick's
+  held down. The aura (object 188, 0.55x, longer with the boost) fades in
+  over it (alpha 255 down to 70) and out at the end.
+- The Togepi faces the way it runs (`0x86703D98`: a quarter turn from the
+  stick's angle, the stick's up taken as level).
+
+**The CPUs** (`0x86702434` sets them up, `0x86701C6C` steers): by level (1
+Hard - 4; the COM level's 4 − level) a look-ahead (250-299 units on Hard,
+200-249 Normal, 150-195 Easy, 120-165), a steering gain and a threshold
+(with a mood 0-3 that scales them), and a 1-in-4 chance of being "lazy". They
+always run (the stick down by 60 − |steer| / 4) and steer for the column the
+obstacle ahead was given for them when it came on (one of its three CPU
+columns: the first mostly, the third with a chance by level and mood
+(`0x8670B3E4`, `0x8670B424`), by a choice made at the row in patterns 7 and 8,
+the third if lazy, the first once anyone's in), with the game's own sums: to
+the right with a steer of gain × (that column's x + its own x), to the left
+gain × the distance. Close to it they snap to the column. While dashing they
+look for the nearest thing, an arrow only now and then (less often the better
+placed they are and the harder; `0x8670BD84`, `0x8670BD74`). A quirk: when a
+CPU's first choice loses, the second goes on the obstacle in slot *p* (its
+player number) instead of the new one.
+
+**The camera** (`0x8670675C`): eye D away at an azimuth and elevation
+(binary angles, `0x8670BE80` and `0x8670BE84`), at (cos az · D cos el + 1,
+D sin el, sin az · D cos el), looking at G+0x20-0x28, fovy `0x8670BE7C`, near
+100, far 12800. In the countdown (state 5, `0x8670A07C`) it starts at the side
+(az −180°, el 15°, D 1610, fov 13.6, looking at y 160), with the scenery
+(objects 132-138) on, and over 76 frames comes round to the front and up:
+az +90°, el 36.3° (`0x19D3`), D 7570, fov 7.6, looking at (0, 40, 0); then the
+scenery's taken off (139 and 140, the ground round the platform, stay). At the
+end (`0x86709AD0`) it comes down over 40 frames to the winner (el 18.9°, D
+3380, looking at the winner from y 200), then turns round it (0x80 a frame).
+
+**The HUD** (sprites in the scene): each player's badge at both ends of its
+belt (bank 434, 4.2x, z 570 and −580), a rank coin over each Togepi (bank
+387, `0x86706A30`), and on each belt the other three's badges where they are
+along the track (`0x86706B88`, alpha 0x8C, hidden past ±600 units). The
+others: a shadow under each Togepi (Eager Eevee's bank 307 picture 1, a 60 ×
+60 quad at 1.5x, in the environment colour 0x0C1602), the dust when one's
+knocked.
+
+**The play's end**: the race is over when the last one's goal clip ends;
+the winners are the first in (a tie: everyone in on that frame). The time
+shown is frames / 30 with random hundredths (`0x86703F9C`). The song is
+46 (sequence 85), from GO (state 5 → 1, with the count's 0x5F07 and GO's
+0x5F08); the effects are bank 9's ([audio.md](audio.md)). As each one gets
+in: 0x5F08 again, and for the first the crowd (0x1C07).
+
+**The states** (switch `0x8670C68C`): 0 and 4 the instructions, 10 the
+Togepi running in from far off during them, 12 and 13/5 the countdown with
+the camera coming round, 1 the race, 14 the results, 8 the menu after, 9 a
+debug menu nothing reaches (the course's patterns and mirrors, by hand).
+
+The browser remake follows this, with a few changes for online play: each
+lane has random numbers of its own (the game's are shared), the Togepi stay
+put on their belts (the game moves each up or down by its rank, −300 to 100,
+3 a frame), the CPUs rank among themselves, and the race is called 30 s after
+the first one's in ([web/README.md](../web/README.md#tumbling-togepi)).
 
 ## How this was found
 

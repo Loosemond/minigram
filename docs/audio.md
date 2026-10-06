@@ -201,6 +201,24 @@ is bank 1's (`0x1C07`-`0x1E09`, above). A channel that never sets an
 instrument plays drums (it starts on them: instOrWave 0); song 30 (sequence 69)
 has five such channels, so the web pack takes their notes as drums.
 
+Tumbling Togepi's (module #55) are bank 9's, the minigame's own (entries
+0-11: sounds `0x60`-`0x65`, `0x72`, and `0x2A`-`0x2E` of the second table),
+with bank 5's count and GO and bank 1's crowd:
+
+| Id | Sound | Effects of font 12 | When (from the code) |
+|---|---|---|---|
+| `0x9F00` | `0x60` | 62 | a hop over a log, or off a Diglett coming up, while dashing (panned to the player) |
+| `0x9F01` | `0x61` | 63, 64 | knocked by a rock or a Diglett, or tripped by a log (frame 2 of the clip) |
+| `0x9F02` | `0x62` | 65 | a winner's cheer, 20 frames into its clip 6 |
+| `0x9F03` | `0x63` (volume 60) | instrument 24 | a footstep: frames 14 and 32 of the run |
+| `0x9F04` | `0x64` | instrument 24 | a footstep in the flowers |
+| `0x9F0B` | second table `0x2E` (pitch 1.24) | 65, 89 | 3 frames into a dash |
+| `0x5F07`, `0x5F08` | `0x3F`, `0x40` | | each count tick; GO (with song 46), and again as each Togepi gets in |
+| `0x1C07` | `0x0E` | 13 | the first one in (the crowd, as in Clear Cut Challenge) |
+
+`0x9F05`-`0x9F0A` (sounds `0x65`, `0x72`, `0x2A`-`0x2D` of the second table)
+aren't asked for by module #55.
+
 ## Timing
 
 What `n64audio.js` uses, from the decomp (`AudioHeap_ResetStep`), for an

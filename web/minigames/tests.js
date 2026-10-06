@@ -19,6 +19,11 @@ const EEVEE = { 1: "d54a9e4e6d7d05ec", 12345: "e4663aef5698855e", 2147483647: "6
 const STAMPEDE = { 1: "84a6cb28cd987d1d", 12345: "2a9b704b839d8309", 2147483647: "15649380292b011a" };
 // Pichu's Power Plant's Electrodes and CPUs for c 0-3: the same as JS_PICHU in tools/test_rooms.py
 const PICHU = { 1: "e27615795ea9a2a3", 12345: "daf3601d2ace0952", 2147483647: "ecb9ea996496d4dd" };
+// Tumbling Togepi: a race with seat 0 on TOGEPI_SCRIPT ([frame, x, y]) and three normal CPUs, every lane
+// every 50 frames: the same as JS_TOGEPI in tools/test_rooms.py
+const TOGEPI = { 1: "efcaeb571cb83ba1", 12345: "98649f14c45fb285", 2147483647: "897e6c53dd29b182" };
+const TOGEPI_SCRIPT = [[0, 0, -60], [100, 45, -60], [160, 0, -60], [260, -60, -45], [300, 0, -60], [500, 30, 0], [530, 0, -60],
+  [700, -45, -45], [760, 60, -60], [800, 0, -60]];
 // the frame the first of three CPUs gets to full charge, the middle of 41 rounds (rules.js cpuPresses)
 const CHARGE_TARGETS = { easy: [500, 590], normal: [365, 420], hard: [295, 345] };
 // the best of the three CPUs' totals in a game, on average (Streaming Stampede: rules.js cpuPresses)
@@ -180,6 +185,27 @@ function autopress(w, every) {
     if (!on || g.state !== "play" || t - last < every || t < 1) return;
     const e = g.P.list[g.P.at.cur[t - 1]];
     if (e && e.from < t) { g.press(e.dir, e.btn); last = t; }
+  };
+  return () => { api.step = step; };
+}
+
+// a scripted Tumbling Togepi player: holds down, steering round what's
+// ahead of it and for the arrows, from inside the game's steps
+function steerFor(l, BOX) {
+  let next = null;
+  for (const o of l.slots) if (o.type >= 0 && o.z > l.z - 20 && o.z < l.z + 320 && (!next || o.z < next.z)) next = o;
+  if (!next) return l.x < 128 ? 30 : l.x > 148 ? -30 : 0;
+  if (next.type === 10) return Math.max(-60, Math.min(60, (next.x - l.x) * 2)); // (an arrow: on to it)
+  const reach = BOX[next.type][0] * 13.8 + 22;
+  if (Math.abs(next.x - l.x) > reach) return 0;
+  return (l.x < next.x && next.x - reach > 66) || next.x + reach > 206 ? -60 : 60;
+}
+async function autorun(w) {
+  const api = w.mg.mini, step = api.step, { BOX } = await moduleOf(w, "./src/togepi/rules.js");
+  api.step = function (dt, on) {
+    const g = api.game, z = w.mg.me();
+    if (on && g.state === "play") g.setStick(steerFor(g.lanes[z], BOX), -60);
+    step.call(api, dt, on);
   };
   return () => { api.step = step; };
 }
@@ -680,13 +706,77 @@ await test("Pichu's Power Plant: a solo game, played headless: a quick, right pl
   return `wins over 4 games on Hard: ${wins.join(", ")}; full at frames ${at.join(", ")}`;
 });
 
+await test("Tumbling Togepi: the lanes and the CPUs are the same as the server's copy of them", async () => {
+  const R = await moduleOf(solo, "./src/togepi/rules.js");
+  const q = (v) => Math.floor(v * 1000 + 0.5);
+  for (const [seed, want] of Object.entries(TOGEPI)) {
+    const C = R.course(+seed), lanes = [0, 1, 2, 3].map((z) => new R.Lane(+seed, z, C, z ? 2 : 0));
+    let s = C.pattern.join(",") + "/" + C.flip.join(",") + ";", k = 0, stick = [0, 0];
+    for (let t = 0; t < 3000; t++) {
+      while (k < TOGEPI_SCRIPT.length && TOGEPI_SCRIPT[k][0] <= t) stick = TOGEPI_SCRIPT[k++].slice(1);
+      for (const l of lanes.slice(1)) l.step(t);
+      R.rankCpus(lanes);
+      lanes[0].step(t, stick[0], stick[1]);
+      if (t % 50 === 0) s += lanes.map((l) => (l.finish !== null ? "F" : [q(l.x), q(l.z), l.tile, q(l.px), q(l.progress), l.state].join(","))).join("|") + ";";
+      if (lanes.every((l) => l.finish !== null)) break;
+    }
+    s += lanes.map((l) => l.finish).join(",");
+    const got = await sha16(s);
+    assert(got === want, `seed ${seed}: ${got}; tools/togepi_rules.py expects ${want} (update both, and the digests)`);
+  }
+});
+
+await test("Tumbling Togepi: its music and sound effects play from sound.bin", () => soundTest("assets/togepi/sound.bin", [
+  ["main", 6, (r) => assert(r.notes > 10 && r.peak > 0.05 && r.peak < 1, `song 46: ${r.notes} notes, peak ${r.peak.toFixed(2)}`)],
+]));
+
+await test("Tumbling Togepi: a finger on your belt steers your Togepi to it", async () => {
+  await solo.mg.show("togepi");
+  const d = solo.mg.mini.debug, got = [];
+  try {
+    for (const x of [70, 138, 200]) {
+      const [sx, sy] = d.tapFor(x, -100), at = d.beltX(sx, sy);
+      got.push(at === null ? "-" : Math.round(at));
+    }
+  } finally { await solo.mg.show("egg"); }
+  assert(got.join() === "70,138,200", `belt x for taps at 70, 138, 200 (${d.mode}): ${got.join()}`);
+  return "the view: " + d.mode;
+});
+
+await test("Tumbling Togepi: a solo race, played headless: all four get there, and the places go by time", async () => {
+  await solo.mg.show("togepi");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners, { BOX } = await moduleOf(solo, "./src/togepi/rules.js");
+  solo.mg.paused = true;
+  g.listeners = {};
+  const out = [];
+  try {
+    for (const [seed, level] of [[11, "easy"], [22, "hard"]]) {
+      g.reset(level, seed, { me: 0, control: ["local", "cpu", "cpu", "cpu"] });
+      g.start();
+      while (g.state === "play" && g.frame < 2400) { g.setStick(steerFor(g.lanes[0], BOX), -60); g.update(1 / 30); }
+      const fin = g.finishes(), res = g.results();
+      assert(fin.every((f) => f !== null), `${level}: not all in: ${fin}`);
+      const order = [...res].sort((a, b) => a.place - b.place).map((r) => fin[r.i]);
+      assert(order.every((f, k) => !k || order[k - 1] <= f), `${level}: places ${res.map((r) => r.place)} for finishes ${fin}`);
+      assert(res.every((r) => r.score === Math.round((fin[r.i] * 100) / 30)), "the times: " + res.map((r) => r.score));
+      out.push(`${level}: ${fin.join(", ")}`);
+    }
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  return "finish frames: " + out.join("; ");
+});
+
 await test("online: rejoining a round, a seat whose player is away is still theirs, not a CPU", async () => {
   // (the server's CPUs are the seats nobody was dealt: a device that took one more would count it itself)
   const round = { online: true, level: "normal", seed: 7, me: 0, control: ["local", "remote", "remote", "cpu"],
                   lineup: [{ seat: 0, here: true }, { seat: 1, here: false }, { seat: 2, here: true }] };
   const out = [];
   try {
-    for (const id of ["stampede", "pichu"]) {
+    for (const id of ["stampede", "pichu", "togepi"]) {
       await solo.mg.show(id);
       solo.mg.mini.reset(round);
       out.push(`${id}: ${solo.mg.mini.game.cpus.join()}`);
@@ -757,7 +847,7 @@ await test("online: Clear Cut Challenge's logs fall together, and a late cut goe
   }
 });
 
-await test("a solo round starts and plays, in all five games", async () => {
+await test("a solo round starts and plays, in all six games", async () => {
   solo.document.querySelector("#play").click();
   await until(() => solo.mg.phase() === "play" && solo.mg.game.time > 4, "Egg Emergency's round to be under way");
   let g = solo.mg.game;
@@ -810,9 +900,21 @@ await test("a solo round starts and plays, in all five games", async () => {
   const charges = [0, 1, 2, 3].map((z) => g.charge(z));
   assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
   assert(charges[0] >= 30 && charges.slice(1).every((x) => x > 5 && x < charges[0]), "4 s in, the charges are " + charges);
+  solo.mg.title();
+  await solo.mg.show("togepi");
+  solo.document.querySelector("#play").click();
+  const stopRun = await autorun(solo);
+  try {
+    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > 120, "Tumbling Togepi's first 4 s", 30000);
+  } finally { stopRun(); }
+  g = solo.mg.game;
+  const far = [0, 1, 2, 3].map((z) => g.progressOf(z));
+  assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
+  assert(far.every((x) => x >= 5 && x < 30), "4 s in, the progress is " + far);
   solo.frameElement.remove();
   return "Clear Cut's first log: " + first.join(", ") + `; Eevee's first race: ${v ? v.pts.join(", ") : "no one"}` +
-    `; Stampede's first answer: ${answer.pts.join(", ")}; Pichu's charges 4 s in: ${charges.join(", ")}`;
+    `; Stampede's first answer: ${answer.pts.join(", ")}; Pichu's charges 4 s in: ${charges.join(", ")}` +
+    `; Togepi's progress 4 s in: ${far.join(", ")}%`;
 }, { live: true });
 
 const code = Array.from({ length: 4 }, () => "BCDFGHJKLMNPQRSTVWXZ"[Math.floor(Math.random() * 20)]).join("");
@@ -1028,6 +1130,40 @@ await test("online: a Pichu's Power Plant game, the same on both devices, and ch
     await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 20000);
     assert(ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
     return `full at frame ${f.at}: ${f.e.join(", ")} (Bob's device has him at ${hits(bob, 1)})`;
+  } finally {
+    stop.forEach((s) => s());
+  }
+}, { live: true });
+
+await test("online: a Tumbling Togepi race, the same on both devices, and cheating doesn't work", async () => {
+  await until(() => ann.mg.room()?.state === "lobby", "the Pichu's Power Plant game to end", 180000);
+  ann.document.querySelector("#menu").click();
+  bob.document.querySelector("#menu").click();
+  ann.document.querySelector(`#lobby .games button[data-game="togepi"]`).click();
+  await until(() => bob.mg.room()?.game === "togepi" && bob.document.title === "Tumbling Togepi", "Tumbling Togepi in the lobby");
+  const stop = [];
+  try {
+    ann.mg.net().send("start");
+    await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the round", 20000);
+    stop.push(await autorun(ann), await autorun(bob));
+    const net = bob.mg.net(), r = ann.mg.room().round, g = bob.mg.game;
+    await until(() => g.frame > 60, "two seconds in", 20000);
+    // Bob steers Ann's Togepi, says a change he didn't make was long ago, and sends one off the stick's range
+    net.send("stick", { r, s: 0, f: g.frame, x: 60, y: 0 });
+    net.send("stick", { r, s: 1, f: 5, x: -60, y: 0 });
+    net.send("stick", { r, s: 1, f: g.frame + 1, x: 90, y: -60 });
+    await until(() => [ann, bob].every((w) => w.mg.game.result), "the end, on both devices", 90000);
+    const res = (w) => JSON.stringify(w.mg.game.result);
+    assert(res(ann) === res(bob), `the end: ${res(ann)} / ${res(bob)}`);
+    const f = ann.mg.game.result;
+    // each device's run of each lane comes to the server's finishes: so the server took the same
+    // sticks (Bob's made-up old one at the frame it counts from, as told back to him)
+    const fins = (w) => w.mg.game.lanes.map((l) => l.finish).join();
+    assert(fins(ann) === f.fin.join() && fins(bob) === f.fin.join(), `finishes: Ann's ${fins(ann)}, Bob's ${fins(bob)}, the server's ${f.fin}`);
+    assert(f.fin[0] !== null && f.fin[1] !== null, "someone didn't get there: " + f.fin);
+    await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 30000);
+    assert(ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
+    return `finishes ${f.fin.join(", ")}`;
   } finally {
     stop.forEach((s) => s());
   }

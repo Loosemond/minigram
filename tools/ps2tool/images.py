@@ -5,6 +5,8 @@ image banks  0x1898000  456 records: u32 count, u32 ptr[count] (0x8FF00000
                          before its texels: u16 w, u16 h, u8 fmt, u8 siz.
                          CI images are followed by their 16-bit palette.
                          Menus, HUDs, minigame sprites, Pokedex art, etc.
+                         Up to 2048 high: bank 226 is Tumbling Togepi's
+                         whole track, 32 x 2048.
 backgrounds  0x1E70000  48 "PRESJPEG" pictures (16-byte header + JPEG)
 academy      0x2230000  59 "PRESJPEG" pictures (Pokemon Academy screens)
 faces        0x2268000  67 records: u32 count, u32 offset[count], same
@@ -65,7 +67,7 @@ def _write_png(path, w, h, rgba):
 
 def _described(d, off):
     w, h, fmt, siz = struct.unpack_from(">HHBB", d, off - 8)
-    if not (0 < w <= 1024 and 0 < h <= 1024) or _nbytes(w, h, siz) < 0 \
+    if not (0 < w <= 2048 and 0 < h <= 2048) or _nbytes(w, h, siz) < 0 \
             or off + _nbytes(w, h, siz) > len(d):
         return None
     return w, h, fmt, siz

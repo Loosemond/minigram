@@ -368,7 +368,10 @@ async function showResults() {
     li.querySelector(".n").textContent = seats[i].name;
     li.querySelector(".badge").alt = seats[i].human ? i + 1 + "P" : "COM";
   });
-  const key = current.game + ":" + current.level, isBest = !(mine.score <= (best[key] ?? -Infinity));
+  // (a game's "lower" scores are times: the less the better; a null score didn't count)
+  const key = current.game + ":" + current.level, had = best[key];
+  const isBest = mine.score !== null && mine.score !== undefined
+    && (info.lower ? !(mine.score >= (had ?? Infinity)) : !(mine.score <= (had ?? -Infinity)));
   $("#newbest").hidden = !isBest;
   if (isBest) { best[key] = mine.score; telegram.set(bestKey(current.game, current.level), mine.score); showBest(); }
   phase = "results";

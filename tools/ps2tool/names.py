@@ -39,7 +39,7 @@ OBJECTS = {
     13: "Purple Crystal", 24: "Potted Plant (berries)", 26: "Purple Crystal", 36: "Stand",
     45: "Stand", 51: "Room Wall", 52: "Hitmontop", 53: "Golbat", 54: "Room (miniature)",
     55: "Pinsir", 56: "Power Plant Frame", 57: "Electrode Lamp", 58: "Round Face on a Stick",
-    59: "Signpost", 60: "Platform", 62: "Flower Patch", 63: "Blue Rock", 64: "Blue Rock",
+    59: "Signpost", 60: "Treadmill Platform", 62: "Flower Patch", 63: "Blue Rock", 64: "Blue Rock",
     65: "Log", 66: "Log", 67: "Log", 68: "Pillar", 69: "Pillar", 70: "Pillar", 71: "Bird",
     72: "Trophy (egg)", 73: "Trophy (N)", 74: "Trophy (laurel)", 75: "Trophy (small)",
     76: "Round Face", 77: "Checkered Bowl", 78: "Green Field", 79: "Shadow Disc",
@@ -61,9 +61,9 @@ OBJECTS = {
     170: "GameCube", 171: "Baseball Bat and Glove", 172: "Christmas Tree", 173: "Computer",
     174: "Christmas Stocking", 175: "Diamond Ring", 176: "Grand Piano", 177: "Game Boy Advance",
     178: "Bag of Chips", 179: "Scizor", 180: "Game Boy", 181: "Snorlax", 182: "Trainer Doll",
-    183: "Bush", 184: "Candy", 186: "Cleffa (shiny)", 187: "Pole", 188: "Ice Block", 189: "Lab Room",
+    183: "Bush", 184: "Candy", 186: "Cleffa (shiny)", 187: "Pole", 188: "Dash Aura", 189: "Lab Room",
     190: "Dizzy Stars", 195: "White Ring", 196: "White Ring", 197: "White Ring", 198: "White Ring",
-    201: "Pikachu", 202: "Water Plane", 205: "Igglybuff (shiny)", 206: "Omanyte", 208: "Orange",
+    201: "Pikachu", 202: "Dash Arrow", 205: "Igglybuff (shiny)", 206: "Omanyte", 208: "Orange",
     209: "Melon", 210: "Bananas", 211: "Strawberry", 212: "Apple", 213: "Grapes", 214: "Lab Room",
     215: "Peach", 216: "Strawberries", 217: "Green Glow Panel", 218: "Mr. Mime", 219: "Grey Panel",
     221: "Rainbow Ring", 222: "Dark Disc", 223: "Girafarig", 224: _TV + " (space)",
@@ -117,6 +117,7 @@ BANKS = {
     383: "banner Rampage Rollout", 388: "banner Eager Eevee", 395: "banner Gutsy Golbat",
     396: "banner Clear Cut Challenge", 400: "banner Topsy-Turvy", 403: "banner Egg Emergency",
     405: "banner Furret's Frolic", 408: "banner Pichu's Power Plant", 411: "banner Streaming Stampede",
+    417: "banner Tumbling Togepi",
     385: "Rampage Rollout final lap", 386: "Rampage Rollout lap",  # (by appearance)
     389: "Eager Eevee prizes", 390: "Eager Eevee digits", 392: "Eager Eevee rounds",
     393: "Eager Eevee sec box", 394: "Eager Eevee time digits",
@@ -134,6 +135,10 @@ BANKS = {
     # Pichu's Power Plant (module #54): its effects and charge gauges
     224: "Pichu's Power Plant spark", 225: "Pichu's Power Plant lightning",
     409: "Pichu's Power Plant gauge fill", 410: "Pichu's Power Plant gauge frame",
+    # Tumbling Togepi (module #55): the whole track the treadmills scroll (32 x
+    # 2048: START, the 10-90 marks and GOAL), and the rank coins over the
+    # Togepi; it also uses 205 (Diglett, popping out of the track) and 434
+    226: "Tumbling Togepi track", 387: "Tumbling Togepi rank",
     412: "Streaming Stampede all", 413: "Streaming Stampede names", 414: "Streaming Stampede answer digits",
     # shared by menus and boards (by appearance, and Streaming Stampede's question board)
     51: "buttons", 165: "board rod and chain", 345: "arrows",

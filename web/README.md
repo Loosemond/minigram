@@ -12,6 +12,7 @@ have a game picker; a game's code and files load the first time it's picked.
 | Eager Eevee | [minigames/src/eevee/](minigames/src/eevee/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#eager-eevee)) |
 | Streaming Stampede | [minigames/src/stampede/](minigames/src/stampede/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#streaming-stampede)) |
 | Pichu's Power Plant | [minigames/src/pichu/](minigames/src/pichu/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#pichus-power-plant)) |
+| Tumbling Togepi | [minigames/src/togepi/](minigames/src/togepi/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#tumbling-togepi)) |
 
 ## Run it
 
@@ -39,6 +40,7 @@ game's round), `mg.mini` (the game's module), `mg.paused = true`, `mg.tick(dt)`
 (one frame by hand, for a hidden page), `mg.lean(-1 | 0 | 1)`, `mg.cut()`,
 `mg.mini.debug.dash()` and `.feint()` (Eager Eevee), `mg.mini.debug.count()` (Streaming Stampede),
 `mg.mini.debug.press(dir, "a" | "b")` (Pichu's Power Plant: dir 1 up, 2 down, 3 right, 4 left),
+`mg.mini.debug.stick(x, y)` (Tumbling Togepi: -60-60 each, x right, y up; `mg.mini.debug.lanes` the four lanes),
 `mg.show("clearcut")`, `mg.title()`, `mg.net()`, `mg.room()`,
 `mg.sound.engine` (the audio engine, once it's loaded). It works on localhost
 only, unless `debug` is true in `src/config.js`. `clips.html` plays every clip
@@ -434,6 +436,61 @@ server's copy: the Electrodes, the presses, the CPUs and the finish),
 and pictures and `src/pichu/index.js` the camera, the controls, its HUD and
 its online messages.
 
+## Tumbling Togepi
+
+Four Togepi race down four treadmills side by side. Each belt scrolls the
+same course towards its Togepi, which faces you: hold down to run (the belt
+moves), steer left and right round what comes. Flowers slow you while you're
+in them; a rock, or a Diglett that's up, knocks you over; a log trips you (you
+tumble on along the belt, but slower than running). A blue arrow starts a
+dash: faster, hopping along, over most things; a log, or a Diglett coming
+up, bounces you and takes some of the speed off; another arrow speeds it up
+more. The first to the goal wins. It follows the game's own code (module #55:
+[docs/minigames.md](../docs/minigames.md#tumbling-togepi) has where each
+number is):
+
+- **The course**: five sections, each one of the game's 20 patterns of four
+  rows (later sections pick from harder ones), sometimes mirrored; everyone
+  has the same. The belt shows the game's track picture (image bank 226: START,
+  the 10-90 marks, GOAL) moving under the Togepi as it runs.
+- **Running**: speed by how far the stick is down (the D-pad and the keys are
+  full), and across by how far it's to the side. A dash adds speed for about
+  5.6% of the course, more with each arrow on the way.
+- **The CPUs** are the game's: they look ahead (further the harder they are),
+  pick a side of each obstacle (more often the better one when they're harder),
+  run round it, and now and then go for an arrow while dashing. On Normal the
+  first of three gets there in about 27 s; running straight through takes
+  about 36 s.
+
+With a mouse, the screen is the game's one screen (its camera comes round from
+the side during the countdown, over the scenery the game shows then), as big
+as fits; hold ↓ to run and ← → to steer (or hold the mouse button on your
+belt: as a finger). On a phone your belt has the big view (under the other
+three in portrait, beside them in landscape): hold anywhere on it to run, and
+your Togepi heads for your finger. The cards sit below each belt's near end,
+with how far each has got; a rank coin floats over each Togepi, and on each
+belt the others' badges show where they are along the track, as in the game.
+The end: the camera comes down to the winner, who cheers, and goes round.
+
+**Sound**: the game's (`assets/togepi/sound.bin`, 343 KB): song 46 from GO,
+bank 9's effects (footsteps, in the flowers too, a knock, a bounce, the dash,
+the winner's cry), bank 5's count and GO (again as each one reaches the goal)
+and Clear Cut Challenge's crowd for the first in.
+
+What comes from the ROM and what is made up:
+
+| From the game | Made for the remake |
+|---|---|
+| the course (its 20 patterns, how they're picked and mirrored), the running, the obstacles and what each does, the dashes, the Diglett's timing, the CPUs, the finish, the progress (module #55's code) | each lane draws from random numbers of its own, the CPUs rank among themselves, and a Togepi stays where it is on its belt (in the game it moves up or down by its rank, and the CPUs look at the ranks): so a lane depends on nothing but its own player, and every device and the server can run it; the race is called 30 s after the first one's in (the game waits for all four) |
+| Togepi (109) and its clips, the platform (60), the flowers, rocks, logs and arrows (62-67, 202), the dash's aura (188), the scenery (132-140), the track (bank 226), the Diglett (205), the rank coins (387), the shadows (307), the badges (434), the camera, its glide in and its end | Togepi in every seat (the game's Omanyte comes from a Game Pak), the aura drawn as a glow, the rank coins half the size, the touch steering, a view a belt on phones, the title's art (the track, side by side) |
+| song 46, the effects of banks 9, 5 and 1 | |
+
+Code: `src/togepi/rules.js` has the rules (and `tools/togepi_rules.py`, the
+server's copy: the course, the lanes, the CPUs and the end),
+`src/togepi/game.js` the game and its scene, `src/togepi/assets.js` the
+models and pictures and `src/togepi/index.js` the cameras, the controls, its
+HUD and its online messages.
+
 ## Online play
 
 **Play with friends** on the title screen makes a room with a four-letter
@@ -489,6 +546,16 @@ How it works:
   if it counts on another frame or not at all (the device works its charge out
   again), plays the CPUs itself from the seed, and says who finished first
   (`won`) once no press still on its way could make someone full sooner.
+- **Tumbling Togepi**: devices send their player's stick as it changes (the
+  frame, x and y); the server keeps the changes in order (no older than the
+  way here allows, not in the future), passes them on, tells the sender's
+  device if one counts from another frame, and runs every lane itself
+  (`tools/togepi_rules.py`, the same as `src/togepi/rules.js`, bit for bit,
+  the CPUs too, from the seed) as far as no change still on its way could
+  alter; it says how the race ended (`won`: all four in, or called 30 s after
+  the first) once that's decided. A device runs the others' lanes from their
+  changes a little behind (as in Egg Emergency), and again from a saved point
+  when one comes in late.
 - **Eager Eevee**: devices send each dash and feint, with the frame their
   player pressed on, and the server checks it could have happened then (the
   Eevee at its place, not bouncing back or blown away: `tools/eevee_rules.py`,
@@ -609,11 +676,11 @@ Messages are JSON objects with their type in `t`. From the client:
 
 | `t` | Fields | |
 |---|---|---|
-| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`, `eevee`, `stampede`, `pichu`) |
+| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`) |
 | `ping` | `c`, `rtt` | the client's clock; answered with `pong`. `rtt`: a round trip it can count on, ms (from the last pongs) |
 | `name` | `name` | rename |
 | `level` | `level` | host, in the lobby: `easy`, `normal` or `hard` |
-| `game` | `game` | host, in the lobby: `egg`, `clearcut`, `eevee`, `stampede` or `pichu` |
+| `game` | `game` | host, in the lobby: `egg`, `clearcut`, `eevee`, `stampede`, `pichu` or `togepi` |
 | `start` | | host, in the lobby |
 | `lean` | `r`, `s`, `g`, `l` | in round `r`, seat `s` leans `l` (−1, 0, 1) from round time `g` (s) |
 | `ev` | `r`, `s`, `g`, `n`, `k`, `e` | seat `s` caught its drop `n` (`k: "c"`) or was shocked by it (`"h"`), as this device judged it; `e` is its egg count after. The server answers only if it disagrees |
@@ -621,6 +688,7 @@ Messages are JSON objects with their type in `t`. From the client:
 | `dash` | `r`, `s`, `k`, `f` | Eager Eevee: seat `s` pressed A (`k: "a"`, a dash) or B (`"b"`, a feint) on frame `f` from GO |
 | `count` | `r`, `s`, `n`, `f` | Streaming Stampede: seat `s` pressed (counted one) on frame `f` of question `n`'s counting |
 | `press` | `r`, `s`, `f`, `d`, `b` | Pichu's Power Plant: seat `s` pressed A (`b: 5`) or B (`6`) on frame `f` from GO, held towards `d` (1 up, 2 down, 3 right, 4 left) |
+| `stick` | `r`, `s`, `f`, `x`, `y` | Tumbling Togepi: seat `s`'s stick is at `x`, `y` (-60-60 each, right and up) from frame `f` from GO |
 | `done` | `r` | this device's round is over |
 | `leave` | | |
 
@@ -640,7 +708,9 @@ Eager Eevee: `ee`, with `level` (the level code the rounds are dealt for) and,
 to rejoin, `scores` and `prizes`, each seat's by round. Streaming Stampede:
 `ss`, with `told`, the answers so far as `ans` gives them, to rejoin. Pichu's
 Power Plant: `pp`, with `done`, the finish as `won` gives it (null till then),
-and `presses`, the people's so far, `[f, d, b]` by seat, to rejoin);
+and `presses`, the people's so far, `[f, d, b]` by seat, to rejoin. Tumbling
+Togepi: `tg`, with `done`, the end as `won` gives it (null till then), and
+`sticks`, the people's stick changes so far, `[f, x, y]` by seat, to rejoin);
 `pong` (`c`, `s`); `cut` (`r`, `s`, `n`, `f`, `p`, `e`), the server's word on
 a seat's swing at a log: the frame (null: no swing), the points and the
 total after, and `a: 1` for a miss that doesn't count yet (the seat may swing
@@ -654,7 +724,10 @@ count, points and total after; `press` as above, passed on to the others, and
 to its own device with `o`, the frame it said, if it counts on another one
 (`f`), or `x: 1` if it doesn't count; `won` (`r`, `f`, `w`, `e`), Pichu's
 Power Plant's finish: its frame, the winners (1 or 0 by seat) and each seat's
-charge then;
+charge then; `stick` as above, passed on to the others, and to its own
+device with `o`, the frame it said, if it counts from another one; `won`
+(`r`, `f`, `fin`, `p`), Tumbling Togepi's end: the frame it ended on, each
+seat's finish frame (null: not in) and how far each got (‰);
 `lean` as above (with the time the server kept: never before the seat's last
 lean); `ev` (`r`, `s`, `n`, `k`, `e`, `g`), the server's verdict on a drop:
 `c` caught, `h` a shock, or `m`, not a catch after all, with the egg count

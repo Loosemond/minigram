@@ -180,8 +180,31 @@ PICHU.update({"pichu_face%d.png" % i: "objects/107_pichu/textures/face/tex%02d%s
               for i in range(28)})
 UI["title_pichu.png"] = bank(408, 0)
 
+# Tumbling Togepi is code module #55. It loads Togepi (109; Omanyte, 206, for
+# a Game Pak's Omanyte), the treadmills' platform (60), what comes along the
+# belts: flowers (62), rocks (63, 64), logs (65-67), the dash arrows (202) and
+# pillars (68-70, on no course), the dash's aura (188), and the scenery round
+# it all (132-140, shown while the camera comes in and at the end); and image
+# banks 226 (the whole track the belts scroll), 205 (Diglett, popping out of
+# the belt: made into a strip below), 387 (the rank coins over the Togepi) and
+# 434 (the badges), and 307 (Eager Eevee's effects: the shadows). Its name
+# banner is bank 417.
+_TG = "objects/%03d_%s/%03d_%s.glb"
+TOGEPI = {name: _TG % (n, f, n, f) for name, n, f in (
+    ("togepi.glb", 109, "togepi"), ("platform.glb", 60, "treadmill_platform"), ("flower.glb", 62, "flower_patch"),
+    ("rock_s.glb", 63, "blue_rock"), ("rock.glb", 64, "blue_rock"), ("log_s.glb", 65, "log"), ("log_m.glb", 66, "log"),
+    ("log_l.glb", 67, "log"), ("arrow.glb", 202, "dash_arrow"), ("aura.glb", 188, "dash_aura"),
+    ("hills.glb", 132, "rainbow_arc"), ("plants.glb", 133, "small_plants"), ("grass_arc.glb", 134, "grass_arc"),
+    ("cacti.glb", 135, "cacti"), ("thin_arc.glb", 136, "thin_arc"), ("ring.glb", 137, "grass_ring"),
+    ("ring_dirt.glb", 138, "grass_ring"), ("pieces.glb", 139, "grass_pieces"), ("arc.glb", 140, "grass_arc"))}
+TOGEPI["track.png"] = bank(226, 0)
+TOGEPI["shadow.png"] = bank(307, 1)  # (the round shadow under each Togepi: Eager Eevee's bank, 0x86700020)
+TOGEPI.update({"rank%d.png" % (i + 1): bank(387, i) for i in range(4)})
+UI["title_togepi.png"] = bank(417, 0)
+
 # folder -> {asset name: file under out/}
-FILES = {"ui": UI, "egg": EGG, "clearcut": CLEARCUT, "eevee": EEVEE, "stampede": STAMPEDE, "pichu": PICHU}
+FILES = {"ui": UI, "egg": EGG, "clearcut": CLEARCUT, "eevee": EEVEE, "stampede": STAMPEDE, "pichu": PICHU,
+         "togepi": TOGEPI}
 
 # Sound (docs/audio.md). A game asks for song n, which the game plays as
 # sequence n + 39. The effects are sounds of sequence 9, the one the game runs
@@ -294,6 +317,22 @@ SOUNDS = {
         **SHARED,
         "count": _sound(0x13, 100, 5, 0x0100, sfx=[16]),  # 0x2F00, the minigame's own count
         "go": _sound(0x14, 100, 5, 0x0100, sfx=[17]),  # 0x2F01, and GO
+    }),
+    # Tumbling Togepi asks for song 46 (sequence 85) at GO. Its effects are
+    # bank 9's (0x9Fxx), its count and GO bank 5's (0x5F07, 0x5F08: the GO
+    # again as each Togepi reaches the goal) and the crowd for the first
+    # there Clear Cut Challenge's (0x1C07)
+    "togepi": ({"main": 85, "win": 94}, {
+        "bounce": _sound(0x60, 95, 1, 0x0001),  # 0x9F00, a hop over a log, or off a Diglett coming up
+        "knock": _sound(0x61, 110, 1, 0x0001),  # 0x9F01, knocked by a rock or a Diglett, or tripped by a log
+        "cheer": _sound(0x62, 110, 1, 0x0001),  # 0x9F02, a winner's cheer (20 frames into clip 6)
+        "step": _sound(0x63, 60, 1, 0x0001),  # 0x9F03, a footstep (frames 14 and 32 of the run)
+        "flowerStep": _sound(0x64, 85, 1, 0x0001),  # 0x9F04, a footstep in the flowers
+        "dash": dict(_sound(0xAE, 110, 3, 0x0001), pitch=1.24),  # 0x9F0B, 3 frames into a dash
+        "crowd": _sound(0x0E, 110, 1, 0x4000, sfx=[13]),  # 0x1C07, the first to the goal
+        **SHARED,
+        "count": _sound(0x3F, 100, 2, 0x0C00),  # 0x5F07
+        "go": _sound(0x40, 127, 2, 0x0C00),  # 0x5F08
     }),
 }
 
@@ -513,6 +552,25 @@ if roms:
         with open(os.path.join(site, "pichu", name + ".png"), "wb") as fh:
             fh.write(png.encode_rgba(1, fh_, b"".join(px[y * fw * 4:y * fw * 4 + 4] for y in range(fh_))))
     print("pichu: the sparks, the lightning and the gauge (image banks 224, 225, 409, 410)")
+    # Tumbling Togepi's Diglett (bank 205: its hole, then coming up), side by
+    # side; and its art for the title and the lobby: the track (bank 226),
+    # its eight 256 px lengths side by side, START to GOAL
+    frames = images.bank_images(rom, 205)
+    w, h = frames[0][1], frames[0][2]
+    rows = [b"".join(rgba[y * w * 4:(y + 1) * w * 4] for _, _, _, rgba in frames) for y in range(h)]
+    with open(os.path.join(site, "togepi", "diglett.png"), "wb") as fh:
+        fh.write(png.encode_rgba(w * len(frames), h, b"".join(rows)))
+    (_, tw, th, track), = images.bank_images(rom, 226)
+    gap, n = 8, th // 256
+    aw = n * tw + (n - 1) * gap
+    art = bytearray(aw * 256 * 4)
+    for y in range(256):
+        for k in range(n):
+            o = (y * aw + k * (tw + gap)) * 4
+            art[o:o + tw * 4] = track[((k * 256 + y) * tw) * 4:((k * 256 + y) * tw + tw) * 4]
+    with open(os.path.join(site, "togepi", "art.png"), "wb") as fh:
+        fh.write(png.encode_rgba(aw, 256, bytes(art)))
+    print("togepi: the Diglett strip and the art (image banks 205, 226)")
     sound = audio.Audio(rom.data)
     for game, (songs, sounds) in SOUNDS.items():
         dst = os.path.join(site, game, "sound.bin")
