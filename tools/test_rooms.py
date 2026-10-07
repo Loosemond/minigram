@@ -992,6 +992,12 @@ def _():
         w.step(t, [])
         t += 1
     assert w.end == barrier_rules.TIME or max(w.scores) == barrier_rules.GOAL, (w.end, w.scores)
+    # a device sends its player's pad a few frames ahead (src/lag.js leadFor): it counts then; far
+    # ahead, AHEAD frames on
+    g = barrier_rules.Round(3, "normal", [False, True, True, True])
+    here = 10
+    assert g.pad(0, here + 3, 10, 0, here / barrier_rules.FPS, 0.2) == here + 3
+    assert g.pad(0, here + 40, 20, 0, here / barrier_rules.FPS, 0.2) == here + 1 + barrier_rules.AHEAD
 
 
 @check("Barrier Ball: the server runs the world from the pads, says how it ended and stops cheats", together="Barrier")

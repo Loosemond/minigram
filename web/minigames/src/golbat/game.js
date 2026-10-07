@@ -14,6 +14,7 @@
 import * as THREE from "three";
 import { makeModel } from "./assets.js";
 import * as R from "./rules.js";
+import { leadFor } from "../lag.js";
 
 // the frame the play ends on (the cave's stopped), and how long the winners
 // cheer before the round's over (made for the remake: the game shows its
@@ -122,6 +123,8 @@ export class Game {
     this.me = setup.me ?? 0;
     this.control = setup.control || [0, 1, 2, 3].map((z) => (z === this.me ? "local" : "cpu"));
     this.cpus = setup.cpus || this.control.map((c) => c === "cpu");
+    // (online, with other people: this device's player's pads count this many frames on, src/lag.js)
+    this.lead = leadFor(this.control.map((c, z) => c === "remote" && !this.cpus[z]), setup.delay);
     this.world = new R.World(seed, level, this.cpus);
     this.inputs = [[], [], [], []]; // each person's pad: [frame, stick x, flap 0/1]
     this.snaps = [[0, this.world.save()]]; // the world as it was before a frame
@@ -276,14 +279,14 @@ export class Game {
 
   // what happens on frame t (from GO): this device's player's pad is kept (and sent), and the world runs
   step(t) {
-    const me = this.me;
+    const me = this.me, f = t + this.lead; // (online: a few frames ahead, src/lag.js leadFor)
     if (this.control[me] === "local" && !this.cpus[me]) {
       const x = this.stick, a = this.flaps > 0 ? 1 : 0;
       if (a) this.flaps--;
       if (x !== this.lastX || a) {
-        this.inputs[me].push([t, x, a, t]); // ([frame, x, A, the frame it was sent for])
+        this.inputs[me].push([f, x, a, f]); // ([frame, x, A, the frame it was sent for])
         this.lastX = x;
-        this.emit("send", { s: me, f: t, x, a });
+        this.emit("send", { s: me, f, x, a });
       }
     }
     this.runTo(t);

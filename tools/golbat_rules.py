@@ -11,6 +11,7 @@ one's hearts at the end.
 import math
 
 SEATS = 4
+AHEAD = 4  # frames ahead of now a pad may be for (a device sends its player's up to 3 ahead: src/lag.js leadFor)
 FPS = 30
 LEVELS = {"easy": 1, "normal": 2, "hard": 3}
 
@@ -766,7 +767,7 @@ class Round:
         if not -64 <= x <= 64:
             return None
         here = int(now * FPS)
-        f = min(max(f, here - int(allow * FPS)), here + 1)  # (no older than the way here allows; not in the future)
+        f = min(max(f, here - int(allow * FPS)), here + 1 + AHEAD)  # (no older than the way here allows; not far ahead)
         f = max(f, self.world.t + 1)  # (not what's been run)
         if self.pads[s]:
             last = self.pads[s][-1]

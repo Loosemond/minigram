@@ -513,7 +513,7 @@ function toLobby() {
 }
 
 function connectNet() {
-  net = new Net(serverUrl());
+  net = new Net(serverUrl(), testing ? +params.get("lag") || 0 : 0); // (?lag=: a slower connection, to test with)
   net.on("status", (s) => { status = s; renderStatus(); });
   net.on("welcome", (m) => {
     mySeat = m.seat;

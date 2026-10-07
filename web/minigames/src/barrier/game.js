@@ -15,6 +15,7 @@
 import * as THREE from "three";
 import { makeModel, piece, COURT_PIECES } from "./assets.js";
 import * as R from "./rules.js";
+import { leadFor } from "../lag.js";
 
 // frames after the end before the round's over (the winners' dance: made for
 // the remake, the game shows its results over them)
@@ -44,7 +45,8 @@ const GLOW = 76; // a glow's size round a full-size ball (bank 151's, 2.6 x the 
 const TRAIL_FOR = 8 / (R.STEPS * R.FPS);
 const SNAP = 6; // frames between the world's saved states (for running it again)
 const KEEP = 20 * R.FPS; // and how far back they go
-const SMOOTH = 0.82; // a corrected Mr. Mime's or ball's ease to where it is, a 60th of a second
+const SMOOTH = 0.82; // a corrected ball's ease to where it is, a 60th of a second
+const SMOOTH_MIME = 0.88; // and a Mr. Mime's (gentler: a stick on its way shifts it a little at a time)
 const deg = (a) => (a / 0x10000) * 2 * Math.PI;
 
 export class Game {
@@ -86,6 +88,9 @@ export class Game {
     this.me = setup.me ?? 0;
     this.control = setup.control || [0, 1, 2, 3].map((z) => (z === this.me ? "local" : "cpu"));
     this.cpus = setup.cpus || this.control.map((c) => c === "cpu");
+    // (online, with other people: this device's player's pads count this many frames on, src/lag.js)
+    this.lead = leadFor(this.control.map((c, z) => c === "remote" && !this.cpus[z]), setup.delay);
+    this.stats = { rewinds: 0, again: 0, mimes: 0, balls: 0, most: 0, heard: 0, late: 0 }; // (for the tests: runs again, frames run again, how far things were put right, others' pads heard, late)
     this.world = new R.World(seed, level, this.cpus);
     this.inputs = [[], [], [], []]; // each person's pad: [frame, stick x, A 0/1]
     this.snaps = [[0, this.world.save()]]; // the world as it was before a frame
@@ -164,6 +169,8 @@ export class Game {
       } // (else one it never made here: the server has it, from this device's connection)
       while (k > 0 && list[k - 1][0] > m.f) k--;
       list.splice(k, 0, [m.f, m.x, m.a]);
+      this.stats.heard++;
+      if (m.f <= this.simT) this.stats.late++; // (for a frame already run)
       this.rewind(m.f);
       return;
     }
@@ -179,6 +186,8 @@ export class Game {
     if (!this.was) this.was = { t: this.simT, at: this.positions() };
     while (this.snaps.length > 1 && this.snaps[this.snaps.length - 1][0] > f) this.snaps.pop();
     const [at, state] = this.snaps[this.snaps.length - 1];
+    this.stats.rewinds++;
+    this.stats.again += this.simT - at + 1;
     this.world.load(state);
     this.simT = at - 1;
   }
@@ -204,12 +213,18 @@ export class Game {
         w.m.forEach((m, z) => {
           this.offsets[z][0] += this.was.at.m[z][0] - m.x;
           this.offsets[z][1] += this.was.at.m[z][1] - m.y;
+          const moved = Math.hypot(this.was.at.m[z][0] - m.x, this.was.at.m[z][1] - m.y);
+          this.stats.mimes += moved;
+          this.stats.most = Math.max(this.stats.most, moved);
         });
         for (const b of w.balls) {
           const p = this.was.at.b.get(b.id);
           if (!p) continue;
           const o = this.ballOffsets.get(b.id) || [0, 0];
           this.ballOffsets.set(b.id, [o[0] + p[0] - b.x, o[1] + p[1] - b.y]);
+          const moved = Math.hypot(p[0] - b.x, p[1] - b.y);
+          this.stats.balls += moved;
+          this.stats.most = Math.max(this.stats.most, moved);
         }
         this.was = null;
       }
@@ -256,18 +271,27 @@ export class Game {
   // the frame the play ended on: the server's, else this device's world's
   endFrame() { return this.result ? this.result.f : this.world.end; }
 
-  // what happens on frame t (from GO): this device's player's pad is kept (and sent), and the world runs
+  // what happens on frame t (from GO): this device's player's pad is kept (and sent) for frame
+  // t + LEAD, and the world runs. (Online, the others' devices have it before they get to that
+  // frame, mostly, so they needn't run the world again: see LEAD.) Going for a target (the mouse,
+  // or a finger), the pad's worked out from where Mr. Mime will be by then
   step(t) {
-    const me = this.me;
+    const me = this.me, f = t + this.lead;
     if (this.control[me] === "local" && !this.cpus[me] && this.world.end === null) {
       let x = this.stick;
-      if (this.target !== null) x = Math.max(-64, Math.min(64, Math.round((this.target - this.world.m[me].x) / (0.09 * R.STEPS))));
+      if (this.target !== null) {
+        this.runTo(t - 1); // (as far as it's known)
+        const m = this.world.m[me];
+        let at = m.x;
+        for (let k = t; k < f; k++) at = Math.max(m.xmin, Math.min(m.xmax, at + this.padAt(me, k)[0] * 0.09 * R.STEPS));
+        x = Math.max(-64, Math.min(64, Math.round((this.target - at) / (0.09 * R.STEPS))));
+      }
       const a = this.smashes > 0 ? 1 : 0;
       if (a) this.smashes--;
       if (x !== this.lastX || a) {
-        this.inputs[me].push([t, x, a, t]); // ([frame, x, A, the frame it was sent for])
+        this.inputs[me].push([f, x, a, f]); // ([frame, x, A, the frame it was sent for])
         this.lastX = x;
-        this.emit("send", { s: me, f: t, x, a });
+        this.emit("send", { s: me, f, x, a });
       }
     }
     this.runTo(t);
@@ -299,7 +323,8 @@ export class Game {
   // ---- every rendered frame ----
   animate(dt) {
     const k = Math.pow(SMOOTH, dt * 60);
-    for (const o of this.offsets) { o[0] *= k; o[1] *= k; }
+    const km = Math.pow(SMOOTH_MIME, dt * 60);
+    for (const o of this.offsets) { o[0] *= km; o[1] *= km; }
     for (const [id, o] of this.ballOffsets) {
       o[0] *= k; o[1] *= k;
       if (Math.abs(o[0]) + Math.abs(o[1]) < 0.01) this.ballOffsets.delete(id);

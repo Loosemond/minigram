@@ -163,7 +163,7 @@ export async function create(shell, onProgress) {
       // (online: the seats nobody was dealt are CPUs, as the server has them)
       const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me)
         : [0, 1, 2, 3].map((z) => !(round.lineup || []).some((p) => p.seat === z));
-      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, told: m?.gb });
+      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, told: m?.gb, delay: round.delay });
       shell.stopSound();
       keys.clear();
       stickTouch = null;

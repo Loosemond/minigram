@@ -695,6 +695,25 @@ How it works:
   `tools/barrier_rules.py`; the play can end on any frame (a fifth point), so
   the server looks again every half second, and says each one's points
   (`won`).
+- **Sent ahead** (Gutsy Golbat, Barrier Ball): a device's player's pad counts
+  a few frames after it's made, and goes out at once with that frame, so it
+  gets to the other devices before they run it: they needn't run the world
+  again, and nothing on their screens is put right after the fact. How many
+  frames (`src/lag.js` `leadFor`): enough for the way to the slowest other
+  person's device (both round trips, from `start`'s `rtt`), 1 to 3 (100 ms at
+  most; none offline, or with only CPUs); the server takes pads up to 4 frames
+  ahead (`AHEAD`). Going for the mouse or a finger, Mr. Mime's pad is worked
+  out from where it will be by then. Measured with `?lag=80` on two pages
+  (80 ms there and back each, a phone's) in Barrier Ball, 15 s each: with the
+  keys (the stick jumps), Ann's device put Mr. Mime right by 96 units a second
+  without it, up to 98 at once, and not at all with it (3 frames); with a
+  finger, 44 a second and 0.9; at `?lag=150`, 162 and 70 (the largest 135 and
+  73). What's still put right eases there (Mr. Mime over about a fifth of a
+  second, a ball faster).
+- **The clock**: a better ping eases a device's copy of the server's clock to
+  it, running at most 5% fast or slow meanwhile, so a round's frames don't
+  stall or come in a burst (by more than half a second, at once: the first
+  pings, after a sleep).
 - **Eager Eevee**: devices send each dash and feint, with the frame their
   player pressed on, and the server checks it could have happened then (the
   Eevee at its place, not bouncing back or blown away: `tools/eevee_rules.py`,
@@ -768,7 +787,8 @@ How it works:
   or less; mild ones like "Poop" (and the real name "Dick") were near 0.1, so
   they're turned down too. Answers are remembered; if TypeSafe can't be
   reached, the name goes through.
-- `?debug`, `?server=` and `?norender` (the tests: run without drawing) work on localhost only.
+- `?debug`, `?server=`, `?norender` (the tests: run without drawing) and `?lag=ms` (a
+  slower connection: that much more there and back) work on localhost only.
 
 What it can't stop: a script that plays perfectly by the rules (it can know
 the drops, or the frame to cut on, or count the stream it's dealt), which looks just like a flawless player; a modified host making

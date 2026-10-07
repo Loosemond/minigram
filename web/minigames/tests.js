@@ -125,11 +125,12 @@ function lanesFrames() {
   return {
     open: (query) => frame(query, opened),
     // Ann (the host) and Bob in a new room on game id, in its lobby; their frames don't draw
-    async pair(id) {
+    // (more: more for their URLs, e.g. "&lag=80")
+    async pair(id, more = "") {
       const code = Array.from({ length: 4 }, () => "BCDFGHJKLMNPQRSTVWXZ"[Math.floor(Math.random() * 20)]).join("");
-      const ann = await this.open(`norender&create&room=${code}&as=t-${id}-0&name=Ann&game=${id}`);
+      const ann = await this.open(`norender&create&room=${code}&as=t-${id}-0&name=Ann&game=${id}${more}`);
       await until(() => ann.mg.room()?.room === code, "Ann's room");
-      const bob = await this.open(`norender&create&room=${code}&as=t-${id}-1&name=Bob&game=${id}`);
+      const bob = await this.open(`norender&create&room=${code}&as=t-${id}-1&name=Bob&game=${id}${more}`);
       const { GAMES } = await moduleOf(ann, "./src/games.js");
       await until(() => [ann, bob].every((w) => w.mg.room()?.players.length === 2 && w.mg.room().game === id && w.document.title === GAMES[id].name),
                   `Ann and Bob in the lobby, on ${GAMES[id].name}`, 30000);
@@ -900,8 +901,10 @@ await test("Gutsy Golbat: online, the others' pads coming in late run the world 
     for (const l of late.filter((l) => l.at >= 1000)) g.told("pad", { s: 2, f: l.e[0], x: l.e[1], a: l.e[2] });
     g.runTo(g.lastFrame);
     // the same world with every pad on time
-    const w = new R.World(77, "normal", [false, true, false, true]);
-    for (let t = 0; t <= g.lastFrame; t++) w.step(t, [golbatPad(0, t), null, [golbatPad(2, t)[0], golbatPad(2, t)[1]], null]);
+    // (this device's own count g.lead frames after they're made)
+    const w = new R.World(77, "normal", [false, true, false, true]), L = g.lead;
+    assert(L === 3, "this device's pads lead by " + L);
+    for (let t = 0; t <= g.lastFrame; t++) w.step(t, [t < L ? [0, false] : golbatPad(0, t - L), null, [golbatPad(2, t)[0], golbatPad(2, t)[1]], null]);
     assert(g.world.digest() === w.digest(), `at frame ${g.lastFrame}: hearts ${g.world.scores} here, ${w.scores} on time`);
     return `frame ${g.lastFrame}: hearts ${w.scores.join(", ")}; ${g.snaps.length} saved frames`;
   } finally {
@@ -1012,9 +1015,10 @@ await test("Barrier Ball: online, the others' pads coming in late run the world 
     }
     for (const l of late.filter((l) => l.at >= t)) g.told("pad", { s: 2, f: l.e[0], x: l.e[1], a: l.e[2] });
     g.runTo(g.lastFrame);
-    // the same world with every pad on time
-    const w = new R.World(77, "normal", [false, true, false, true]);
-    for (let f = 0; f <= g.lastFrame; f++) w.step(f, [barrierPad(0, f), null, barrierPad(2, f), null]);
+    // the same world with every pad on time (this device's own count g.lead frames after they're made)
+    const w = new R.World(77, "normal", [false, true, false, true]), L = g.lead;
+    for (let f = 0; f <= g.lastFrame; f++) w.step(f, [f < L ? [0, false] : barrierPad(0, f - L), null, barrierPad(2, f), null]);
+    assert(L === 3, "this device's pads lead by " + L); // (no round trips known: the most)
     assert(g.world.digest() === w.digest(), `at frame ${g.lastFrame}: points ${g.world.scores} here, ${w.scores} on time`);
     return `frame ${g.lastFrame}: points ${w.scores.join(", ")}; ${g.snaps.length} saved frames`;
   } finally {
@@ -1347,6 +1351,43 @@ lane(2, (f) => test("online: a Barrier Ball round, the same on both devices, and
     await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 30000);
     assert(ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
     return `points ${f.p.join(", ")} at frame ${f.f}`;
+  } finally {
+    stop.forEach((s) => s());
+  }
+}, { live: true }));
+
+lane(2, (f) => test("online: Barrier Ball on slow connections: each device sends its pads a few frames ahead", async () => {
+  // (80 ms there and back on each: a phone's, about. Two pages alone, Bob's pads all get to Ann
+  // before they're due, so she never runs the world again (web/README.md). Here, with a dozen
+  // games in the page, its one thread holds them up, so this only checks they're sent ahead)
+  const { ann, bob } = await f.pair("barrier", "&lag=80");
+  await sleep(3000); // (in the lobby a while: the pings)
+  const stop = [], ahead = [];
+  try {
+    ann.mg.net().send("start");
+    await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the round", 20000);
+    for (const [w, k] of [[ann, 2.1], [bob, 2.4]]) {
+      const api = w.mg.mini, step = api.step;
+      api.step = function (dt, on) {
+        if (on && api.game.state === "play") api.game.setStick([64, 0, -64, 0][Math.floor((performance.now() / 1000) * k) % 4]);
+        step.call(api, dt, on);
+      };
+      stop.push(() => { api.step = step; });
+    }
+    const gb = bob.mg.game, emit = gb.emit;
+    gb.emit = function (type, m) {
+      if (type === "send") ahead.push(m.f - (gb.lastFrame + 1)); // (made on frame lastFrame + 1)
+      return emit.call(this, type, m);
+    };
+    stop.push(() => { gb.emit = emit; });
+    const g = ann.mg.game;
+    await until(() => g.lastFrame > 60, "two seconds in", 20000);
+    const zero = { ...g.stats };
+    await sleep(6000);
+    assert(g.lead === 3 && gb.lead === 3, `the leads: ${g.lead}, ${gb.lead}`);
+    assert(ahead.length > 10 && ahead.every((d) => d === 3), "Bob's pads, frames ahead: " + ahead.join());
+    const heard = g.stats.heard - zero.heard, late = g.stats.late - zero.late;
+    return `lead 3: ${late} of Bob's ${heard} pads came in late; Mr. Mime put right by ${((g.stats.mimes - zero.mimes) / 6).toFixed(1)} a second`;
   } finally {
     stop.forEach((s) => s());
   }
