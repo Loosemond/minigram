@@ -1647,7 +1647,8 @@ bit 1), 62 a Game Boy (a Game Boy Advance with bit 0), 80 a stocking, else
 candy (none while two are on the belt), at a random place along the belt (in
 340 whole units, taking its width and 8 more each side) if that's free; a
 ring comes with `0x8F14`, a piano with `0x8F15`. It rides in from z 235 at 3
-a frame to 135 (at a height of 5.56), unless a Delibird that reaches it but
+a frame to 135 (at a height of 5.56; a flat picture, its joint drawn facing
+the camera: see [fragments.md](fragments.md)), unless a Delibird that reaches it but
 can't take it (picking a gift up, knocked over, full, or not facing it) is in
 its way (`0x86A02A9C`). A Delibird reaches it within its half width × 8.33 ×
 0.8 + 19.35 across, and from 19.35 in front of it to 2 × its depth × 8.33 ×

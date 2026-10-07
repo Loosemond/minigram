@@ -56,7 +56,7 @@ A byte-coded scene graph. Each command has a fixed size by its first byte:
 | 0x17 | 0x14 | texture tables: s16 texture count +2, s16 TLUT count +4, pointer texture table +8, pointer TLUT table +0xC |
 | 0x18 | 8 | attachment point, label 100 |
 | 0x1C | 0x10 | root scale: 3 × s32 16.16 at +4 |
-| 0x1D | 0x1C | joint: u8 id +1, u8 flags +2, s8 animation channel +3, s16 translation ×3 +4, s16 rotation ×3 +0xA (binary angles, 65536 = 360°), s32 16.16 scale ×3 +0x10 |
+| 0x1D | 0x1C | joint: u8 id +1, u8 flags +2 (2: drawn facing the camera, below), s8 animation channel +3, s16 translation ×3 +4, s16 rotation ×3 +0xA (binary angles, 65536 = 360°), s32 16.16 scale ×3 +0x10 |
 | 0x1E | 8 | draw a display list (+4) on the joint with id s16 +2, which may be defined later |
 | 0x1F | 0x18 | arena static transform: s16 rotation in degrees ×3 +4, s16 translation ×3 +0xA, s16 scale in percent ×3 +0x10 |
 | 0x20 | 0x14 | draw display list (pointer +0x10) |
@@ -64,6 +64,18 @@ A byte-coded scene graph. Each command has a fixed size by its first byte:
 | 0x22 | 8 | draw display list (pointer +4) in render layer u8 +1 (arenas: 1 opaque, 4 alpha-tested, 5+ translucent) |
 | 0x23 | 0x10 | material state: s16 texture-animation channel +2 (−1 none), pointer material display list +4, s16 texture index +8, s16 TLUT index +0xA, RGBA colour +0xC |
 | 0x24 | 4 | attachment point, s16 label +2 |
+
+A joint with flag 2 faces the camera: the walker (`0x80040880`, command
+`0x1D` of the table at `0x80094D14`) keeps it on the joint (+0x31), and the
+drawing (`0x8003B858`) builds its matrix with `0x80037184` / `0x800367F4`:
+the camera's own turn (its matrix at camera +0x64, transposed), the parent's
+scale along each axis, at the parent's place for the joint. So a flat picture
+on such a joint is always seen square on, wherever the camera is: the gifts
+and props (169-178, 180-182, 184: those of Delibird's Delivery among them),
+the fruit (208-213, 215, 216), the dizzy stars (190), sparks and flashes
+(199, 200), the panels (217, 219), and parts of others: Swinub (82, 103),
+Poké Balls (153, 154), Pineco (151), the Electrode lamp (57) and
+24, 33, 49, 115, 130, 131, 185, 203, 204, 207.
 
 Known sizes of the rest (skipped by the walker): 0x07 8, 0x09 4, 0x0A 8,
 0x0B 0x18, 0x0C–0x16 4 each except 0x13 8, 0x14 0xC, 0x15 0xC, 0x19 8,

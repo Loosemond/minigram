@@ -27,6 +27,7 @@ const KEEP = 20 * R.FPS; // and how far back they go
 const SMOOTH = 0.88; // a corrected Delibird's ease to where it is, a 60th of a second
 const STAGE = 1 / 9; // the stage's scale, and the rest (0x86A004B4)
 const DELIBIRD = 0.07923809438943863, GIFT = 0.2222222238779068, BOX = 1 / 9, SWINUB = 0.6;
+const FACING = /^(gift|swinub)/; // the models drawn facing the camera (see camera())
 const CLIP_RATE = 1.5; // Delibird's clips: 1.5 frames a frame (0x18000)
 const SHADOW = 16 * 2.5, SHADOW_A = 0x80 / 255; // the shadows: image bank 307's dot at 2.5, black at 128 (0x86A0B8A4)
 const LABEL_Y = 55, LABEL = [36, 18], LABEL_A = 0xb4 / 255; // the label over each (the remake's size)
@@ -465,11 +466,12 @@ export class Game {
     (this.spare[v.kind] ||= []).push(v);
   }
 
-  // the camera's place: the game's, the Swinub turned to it
+  // the camera's place: the game's, the gifts and the Swinub turned to it (flat
+  // pictures on joints flagged to be drawn at the camera's turn: 0x8003B858)
   camera(cam) {
     cam.position.set(...CAMERA.eye);
     cam.lookAt(...CAMERA.at);
-    for (const [, v] of this.things) if (v.kind.startsWith("swinub")) v.model.root.quaternion.copy(cam.quaternion);
+    for (const [, v] of this.things) if (FACING.test(v.kind)) v.model.root.quaternion.copy(cam.quaternion);
   }
 
   // ---- the end ----
