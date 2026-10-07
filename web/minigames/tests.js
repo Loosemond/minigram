@@ -1037,6 +1037,38 @@ await test("Barrier Ball: a finger slides Mr. Mime the way it goes on the screen
   assert(got.join() === "10,end,10,stop", "10 px, past the end, back 20 px, let go: " + got.join());
 });
 
+await test("online: the server moving this device's own moves to later frames keeps them in its order", async () => {
+  // (Gutsy Golbat, Barrier Ball and Tumbling Togepi: two of them the server got late, both put on frame 15)
+  const out = [];
+  try {
+    for (const [id, type] of [["golbat", "pad"], ["barrier", "pad"], ["togepi", "stick"]]) {
+      await solo.mg.show(id);
+      const api = solo.mg.mini, g = api.game, saved = g.listeners, other = type === "pad" ? "a" : "y";
+      solo.mg.paused = true;
+      g.listeners = {};
+      try {
+        g.reset("normal", 5, { me: 0, control: ["local", "cpu", "cpu", "cpu"], cpus: [false, true, true, true] });
+        g.start();
+        for (let t = 0; t <= 12; t++) {
+          if (t === 10 || t === 11) g.setStick(t === 10 ? 20 : 40, 0);
+          g.step(t);
+          g.lastFrame = t;
+        }
+        g.told(type, { s: 0, f: 15, o: 10, x: 20, [other]: 0 });
+        g.told(type, { s: 0, f: 15, o: 11, x: 40, [other]: 0 });
+        const x = (t) => (type === "pad" ? g.padAt(0, t) : g.stickAt(0, t))[0];
+        out.push(`${id}: ${x(14)}, ${x(15)}, ${x(20)}`);
+      } finally {
+        g.listeners = saved;
+        solo.mg.paused = false;
+        api.idle();
+      }
+    }
+  } finally { await solo.mg.show("egg"); }
+  // (the server's: the one it got last counts on frame 15)
+  assert(out.every((o) => o.endsWith(": 0, 40, 40")), "the stick on frames 14, 15 and 20: " + out.join("; "));
+});
+
 await test("online: rejoining a round, a seat whose player is away is still theirs, not a CPU", async () => {
   // (the server's CPUs are the seats nobody was dealt: a device that took one more would count it itself)
   const round = { online: true, level: "normal", seed: 7, me: 0, control: ["local", "remote", "remote", "cpu"],

@@ -200,15 +200,17 @@ export class Game {
       const z = m.s;
       if (!(z >= 0 && z < 4) || this.cpus[z] || !Number.isInteger(m.f) || !Number.isInteger(m.x) || !Number.isInteger(m.y)) return;
       const list = this.inputs[z];
-      if (this.control[z] === "local") { // one of this device's own, as the server has it (from another frame)
-        const k = list.findIndex(([f, x, y]) => f === m.o && x === m.x && y === m.y && f >= this.lastFrame - 60);
-        if (k >= 0) list[k][0] = m.f;
-        else list.push([m.f, m.x, m.y]); // (one it never made here: the server has it, from this device's connection)
-        list.sort((a, b) => a[0] - b[0]);
-        this.rewind(z, Math.min(m.f, k >= 0 ? m.o : m.f));
-        return;
-      }
       let k = list.length;
+      if (this.control[z] === "local") { // one of this device's own, as the server has it (from another frame)
+        // (they stay in the order they were made, as the server keeps them: it never puts one on a
+        // frame before the last one's, so they're in order again once it's told of each one it moved)
+        const j = list.findIndex((e) => e[3] === m.o && e[1] === m.x && e[2] === m.y);
+        if (j >= 0) {
+          list[j][0] = m.f;
+          this.rewind(z, Math.min(m.f, m.o));
+          return;
+        }
+      } // (else one it never made here: the server has it, from this device's connection)
       while (k > 0 && list[k - 1][0] > m.f) k--;
       list.splice(k, 0, [m.f, m.x, m.y]);
       this.rewind(z, m.f);
@@ -273,7 +275,7 @@ export class Game {
     if (this.control[me] === "local" && !this.cpus[me]) {
       const [x, y] = this.stick, list = this.inputs[me], last = list[list.length - 1];
       if (!last ? x || y : last[1] !== x || last[2] !== y) {
-        list.push([t, x, y]);
+        list.push([t, x, y, t]); // ([frame, x, y, the frame it was sent for])
         this.emit("send", { s: me, f: t, x, y });
       }
     }
