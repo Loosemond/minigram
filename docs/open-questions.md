@@ -23,7 +23,17 @@ What isn't known yet, roughly by how useful it would be.
   layouts in the module that nothing points to (`0x86307088`: a 120 × 60
   quad that flashes red with a smash; `0x86307158`: a big triangle with image
   bank 147's star); how big a ball's glow and trail are drawn (bank 151 on
-  `0x87F08E3C`'s quad); and the countdown's length (`0x87F00688`).
+  `0x87F08E3C`'s quad, which is the image's size in units, centred: what
+  scale the module gives it isn't read); and the countdown's length
+  (`0x87F00688`).
+- **Rampage Rollout's loose ends** (its rules are read: [minigames.md](minigames.md#rampage-rollout)):
+  image bank 343 (Gutsy Golbat's glow: loaded by module #52, but nothing
+  found draws it); the Donphan that run in from by the camera before the
+  countdown (state 2: `0x8640708C`, `0x86406EF0`; the remake starts at the
+  countdown); the end's camera move (`0x86405138`: `m2c` garbles the call,
+  the remake takes its arguments in order: from the winners, (−200, +450,
+  +80), looking at (+90, −40, 0)); and sound `0x5F02` (`0x39`), in bank 5 but
+  not asked for.
 - **Audio:** the voices' codec (5, in sample banks 4–6), the reverb
   settings, the game's custom sequence function (`0x800275D8`), and the
   0x28-byte records at `0x49B780` ([audio.md](audio.md)).

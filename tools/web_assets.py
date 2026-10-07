@@ -235,9 +235,34 @@ BARRIER = {
 }
 UI["title_barrier.png"] = bank(374, 0)
 
+# Rampage Rollout is code module #52. It loads Donphan (108: walking, and
+# curled up rolling, layout 1), the track (113: its field, and the red frame
+# round it, both at 0.37) and image banks 150 (a dust cloud: a whirlwind, 16
+# frames), 159 (the dust a running Donphan kicks up, 8 frames), 384 (the stars
+# over a Donphan, one for each cloud it has), all made into strips below (the
+# clouds and stars in each player's colours), 307 (Eager Eevee's effects: the
+# shadows), 385 (FINAL LAP!), 386 (the LAP gear), 387 (the rank coins) and 434
+# (the badges). Its name banner is bank 383.
+ROLLOUT = {
+    "donphan.glb": "objects/108_donphan/108_donphan.glb",
+    "donphan_rolling.glb": "objects/108_donphan/108_donphan_rolling.glb",
+    "field.glb": "objects/113_green_field/113_green_field.glb",
+    "frame.glb": "objects/113_green_field/113_red_frame.glb",
+    "shadow.png": bank(307, 0),
+    "final.png": bank(385, 0),
+    "lap.png": bank(386, 0),
+    "button_a.png": bank(51, 0),  # (the menus' A button: the dust cloud button on a phone)
+}
+ROLLOUT.update({"rank%d.png" % (i + 1): bank(387, i) for i in range(4)})
+UI["title_rollout.png"] = bank(383, 0)
+# a cloud's and a star's colours, by player (0x864095D0: the combiner makes
+# env + (prim - env) x the picture's grey)
+ROLLOUT_COLOURS = [((0xA5, 0xEB, 0xFF), (0x00, 0x23, 0xCD)), ((0xB9, 0xFF, 0xA5), (0x00, 0x69, 0x00)),
+                   ((0xFF, 0xB9, 0xC3), (0x9B, 0x0F, 0x23)), ((0xFF, 0xF5, 0x87), (0x7D, 0x41, 0x00))]
+
 # folder -> {asset name: file under out/}
 FILES = {"ui": UI, "egg": EGG, "clearcut": CLEARCUT, "eevee": EEVEE, "stampede": STAMPEDE, "pichu": PICHU,
-         "togepi": TOGEPI, "golbat": GOLBAT, "barrier": BARRIER}
+         "togepi": TOGEPI, "golbat": GOLBAT, "barrier": BARRIER, "rollout": ROLLOUT}
 
 # Sound (docs/audio.md). A game asks for song n, which the game plays as
 # sequence n + 39. The effects are sounds of sequence 9, the one the game runs
@@ -406,16 +431,37 @@ SOUNDS = {
         "count": _sound(0x13, 100, 5, 0x0100, sfx=[16]),  # 0x2F00
         "go": _sound(0x14, 100, 5, 0x0100, sfx=[17]),  # 0x2F01 (with song 35)
     }),
+    # Rampage Rollout asks for song 34 (sequence 73) 30 frames after GO, and
+    # song 100 when the leader starts the final lap: that's 34 again, 17 beats a
+    # minute faster (the remake speeds the song up). Its effects are bank 5's
+    # (0x5Fxx, and 0x5001, 0x5404: the same entries), placed by where they
+    # happen; 0x4F06 is bank 4's, 0x1C07 bank 1's (the crowd: the first in)
+    "rollout": ({"main": 73, "win": 94}, {
+        "step": dict(_sound(0x38, 75, 1, 0x0001), pitch=0.49),  # 0x5F00, a footstep (each time the run comes round)
+        "roll": _sound(0x3C, 83, 1, 0x0001),  # 0x5001, rolling (every frame of it)
+        "hit": _sound(0x3A, 95, 1, 0x0010),  # 0x5F03, sent flying by a cloud, or knocked over
+        "dizzy": dict(_sound(0x3B, 67, 1, 0x1000), pitch=1.24),  # 0x5404, every 5 frames of it
+        "slump": dict(_sound(0x3D, 100, 1, 0x0001), pitch=0.35),  # 0x5F05, a loser at the end (15 frames into clip 3)
+        "cheer": dict(_sound(0x3E, 100, 4, 0x1000), pitch=0.6),  # 0x5F06, a winner (4 frames into clip 2, twice)
+        "lap": _sound(0x41, 105, 3, 0x0100, sfx=[40]),  # 0x5F09, the leader starts a lap (its script works out its effect, as 0x42-0x47's)
+        "final": _sound(0x2E, 127, 2, 0x0200),  # 0x5F0A, the leader starts the final lap
+        "cloud": _sound(0x36, 103, 1, 0x0010),  # 0x4F06, a dust cloud dropped
+        "crowd": _sound(0x0E, 110, 1, 0x4000, sfx=[13]),  # 0x1C07, the first one in
+        **SHARED,
+        "count": _sound(0x3F, 100, 2, 0x0C00),  # 0x5F07, each count tick
+        "go": _sound(0x40, 127, 2, 0x0C00),  # 0x5F08, GO, and each one in
+    }),
 }
 
-def flat_picture(glb_path, width, more=(), box=None):
+def flat_picture(glb_path, width, more=(), box=None, top=False):
     """A model drawn front on (looking down -z, no perspective) into a picture
     width pixels wide: (w, h, RGBA). Its parts go where its bones put them,
     and the nearest wins (a depth buffer). For the title's art, where a
     minigame has no background picture (Streaming Stampede's circus backdrop,
     Pichu's Power Plant's frame, Barrier Ball's court). more: other models
     with it, (path, dx, dy) each; box: (x0, y0, x1, y1), the part of it to
-    draw (else all of it)."""
+    draw (else all of it); top: seen from above (looking down -y, +x right
+    and -z up), for a model that lies flat (Rampage Rollout's track)."""
     import json
     import struct
     import zlib
@@ -477,6 +523,8 @@ def flat_picture(glb_path, width, more=(), box=None):
         def place(p, jn):
             m = world[joints[jn]] if joints else ident
             x, y, z = (m[i][0] * p[0] + m[i][1] * p[1] + m[i][2] * p[2] + m[i][3] for i in range(3))
+            if top:
+                x, y, z = x, -z, y
             return x + dx, y + dy, z
 
         parts = []
@@ -593,6 +641,13 @@ if os.path.exists(_court):
     with open(os.path.join(site, "barrier", "art.png"), "wb") as fh:
         fh.write(png.encode_rgba(*flat_picture(_court, 400, _walls, (-27, -27, 27, 27))))
 
+# Rampage Rollout's art for the title and the lobby: its track from above (and the meadow round it)
+_field = os.path.join(site, "rollout", "field.glb")
+if os.path.exists(_field):
+    with open(os.path.join(site, "rollout", "art.png"), "wb") as fh:
+        fh.write(png.encode_rgba(*flat_picture(_field, 400, [(os.path.join(site, "rollout", "frame.glb"), 0, 0)],
+                                               (-15, -12.5, 15, 12.5), top=True)))
+
 if roms:
     rom = Rom(roms[0])
     for name, (w, h, rgba) in minigames.clearcut_textures(rom).items():
@@ -686,6 +741,28 @@ if roms:
         with open(os.path.join(site, "golbat", "glow%d.png" % z), "wb") as fh:
             fh.write(png.encode_rgba(gw, gh, bytes(px)))
     print("golbat: the Magnemite and heart strips and the glows (image banks 69, 222, 343)")
+    # Rampage Rollout's dust (bank 159) and clouds (150), each a strip of its
+    # frames; the clouds and the stars (384) in each player's colours
+    def strip(frames):
+        w, h = frames[0][1], frames[0][2]
+        return w * len(frames), h, b"".join(b"".join(rgba[y * w * 4:(y + 1) * w * 4] for _, _, _, rgba in frames)
+                                             for y in range(h))
+
+    def tint(rgba, prim, env):
+        px = bytearray(rgba)
+        for o in range(0, len(px), 4):
+            g = px[o]
+            px[o:o + 3] = bytes(e + (p - e) * g // 255 for p, e in zip(prim, env))
+        return bytes(px)
+    with open(os.path.join(site, "rollout", "dust.png"), "wb") as fh:
+        fh.write(png.encode_rgba(*strip(images.bank_images(rom, 159))))
+    clouds, star = strip(images.bank_images(rom, 150)), images.bank_images(rom, 384)[0]
+    for z, (prim, env) in enumerate(ROLLOUT_COLOURS):
+        with open(os.path.join(site, "rollout", "cloud%d.png" % z), "wb") as fh:
+            fh.write(png.encode_rgba(clouds[0], clouds[1], tint(clouds[2], prim, env)))
+        with open(os.path.join(site, "rollout", "star%d.png" % z), "wb") as fh:
+            fh.write(png.encode_rgba(star[1], star[2], tint(star[3], prim, env)))
+    print("rollout: the dust and cloud strips and the stars (image banks 159, 150, 384)")
     sound = audio.Audio(rom.data)
     for game, (songs, sounds) in SOUNDS.items():
         dst = os.path.join(site, game, "sound.bin")

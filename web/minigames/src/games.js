@@ -142,5 +142,23 @@ export const GAMES = {
     messages: ["pad", "won"],
     load: () => import("./barrier/index.js"),
   },
+  rollout: {
+    id: "rollout",
+    name: "Rampage Rollout",
+    banner: "assets/ui/title_rollout.png", // image bank 383
+    art: "assets/rollout/art.png", // (its track from above: tools/web_assets.py)
+    color: "#3b2a1c",
+    how: `Race your Donphan round the track! It runs by itself: <b>slide a finger</b> (or the D-pad) to turn
+      it at the corners, a quarter turn at a time. Press <b>A</b> to drop a <b class="volt">dust cloud</b>:
+      whoever runs into it goes flying. You earn clouds each lap, more the further back you are; on the
+      final lap a cloud sends you off at full tilt. Press A at GO for a rocket start. First of nine laps wins!`,
+    keys: "Keyboard: <kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd> turn, <kbd>Space</kbd> a dust cloud",
+    unit: (n) => (n === null || n === undefined ? "–" : `${(n / 100).toFixed(2)}<small>s</small>`),
+    lower: true, // (a time: the less the better)
+    invite: "Race me in Rampage Rollout!",
+    store: "rollout_",
+    messages: ["pad", "won"],
+    load: () => import("./rollout/index.js"),
+  },
 };
-export const ORDER = ["egg", "clearcut", "eevee", "stampede", "pichu", "togepi", "golbat", "barrier"];
+export const ORDER = ["egg", "clearcut", "eevee", "stampede", "pichu", "togepi", "golbat", "barrier", "rollout"];

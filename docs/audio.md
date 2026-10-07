@@ -74,13 +74,15 @@ What each minigame's code module asks for:
 | Streaming Stampede | 29, 30, 31, 32 | 68 (its opening), 69 (from the first question), 70 (the results), 71 (before the last answer) |
 | Topsy-Turvy | 33 | 72 |
 | Barrier Ball | 35 | 74 |
+| Rampage Rollout | 34, 100 | 73 (30 frames after GO; 100, when the leader starts the final lap, is 34 again 17 beats a minute faster) |
 | Egg Emergency | 45 | 84 (122 BPM, a 23.6 s loop, font 49) |
 | Tumbling Togepi | 46 | 85 |
 | Furret's Frolic | 47 | 86 |
 | Delibird's Delivery | 52 | 91 |
 | Eager Eevee | 53, 54, 101 | 92 (a held roll, after each prize), 93 (as Aipom calls each round; 101 is 54, 40 beats a minute faster, for the final one) |
 
-Rampage Rollout passes its song in a register. After the finish, the
+Rampage Rollout passes its song in a register (`0x86408CA0`: the song, and
+frames to wait, the old one fading meanwhile). After the finish, the
 minigame results (module #45) play songs 76 (sequence 115) and 55
 (sequence 94, a 3.6 s fanfare; song 57, sequence 96, is another).
 
@@ -263,6 +265,30 @@ sets `0x80090D14` to 7, which `0x80027628` turns into audio command 0x49
 (450 / 18, the 7th entry of `0x800A3B30`'s table), for 450 frames: the tune
 ends up 18 beats a minute faster. The remake does the same
 (`musicTempo` in `web/minigames/src/audio.js`).
+
+Rampage Rollout's (module #52) are bank 5's (`0x5F00`-`0x5F0A`; it also asks
+for `0x5001` and `0x5404`, the same entries), placed by where the Donphan is
+(`0x87C03B60`, then `0x8002780C`), and `0x4F06` and `0x1C07` (banks 4 and 1).
+Rolling and the stun ring on until they're stopped: the game asks for them
+again each frame (every 5) while they last; rolling shares the footsteps'
+channel. Sound `0x41`'s script works out its effect from the sound number as
+`0x42`-`0x47`'s do, so `tools/web_assets.py` lists it by hand:
+
+| Id | Sound | Effects of font 12 | When (from the code) |
+|---|---|---|---|
+| `0x5F00` | `0x38` (volume 75, pitch 0.49) | | a footstep: each time a Donphan's run comes round |
+| `0x5001` | `0x3C` (volume 83) | | rolling (a rocket start's 30 frames, the last lap), every frame of it |
+| `0x5F03` | `0x3A` | | sent flying by a dust cloud, or knocked over |
+| `0x5404` | `0x3B` (volume 67, pitch 1.24) | | every 5 frames of either |
+| `0x4F06` | `0x36` | | a dust cloud dropped |
+| `0x5F05`, `0x5F06` | `0x3D` (pitch 0.35), `0x3E` (pitch 0.6) | | at the end: a loser's slump (15 frames into clip 3), a winner's cheer (4 frames into clip 2, twice) |
+| `0x5F07`, `0x5F08` | `0x3F`, `0x40` | | each count tick; GO, and each Donphan as it gets in |
+| `0x5F09` | `0x41` (volume 105) | 40 | the leader starts a lap |
+| `0x5F0A` | `0x2E` | | the leader starts the final lap (with song 100) |
+| `0x1C07` | `0x0E` | 13 | the first one in (the crowd) |
+
+`0x5F01` (sound `0x3C`, rolling's) and `0x5F02` (`0x39`) aren't asked for by
+module #52 by that id.
 
 ## Timing
 

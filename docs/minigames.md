@@ -47,7 +47,7 @@ characters' models.
 | Furret's Frolic | Furret 142, Girafarig 223 | Poké Balls 153, leaf pile / shards / chips 155, bush 183 |
 | Barrier Ball | Mr. Mime 218 (the play), 129 (the countdown and the end) | the court 120 (7 layouts: its floor, lines and hole, and its four walls), the barrier 141 (named mesh panels by appearance before), 146 (loaded; nothing found draws it), Poké Ball 154 |
 | Pichu's Power Plant | Pichu 107, Pikachu 201 | the power plant's frame 056 (a window of four rooms by appearance before), the electrode lamps 057, dizzy stars 190 (wall pieces by appearance before) |
-| Rampage Rollout | Donphan 108 (walking, rolling) | track 113 (2 layouts) |
+| Rampage Rollout | Donphan 108 (walking; rolling, layout 1) | the track 113 (layout 0 its field: the dirt track round a grass block, in a meadow; layout 1 the wooden fence round it, named Red Frame by appearance) |
 | Streaming Stampede | Cleffa 114 (186 shiny), Igglybuff 119 (205 shiny) | the players' booths 080 and 100–102 (named Game Paks by appearance before), ramp 116, circus backdrop 117, books 118; the Pokémon that go by are sprites (image banks 201–220) |
 | Tumbling Togepi | Togepi 109, Omanyte 206 | the treadmills' platform 060, flower patch 062, rocks 063–064, logs 065–067, pillars 068–070 (on no course), the scenery round it 132–140, the dash's aura 188, the dash arrow 202 (named an ice block and a water plane by appearance before) |
 | Delibird's Delivery | Delibird 127 | Swinub 082 and 103, gift boxes 092 and 096, factory 147 and 148, gifts 169, 170, 174–177, 180, 181, 184 |
@@ -1163,6 +1163,140 @@ countdown (Mr. Mime mimes, then puts up its barrier), 4 the play, 5 the end,
 The browser remake runs this world on every device and on the server, from
 everyone's pads (the CPUs think in it), and turns the view so each player's
 own corner is at the bottom ([web/README.md](../web/README.md#barrier-ball)).
+
+## Rampage Rollout
+
+Module #52 (ROM `0x27E840`, linked at `0x86400000`; code to `0x95D0`, data
+from `0x95D0`, constants and strings from `0x9990`) was read with `m2c` on a
+`spimdisasm` listing, checked against the instructions where `m2c` got lost,
+and the remake (`web/minigames/src/rollout/`) plays by its rules. Its context
+is at `0x86409CB8` (`*0x86416C00`): +0 SPEED, +4 ACCELE, +8 LAP (below), +0x10
+the state, +0x14-0x60 the camera and its move, +0x70 the menu's data (+0x2180
+the mode, +0x2181 the COM level, 1 Easy, 2 Normal, 3 Hard, +0x2182 a bit per
+person), +0x7D0 the four Donphan (objects, 0x18C each), +0xE00 the dust clouds
+(24), +0x3334 the dust a Donphan kicks up (80), +0xB554 the stars, +0xCB8C
+the players' records (0x5C each), +0xCDFC the leader's. A record: +0 the
+player, +4 the part of the track it's in (below), +0xC the laps to go, +0x10
+how far round it is, +0x14 its place (0-3), +0x18 its speed and +0x1C a boost
+on top, +0x20 frames of rolling, +0x2C a bump's push, +0x38 frames stunned,
++0x40 frames since a CPU's last cloud, +0x44 the clouds it holds, +0x48 the
+way it's to face and +0x4C the way it faces, +0x50 how old a cloud must be
+before a CPU steers round it, +0x54 a CPU's line. A Donphan's flags (+0xC):
+0x80000000 sent flying by a cloud, 0x20000000 knocked over, 0x10000000 just
+off a wall, 0x08000000 a cloud ready, 0x02000000 a rocket start still
+possible, 0x01000000 just dropped a cloud, 0xF00000 the four corners passed
+this lap, 0x40000 in, 0x10000 a winner. The instructions (text 50.6): "Use
+the + Control Pad to run around the track. The first to complete nine laps
+wins. Press the A Button to leave a dust cloud. You can earn and save up to
+three dust clouds per lap, depending on your rank."
+
+**Its tuning** (a debug menu, `0x86407610`): SPEED 556.8/60 (9.28 a frame),
+ACCELE 51/60, LAP 9, and the camera's.
+
+**The scene**: the track (object 113 at 0.37, `0x86405BEC`: layout 0 the
+field, the dirt track round a grass block in a meadow; layout 1 the wooden
+fence round the track) lies in the plane y = 0, seen from (0, 1049.5, 553)
+towards (0, 30, 30) with a fov of 30 (geo layout `0x86409734`). A Donphan
+(object 108 at 0.04, walking; layout 1 curled up, rolling) has a radius of
+23.2: its middle stays within x ±309.8 and z ±254.3 (the fence) and out of
+the block, x ±148 by z ±92.5 (its edges and its corners, which a Donphan
+slides round as round a post: `0x86400028`, `0x86401550`). Sprites drawn on
+the shared module's quad (`0x87F08E3C`: the image's size in units, centred):
+a dust cloud, image bank 150 (a whirlwind, 16 frames, at 2.5, lying flat: the
+camera's steep enough that it stands up), the dust a running Donphan kicks up
+(bank 159, 8 frames, on a 64 square), the stars over a Donphan, one for each
+cloud it holds (bank 384 at 1.5, 110 above it, 30 apart), clouds and stars
+in each player's colours (`0x864095D0`: the combiner makes env + (prim − env)
+× the picture's grey), and its shadow (bank 307, Eager Eevee's effects: 2.53
+across and 5.28 along, round while it rolls).
+
+**The race** goes the other way from a clock seen from above: along the top
+to the left, down the left side, along the bottom to the right, up the right
+side. The track is in eight parts (`0x86404824`): the corners (past x ±124.8
+and z ±69.3: top left, bottom left, bottom right, top right, each passed
+setting its bit) and the four sides; a part's D-pad directions back the way
+the race goes don't count (`0x86402158`). Each frame (`0x86404D8C`), for
+each Donphan in turn: its part, its input (a person's D-pad held, and A
+pressed; a CPU's, below), its update; then the bumps; then, for each, the
+bumps' push, its lap, its place; then the clouds; then the walls.
+
+**A Donphan** (`0x86402B1C`) runs on by itself, the way it last turned: the
+D-pad turns it (up, then down, left, right, the first held: only a quarter
+turn, never back the way it's going, and not into a wall it's against,
+`0x86401F60`), and it turns to face that way half the rest each frame (its
+wrap is the game's: 65535 − d past 32767). On the ground it speeds up by
+ACCELE × 0.22 a frame, to SPEED × 0.85 for the leader, 0.9, 0.95, and all of
+it for the last: the further back, the faster. A boost on top dies away ×
+0.9 a frame. A wall it runs into (`0x864013A8`) turns it the way the track
+goes (the fence: down at the left, up at the right, left at the top, right at
+the bottom; the block's edges along them), and for a moment (2 × (1 − its
+speed/SPEED) frames) it can't turn. Its laps (`0x86404D8C`): how far round it
+is is its angle about the middle, 23.2 ahead of it (the main program's
+`0x8000B390`, atan2 by a 1025-entry table at `0x8008CFB0`, 65536 to a turn,
+in 65535ths), counted from the top's middle; once round all four corners,
+crossing that line is a lap. So the race is the start to the line, then nine
+laps. **Places** (`0x864033AC`) go by the laps done plus how far round,
+ties to the lower seat (a bubble sort); once in, by the place it came in.
+
+**A rocket start** (`0x86402688`): A within 10 frames of GO adds SPEED × 0.8
+× (1 − frames/10) and rolls it for 30 frames; A in the countdown loses it
+(`0x864068A4`). On the last lap it rolls all the way.
+
+**Clouds** (`0x864012A0`, `0x864009D4`): a Donphan holding any, not stunned
+and on the ground drops one where it is with A (0x4F06), and gets a boost:
+SPEED × 0.9 × 0.3, or on the last lap its full SPEED and a boost of SPEED ×
+0.9. A cloud comes up for 5 frames, stays 175, fades over 10. Someone else's
+cloud (up, within 30) sends a Donphan flying (`0x86402304`, 0x5F03): up to
+92.8 and spinning, stopped, for 20 frames if it's leading, 14 second, 8
+third or last; the cloud fades. At each lap a Donphan gets clouds by its
+place (none for the leader, 1, 2, 3 for the last; up to 3 held), and the
+leader's lap sounds 0x5F09, the last one 0x5F0A (and song 100: song 34, 17
+beats a minute faster).
+
+**Bumps** (`0x86401920`): two Donphan closer than 46.4 (in 3D) are pushed
+apart, half each; one with a boost over SPEED × 0.9 × 0.5 (only a last lap's
+cloud gives that) running into one without knocks it over (`0x864018B0`,
+0x5F03): stunned for 20 frames, sliding, slowing × 0.9 (leader) to 0.95 a
+frame, and it can't drop a cloud. Its test of which way it's going takes its
+z speed with the height's part of the way between them, as it is.
+
+**The CPUs** (`0x86403F5C`), each frame: a line round the track in from the
+block's edge by 23.2 and a lane (`0x86404724`, new in each part: Easy up to
+46.4 either way, Normal and Hard right along it); in each corner they turn
+once past that line's turn; along a side, if a cloud's in the way, they steer
+for the line moved off the clouds ahead (`0x864037C0`: from its intersection
+with each cloud's crossing, 30 to either side; never more than 138.6 off).
+They only see clouds older than 52-87 frames (Easy), 35-87 (Normal), any
+(Hard; on its first lap it always steers to its line). A cloud of their own
+(`0x86403CDC`), 6 frames or more after the last, with a chance a frame by the
+part of the track (`0x86409648`: the corners 0.05, 0.1, 0.2, 0.5 at the top
+right, before the line; the sides 0.001-0.01), times 0.7 for Easy (Hard: in
+the corners only). A rocket start: Easy one frame in 11, Normal one in 3, Hard
+at once.
+
+**The start** (`0x864057E0`): the four places are shuffled (it swaps two at
+random while a counter's below a new random number × 4 each time, so with the
+game's random numbers some orders don't come up), and they run in from the
+right along the top, each further in and lower down than the last, and slow
+to a stop (× 0.8 a frame) on the grid, facing left, while the camera (from
+(120, 430, 40) towards (120, 0, −210)) moves over the track in 80 frames.
+**The end** (`0x8640633C`): the first in wins (several, in on the same
+frame); the race is over the frame after the last one's in. Those in coast to
+a stop (× 0.97 − 0.025 × place a frame); at the end each slows × 0.94, then
+the winners cheer (clip 2), the others slump (clip 3), and the camera moves
+to the winners.
+
+**The HUD** (`0x864082A8`): in the block's middle, the rank coins (bank 387)
+with each place's badge (434), and the leader's laps to go on the LAP gear
+(386), or FINAL LAP! (385) flashing. The song is 34 (sequence 73), 30 frames
+after GO; the count and GO are 0x5F07 and 0x5F08, which also sounds as each
+one gets in ([audio.md](audio.md)). Its name banner is image bank 383.
+
+**The states** (`0x864069DC`): 0-2 the instructions and the fade, 3 the
+countdown, 4 the race, 5 the end, 6 the results, 7 the menu after.
+
+The browser remake runs this world on every device and on the server, from
+everyone's pads (the CPUs think in it) ([web/README.md](../web/README.md#rampage-rollout)).
 
 ## How this was found
 

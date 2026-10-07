@@ -150,6 +150,10 @@ BANKS = {
     # last hitter's colour; it also loads 260 (1P-4P and COM, the module the
     # minigames share draws them) and 434
     151: "Barrier Ball glow", 260: "player labels",
+    # Rampage Rollout (module #52): a dust cloud (a whirlwind, 16 frames), the
+    # dust a running Donphan kicks up (8 frames), and the stars over a Donphan
+    # (one for each cloud it has), the clouds and stars in each player's colours
+    150: "Rampage Rollout cloud", 159: "Rampage Rollout dust", 384: "Rampage Rollout star",
     412: "Streaming Stampede all", 413: "Streaming Stampede names", 414: "Streaming Stampede answer digits",
     # shared by menus and boards (by appearance, and Streaming Stampede's question board)
     51: "buttons", 165: "board rod and chain", 345: "arrows",

@@ -1,6 +1,7 @@
 """Tests for the rooms server (tools/rooms.py) and its rules (tools/egg_rules.py,
 tools/clearcut_rules.py, tools/eevee_rules.py, tools/stampede_rules.py,
-tools/pichu_rules.py, tools/togepi_rules.py, tools/golbat_rules.py, tools/barrier_rules.py).
+tools/pichu_rules.py, tools/togepi_rules.py, tools/golbat_rules.py, tools/barrier_rules.py,
+tools/rollout_rules.py).
 
     python3 tools/test_rooms.py
 
@@ -34,6 +35,7 @@ import egg_rules  # noqa: E402
 import barrier_rules  # noqa: E402
 import golbat_rules  # noqa: E402
 import pichu_rules  # noqa: E402
+import rollout_rules  # noqa: E402
 import rooms  # noqa: E402
 import stampede_rules  # noqa: E402
 import togepi_rules  # noqa: E402
@@ -85,6 +87,20 @@ def barrier_pad(z, t):
     if z == 0:
         return [[64, 0, -64, 32, -32, 0][t // 40 % 6], t % 23 == 0 or t % 61 == 7]
     return [[-64, 64][t // 70 % 2], t % 19 == 0]
+
+# web/minigames/src/rollout/rules.js: a race with seats 0 and 2 on
+# rollout_pad() and two CPUs (normal, hard and easy), the world's digest()
+# every 50 frames, the end, the places and the frames in (web/minigames/tests.js has the same)
+JS_ROLLOUT = {1: "54a4ecbd48f149ad", 12345: "0478f9cb5f8a5194", 2 ** 31 - 1: "fb2a806822e44641"}
+ROLLOUT_LEVEL = {1: "normal", 12345: "hard", 2 ** 31 - 1: "easy"}
+
+
+def rollout_pad(z, t, w):
+    if z == 0:  # (round the track, turning at the corners; a false start)
+        d = w.d[0]
+        way = 2 if d.y < -150 and d.x > -200 else 4 if d.x < -200 and d.y < 150 else 1 if d.y > 150 and d.x < 200 else 8
+        return [way | (16 if t == 0 else 0), t % 47 == 3]
+    return [[8, 4, 2, 1, 0, 2][t // 40 % 6], t % 61 == 11]
 
 # a short round, the same for every seat: (t, col, kind, fall); they reach the
 # hands at 0.5, 0.8, 1.1 (the Voltorb), 1.4 and 2.1
@@ -1048,6 +1064,102 @@ def _():
         a.close()
     finally:
         barrier_rules.TIME, barrier_rules.LONGEST = saved
+
+
+def rollout_digest(seed):
+    w = rollout_rules.World(seed, ROLLOUT_LEVEL[seed], [False, True, False, True])
+    parts, t = [], 0
+    while w.end is None:
+        w.step(t, [rollout_pad(0, t, w), None, rollout_pad(2, t, w), None])
+        w.events = []
+        if t % 50 == 0:
+            parts.append(w.digest())
+        t += 1
+    parts.append("%d:%s:%s" % (w.end, ",".join(map(str, w.places)), ",".join(str(d.fin) for d in w.d)))
+    return hashlib.sha256(";".join(parts).encode()).hexdigest()[:16]
+
+
+@check("Rampage Rollout: the world (the CPUs too) matches the browser's, bit for bit; the race", together="Rollout")
+def _():
+    for seed, want in JS_ROLLOUT.items():
+        assert rollout_digest(seed) == want, seed
+    # the main program's arctangent table (0x8008CFB0): a few of its 1025, made the same way
+    assert [rollout_rules.ATAN[i] for i in (0, 1, 512, 1023, 1024)] == [0, 10, 4836, 8187, 8192]
+    assert [rollout_rules.angle(*p) for p in ((1, 0), (0, 1), (-1, 0), (0, -1), (1, 1))] == [0, 16384, -32768, -16384, 8192]
+
+    # the harder CPUs are quicker: over a few races, the last in comes in sooner, and fewer clouds catch them
+    def race(seed, level):
+        w = rollout_rules.World(seed, level, [True] * 4)
+        t, hit = 0, 0
+        while w.end is None:
+            w.step(t, [])
+            hit += sum(1 for e in w.events if e[0] == "hit")
+            w.events = []
+            t += 1
+        return w.end, hit
+    easy, hard = [race(s, "easy") for s in range(6)], [race(s, "hard") for s in range(6)]
+    assert sum(e for e, _ in hard) < sum(e for e, _ in easy) and sum(h for _, h in hard) < sum(h for _, h in easy), (easy, hard)
+    # everyone's in at the end, nine laps on; the first in is first
+    w = rollout_rules.World(4, "normal", [True] * 4)
+    t = 0
+    while w.end is None:
+        w.step(t, [])
+        t += 1
+    fin = [d.fin for d in w.d]
+    assert all(d.laps == 0 and d.done for d in w.d) and w.end == max(fin) + 1, (w.end, fin)
+    assert w.places[fin.index(min(fin))] == 1 and [d.won for d in w.d].count(True) >= 1
+
+
+@check("Rampage Rollout: the server runs the world from the pads, says how it ended and stops cheats", together="Rollout")
+def _():
+    saved = rollout_rules.LAPS
+    rollout_rules.LAPS = 1  # (a short race: one lap)
+    try:
+        a, b = Client("RA"), Client("RB")
+        a.send("hello", id="ra", name="Rex", game="rollout")
+        code = a.wait("welcome")["room"]
+        b.send("hello", id="rb", name="Rio", room=code)
+        b.wait("welcome")
+        time.sleep(rooms.CHANGE_GAP)
+        a.drain()
+        b.drain()
+        a.send("start")
+        st = a.wait("start")
+        assert st["game"] == "rollout" and st["rr"] == dict(done=None, pads=[[], [], None, None]), st
+        go, r = st["go"], st["round"]
+        g = rooms.rooms[code].game
+        assert g.cpus == [False, False, True, True]
+        at(go, 0.05)
+        a.send("pad", r=r, s=0, f=0, x=rollout_rules.LEFT, a=1)  # Rex: a rocket start, along the top
+        a.send("pad", r=r, s=1, f=1, x=rollout_rules.UP, a=1)  # someone else's Donphan: ignored
+        b.send("pad", r=r, s=1, f=2, x=40, a=0)  # not a D-pad: ignored
+        b.send("pad", r=r, s=1, f=2, x=2, a=2)  # not A or none: ignored
+        at(go, 25 / rollout_rules.FPS)
+        b.send("pad", r=r, s=1, f=0, x=rollout_rules.LEFT, a=1)  # Rio's, older than the way here allows: as late as that does
+        late = 25 - int(rooms.ALLOW_GUESS * rollout_rules.FPS)
+        mine = [(m["s"], m["f"], m.get("o")) for m in b.drain(0.3) if m["t"] == "pad"]
+        assert mine == [(0, 0, None), (1, late, 0)], mine  # (Rex's; and Rio's own, from where it counts)
+        heard = [(m["s"], m["f"], m["x"], m["a"]) for m in a.drain(0.1) if m["t"] == "pad"]
+        assert heard == [(1, late, rollout_rules.LEFT, 1)], heard
+        a.s.settimeout(40)  # (a lap: quiet stretches longer than the usual 3 s)
+        won = a.wait("won", timeout=40)
+        a.s.settimeout(3)
+        # the same race, here
+        want = rollout_rules.Round(rooms.rooms[code].seed, "normal", cpus=[False, False, True, True])
+        want.pads = [[[0, rollout_rules.LEFT, 1]], [[late, rollout_rules.LEFT, 1]], [], []]
+        said = {k: won[k] for k in ("f", "fin", "p")}
+        assert want.settle(1000, 0) == said, (won, want.done)
+        assert sorted(said["p"]) == [1, 2, 3, 4] and said["f"] == max(said["fin"]) + 1, said
+        assert g.end == (said["f"] + rollout_rules.AFTER) / rollout_rules.FPS
+        a.send("pad", r=r, s=0, f=won["f"] + 5, x=1, a=1)  # after the end: nothing
+        a.send("done", r=r)
+        b.send("done", r=r)
+        res = a.wait("results", timeout=10)
+        assert res["scores"] == [round(f * 100 / rollout_rules.FPS) for f in said["fin"]], res
+        b.close()
+        a.close()
+    finally:
+        rollout_rules.LAPS = saved
 
 
 @check("Telegram logins: checked, and no one can pose as a Telegram player")

@@ -36,6 +36,16 @@ const barrierPad = (z, t) => (z === 0 ? [[64, 0, -64, 32, -32, 0][Math.floor(t /
   : [[-64, 64][Math.floor(t / 70) % 2], t % 19 === 0]);
 const golbatPad = (z, t) => (z === 0 ? [[64, 0, -64, 32, -32, 0][Math.floor(t / 90) % 6], t % 12 === 0 || t % 47 === 5]
   : [[-64, 64][Math.floor(t / 70) % 2], t % 9 === 0]);
+// Rampage Rollout: a race with seats 0 and 2 on rolloutPad() and two CPUs (normal, hard, easy), the
+// world's digest() every 50 frames, the end, the places and the frames in: the same as JS_ROLLOUT in tools/test_rooms.py
+const ROLLOUT = { 1: "54a4ecbd48f149ad", 12345: "0478f9cb5f8a5194", 2147483647: "fb2a806822e44641" };
+const ROLLOUT_LEVEL = { 1: "normal", 12345: "hard", 2147483647: "easy" };
+// (seat 0 round the track, turning at the corners, with a false start; seat 2 a pattern)
+const rolloutWay = (d) => (d.y < -150 && d.x > -200 ? 2 : d.x < -200 && d.y < 150 ? 4 : d.y > 150 && d.x < 200 ? 1 : 8);
+// (and a quicker one, for the live tests: the CPUs' line, in tight round the block, src/rollout/rules.js cpu())
+const rolloutDrive = (d) => [d.x < -171.2 ? 4 : 2, d.y > 115.7 ? 1 : 4, d.x > 171.2 ? 8 : 1, d.y < -115.7 ? 2 : 8, 4, 8, 2, 1][d.seg];
+const rolloutPad = (z, t, w) => (z === 0 ? [rolloutWay(w.d[0]) | (t === 0 ? 16 : 0), t % 47 === 3]
+  : [[8, 4, 2, 1, 0, 2][Math.floor(t / 40) % 6], t % 61 === 11]);
 // the frame the first of three CPUs gets to full charge, the middle of 41 rounds (rules.js cpuPresses)
 const CHARGE_TARGETS = { easy: [500, 590], normal: [365, 420], hard: [295, 345] };
 // the best of the three CPUs' totals in a game, on average (Streaming Stampede: rules.js cpuPresses)
@@ -293,6 +303,20 @@ function autoslide(w) {
       const t = g.lastFrame + 1;
       g.setStick(Math.round(Math.sin(t / 23 + w.mg.me()) * 4) * 16);
       if (t % 20 === w.mg.me() * 5 && g.smashes === 0) g.smash();
+    }
+    step.call(api, dt, on);
+  };
+  return () => { api.step = step; };
+}
+
+// a Rampage Rollout player: round the track, turning at the corners, a cloud every 40 frames or so
+function autodrive(w) {
+  const api = w.mg.mini, step = api.step;
+  api.step = function (dt, on) {
+    const g = api.game;
+    if (on && g.state === "play") {
+      g.setDpad(rolloutDrive(g.world.d[g.me]));
+      if ((g.lastFrame + 1) % 40 === w.mg.me() * 7) g.press();
     }
     step.call(api, dt, on);
   };
@@ -1087,11 +1111,124 @@ await test("Barrier Ball: a finger slides Mr. Mime the way it goes on the screen
   assert(got.join() === "10,end,10,stop", "10 px, past the end, back 20 px, let go: " + got.join());
 });
 
-await test("online: the server moving this device's own moves to later frames keeps them in its order", async () => {
-  // (Gutsy Golbat, Barrier Ball and Tumbling Togepi: two of them the server got late, both put on frame 15)
+await test("Rampage Rollout: the world and the CPUs are the same as the server's copy of them", async () => {
+  const R = await moduleOf(solo, "./src/rollout/rules.js");
+  for (const [seed, want] of Object.entries(ROLLOUT)) {
+    const w = new R.World(+seed, ROLLOUT_LEVEL[seed], [false, true, false, true]), parts = [];
+    for (let t = 0; w.end === null; t++) {
+      w.step(t, [rolloutPad(0, t, w), null, rolloutPad(2, t, w), null]);
+      w.events = [];
+      if (t % 50 === 0) parts.push(w.digest());
+    }
+    parts.push(`${w.end}:${w.places.join()}:${w.d.map((d) => d.fin).join()}`);
+    const got = await sha16(parts.join(";"));
+    assert(got === want, `seed ${seed}: ${got}; tools/rollout_rules.py expects ${want} (update both, and the digests)`);
+  }
+  // the main program's arctangent table (0x8008CFB0), and its angles
+  const a = [0, 1, 512, 1023, 1024].map((i) => R.ATAN[i]), b = [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1]].map(([x, y]) => R.angle(x, y));
+  assert(a.join() === "0,10,4836,8187,8192" && b.join() === "0,16384,-32768,-16384,8192", `atan ${a}; angles ${b}`);
+});
+
+await test("Rampage Rollout: its music and sound effects play from sound.bin", () => soundTest("assets/rollout/sound.bin", [
+  ["main", 6, (r) => assert(r.notes > 10 && r.peak > 0.05 && r.peak < 1, `song 34: ${r.notes} notes, peak ${r.peak.toFixed(2)}`)],
+]));
+
+await test("Rampage Rollout: online, the others' pads coming in late run the world again to the same place", async () => {
+  await solo.mg.show("rollout");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners, R = await moduleOf(solo, "./src/rollout/rules.js");
+  solo.mg.paused = true;
+  g.listeners = {};
+  const pattern = (t) => [[8, 4, 2, 1, 0, 2][Math.floor(t / 37) % 6], t % 53 === 9];
+  try {
+    // seat 0 here, seat 2 someone else whose pads come in 4-12 frames late, 1 and 3 CPUs
+    g.reset("normal", 77, { me: 0, control: ["local", "cpu", "remote", "cpu"], cpus: [false, true, false, true] });
+    g.start();
+    const late = [];
+    let lastX = null, t = 0;
+    for (; t < 1200; t++) {
+      const [x, a] = rolloutPad(2, t);
+      if (x !== lastX || a) { late.push({ at: t + 4 + (t % 9), e: [t, x, a ? 1 : 0] }); lastX = x; }
+      for (const l of late.filter((l) => l.at === t)) g.told("pad", { s: 2, f: l.e[0], x: l.e[1], a: l.e[2] });
+      const [mx, ma] = pattern(t);
+      g.setDpad(mx);
+      g.presses = ma ? 1 : 0;
+      g.step(t);
+      g.lastFrame = t;
+    }
+    for (const l of late.filter((l) => l.at >= t)) g.told("pad", { s: 2, f: l.e[0], x: l.e[1], a: l.e[2] });
+    g.runTo(g.lastFrame);
+    // the same world with every pad on time (this device's own count g.lead frames after they're made)
+    const w = new R.World(77, "normal", [false, true, false, true]), L = g.lead;
+    for (let f = 0; f <= g.lastFrame; f++) w.step(f, [f < L ? [0, false] : pattern(f - L), null, rolloutPad(2, f), null]);
+    assert(g.world.digest() === w.digest(), `at frame ${g.lastFrame}: laps ${g.world.d.map((d) => d.laps)} here, ${w.d.map((d) => d.laps)} on time`);
+    return `frame ${g.lastFrame}: places ${w.places.join(", ")}; ${g.snaps.length} saved frames`;
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+});
+
+await test("Rampage Rollout: a solo race, played headless: everyone gets in, places by who's in first", async () => {
+  await solo.mg.show("rollout");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners, { AFTER } = await moduleOf(solo, "./src/rollout/game.js");
+  solo.mg.paused = true;
+  g.listeners = {};
   const out = [];
   try {
-    for (const [id, type] of [["golbat", "pad"], ["barrier", "pad"], ["togepi", "stick"]]) {
+    for (const [seed, level] of [[11, "easy"], [22, "hard"]]) {
+      g.reset(level, seed, { me: 0, control: ["local", "cpu", "cpu", "cpu"] });
+      g.start();
+      while (g.state === "play" && g.frame < 4000) {
+        g.setDpad(rolloutWay(g.world.d[0]));
+        if ((g.lastFrame + 1) % 47 === 3) g.press();
+        g.update(1 / 30);
+      }
+      const res = g.results(), fin = g.world.d.map((d) => d.fin), end = g.world.end;
+      assert(g.state === "over" && end === Math.max(...fin) + 1 && g.frame >= end + AFTER, `${level}: ${g.state}, the end at ${end}, in at ${fin}`);
+      assert(res.every((r) => r.score === Math.round((fin[r.i] * 100) / 30)), `${level}: results ${JSON.stringify(res)} for frames ${fin}`);
+      assert(res.every((r, k) => !k || fin[res[k - 1].i] <= fin[r.i]) && g.winners[res[0].i], `${level}: places ${JSON.stringify(res)}, winners ${g.winners}`);
+      out.push(`${level}: ${fin.join(", ")}`);
+    }
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  return "frames in: " + out.join("; ");
+});
+
+await test("Rampage Rollout: a finger is a D-pad: the way it slides from where it went down", async () => {
+  await solo.mg.show("rollout");
+  const api = solo.mg.mini, g = api.game, R = await moduleOf(solo, "./src/rollout/rules.js");
+  const got = [];
+  try {
+    g.reset("normal", 5, { me: 0, control: ["local", "cpu", "cpu", "cpu"] });
+    g.state = "play";
+    const at = (x, y) => ({ pointerId: 1, clientX: x, clientY: y, pointerType: "touch" });
+    api.pointerdown(at(200, 300));
+    for (const [x, y] of [[205, 303], [240, 310], [210, 260], [170, 305], [200, 340]]) {
+      api.pointermove(at(x, y));
+      got.push(g.dpad);
+    }
+    api.pointerup(at(200, 340));
+    got.push(g.dpad);
+  } finally {
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  const want = [0, R.RIGHT, R.UP, R.LEFT, R.DOWN, 0];
+  assert(got.join() === want.join(), "still, right, up, left, down, let go: " + got.join());
+});
+
+await test("online: the server moving this device's own moves to later frames keeps them in its order", async () => {
+  // (Gutsy Golbat, Barrier Ball, Tumbling Togepi and Rampage Rollout: two of them the server got late,
+  // both put on frame 15. Rampage Rollout's are D-pads: 20 is LEFT | DOWN... 40 the same, made up for here)
+  const out = [];
+  try {
+    for (const [id, type] of [["golbat", "pad"], ["barrier", "pad"], ["togepi", "stick"], ["rollout", "pad"]]) {
       await solo.mg.show(id);
       const api = solo.mg.mini, g = api.game, saved = g.listeners, other = type === "pad" ? "a" : "y";
       solo.mg.paused = true;
@@ -1099,13 +1236,14 @@ await test("online: the server moving this device's own moves to later frames ke
       try {
         g.reset("normal", 5, { me: 0, control: ["local", "cpu", "cpu", "cpu"], cpus: [false, true, true, true] });
         g.start();
+        const [x1, x2] = id === "rollout" ? [2, 4] : [20, 40];
         for (let t = 0; t <= 12; t++) {
-          if (t === 10 || t === 11) g.setStick(t === 10 ? 20 : 40, 0);
+          if (t === 10 || t === 11) { if (id === "rollout") g.setDpad(t === 10 ? x1 : x2); else g.setStick(t === 10 ? x1 : x2, 0); }
           g.step(t);
           g.lastFrame = t;
         }
-        g.told(type, { s: 0, f: 15, o: 10, x: 20, [other]: 0 });
-        g.told(type, { s: 0, f: 15, o: 11, x: 40, [other]: 0 });
+        g.told(type, { s: 0, f: 15, o: 10, x: x1, [other]: 0 });
+        g.told(type, { s: 0, f: 15, o: 11, x: x2, [other]: 0 });
         const x = (t) => (type === "pad" ? g.padAt(0, t) : g.stickAt(0, t))[0];
         out.push(`${id}: ${x(14)}, ${x(15)}, ${x(20)}`);
       } finally {
@@ -1116,7 +1254,7 @@ await test("online: the server moving this device's own moves to later frames ke
     }
   } finally { await solo.mg.show("egg"); }
   // (the server's: the one it got last counts on frame 15)
-  assert(out.every((o) => o.endsWith(": 0, 40, 40")), "the stick on frames 14, 15 and 20: " + out.join("; "));
+  assert(out.every((o) => o.endsWith(o.startsWith("rollout") ? ": 0, 4, 4" : ": 0, 40, 40")), "the stick on frames 14, 15 and 20: " + out.join("; "));
 });
 
 await test("online: rejoining a round, a seat whose player is away is still theirs, not a CPU", async () => {
@@ -1125,7 +1263,7 @@ await test("online: rejoining a round, a seat whose player is away is still thei
                   lineup: [{ seat: 0, here: true }, { seat: 1, here: false }, { seat: 2, here: true }] };
   const out = [];
   try {
-    for (const id of ["stampede", "pichu", "togepi", "golbat", "barrier"]) {
+    for (const id of ["stampede", "pichu", "togepi", "golbat", "barrier", "rollout"]) {
       await solo.mg.show(id);
       solo.mg.mini.reset(round);
       out.push(`${id}: ${solo.mg.mini.game.cpus.join()}`);
@@ -1351,6 +1489,36 @@ lane(2, (f) => test("online: a Barrier Ball round, the same on both devices, and
     await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 30000);
     assert(ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
     return `points ${f.p.join(", ")} at frame ${f.f}`;
+  } finally {
+    stop.forEach((s) => s());
+  }
+}, { live: true }));
+
+lane(2, (f) => test("online: a Rampage Rollout race, the same on both devices, and cheating doesn't work", async () => {
+  const { ann, bob } = await f.pair("rollout");
+  const stop = [];
+  try {
+    ann.mg.net().send("level", { level: "hard" }); // (the race is over once everyone's in: the CPUs quicker)
+    await until(() => bob.mg.room()?.level === "hard", "Hard, in the lobby");
+    ann.mg.net().send("start");
+    await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the race", 20000);
+    stop.push(autodrive(ann), autodrive(bob));
+    const net = bob.mg.net(), r = ann.mg.room().round, g = bob.mg.game;
+    await until(() => g.frame > 60, "two seconds in", 20000);
+    // Bob turns Ann's Donphan, says a pad he didn't press was long ago, and sends one that's no D-pad
+    net.send("pad", { r, s: 0, f: g.frame, x: 4, a: 1 });
+    net.send("pad", { r, s: 1, f: 5, x: 8, a: 1 });
+    net.send("pad", { r, s: 1, f: g.frame + 1, x: 40, a: 0 });
+    await until(() => [ann, bob].every((w) => w.mg.game.result), "the end, on both devices", 150000);
+    const res = (w) => JSON.stringify(w.mg.game.result);
+    assert(res(ann) === res(bob), `the end: ${res(ann)} / ${res(bob)}`);
+    const f = ann.mg.game.result;
+    // each device's run of the world comes to the server's: so the server took the same pads
+    const fins = (w) => w.mg.game.world.d.map((d) => d.fin).join();
+    assert(fins(ann) === f.fin.join() && fins(bob) === f.fin.join(), `in at: Ann's ${fins(ann)}, Bob's ${fins(bob)}, the server's ${f.fin}`);
+    await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 30000);
+    assert(ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
+    return `places ${f.p.join(", ")}, in at frames ${f.fin.join(", ")}`;
   } finally {
     stop.forEach((s) => s());
   }
@@ -1650,6 +1818,20 @@ lane(1, (f) => test("a solo round starts and plays: Barrier Ball", async () => {
   // (a CPU wanders to a random spot in its lane, which may be next to where it started)
   assert(slid[0] > 5 && slid.slice(1).some((d) => d > 5) && served > 0, `4 s in, the Mr. Mime have slid ${slid}, with ${served} balls in play`);
   return "slid 4 s in: " + slid.join(", ");
+}, { live: true }));
+
+lane(1, (f) => test("a solo round starts and plays: Rampage Rollout", async () => {
+  const solo = await f.open("game=rollout");
+  solo.document.querySelector("#play").click();
+  const stop = autodrive(solo);
+  try {
+    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > 120, "Rampage Rollout's first 4 s", 30000);
+  } finally { stop(); }
+  const g = solo.mg.game, far = g.world.d.map((d) => Math.round(d.progress * 100));
+  assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
+  // (on the grid they're about 0.9 of the way round to the line; 4 s on, past it and on round)
+  assert(g.world.d.every((d) => d.speed > 5 && d.progress > 0.1 && d.progress < 0.8), `4 s in, the progress is ${far}`);
+  return "progress 4 s in: " + far.join(", ");
 }, { live: true }));
 
 await runLanes(lanes);

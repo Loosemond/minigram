@@ -15,6 +15,7 @@ have a game picker; a game's code and files load the first time it's picked.
 | Tumbling Togepi | [minigames/src/togepi/](minigames/src/togepi/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#tumbling-togepi)) |
 | Gutsy Golbat | [minigames/src/golbat/](minigames/src/golbat/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#gutsy-golbat)) |
 | Barrier Ball | [minigames/src/barrier/](minigames/src/barrier/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#barrier-ball)) |
+| Rampage Rollout | [minigames/src/rollout/](minigames/src/rollout/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#rampage-rollout)) |
 
 ## Run it
 
@@ -45,6 +46,7 @@ game's round), `mg.mini` (the game's module), `mg.paused = true`, `mg.tick(dt)`
 `mg.mini.debug.stick(x, y)` (Tumbling Togepi: -60-60 each, x right, y up; `mg.mini.debug.lanes` the four lanes),
 `mg.mini.debug.stick(x)` and `.flap()` (Gutsy Golbat: x -64-64; `mg.mini.debug.world` the world),
 `mg.mini.debug.stick(x)`, `.target(x)` and `.smash()` (Barrier Ball: x -64-64 along your lane, or the lane x to go to; `mg.mini.debug.world` the world),
+`mg.mini.debug.dpad(bits)` and `.press()` (Rampage Rollout: up 8, down 4, left 2, right 1; `mg.mini.debug.world` the world),
 `mg.show("clearcut")`, `mg.title()`, `mg.net()`, `mg.room()`,
 `mg.sound.engine` (the audio engine, once it's loaded). It works on localhost
 only, unless `debug` is true in `src/config.js`. `clips.html` plays every clip
@@ -615,6 +617,65 @@ running the world again, and its scene), `src/barrier/assets.js` the models
 and `src/barrier/index.js` the layout, the controls, its HUD and its online
 messages.
 
+## Rampage Rollout
+
+Four Donphan race round a dirt track, the other way from a clock seen from
+above. A Donphan runs on by itself: the D-pad turns it, a quarter turn at a
+time (never back the way it's going), and a wall it runs into turns it the
+way the track goes. The further back it is, the faster it can go. Press A to
+drop a dust cloud: a whirlwind that sends anyone else who runs into it flying,
+stopped and spinning (longer, the further ahead they were). Each lap you earn
+clouds by your place (none for the leader, up to three for the last); on the
+final lap a cloud also sends you off at full tilt, knocking over those you run
+into, and everyone rolls. A at GO is a rocket start (A in the countdown loses
+it). Nine laps; the first in wins, and the race is over when everyone's in.
+It follows the game's own code (module #52:
+[docs/minigames.md](../docs/minigames.md#rampage-rollout) has where each
+number is):
+
+- **One track for all four.** As in Gutsy Golbat and Barrier Ball, every
+  device runs the whole world from everyone's pads, and the server too. It
+  uses the game's tuning (SPEED, ACCELE, LAP 9), the track's parts and walls,
+  its lap counting (an angle about the middle, by the main program's
+  arctangent table, made the same way in both copies), the start's shuffle,
+  the clouds and the bumps.
+- **The CPUs** are the game's: a line round the track in from the block (Easy
+  wandering off it), steering round the clouds they've noticed (Hard all of
+  them, at once), clouds of their own now and then, likelier near the
+  corners, and rocket starts (Hard always).
+
+The screen is the game's camera, with the field of view that shows the whole
+track (at least the game's), over the whole window; in portrait the picture
+is moved up so the track sits under the top cards. In the track's middle, as
+the game has them, the places (rank coins and badges) and the leader's laps
+to go on the LAP gear, or FINAL LAP!. Over each Donphan, a star for each
+cloud it holds. On a phone: a finger anywhere is a D-pad (the way it slides
+from where it went down: up, down, left or right, whichever it went more; a
+resting one shows where), and the A button drops a cloud. With a keyboard:
+the arrows (or W A S D) and Space. In the countdown the Donphan run in to the
+grid under the start camera, which then moves over the track; at the end the
+camera goes to the winners, who cheer, and the others slump.
+
+**Sound**: the game's (`assets/rollout/sound.bin`, 472 KB): song 34 from
+just after GO, 17 beats a minute faster from the final lap (the game's song
+100), bank 5's effects (footsteps, rolling, the stun's ring, a cloud, the
+laps, the end's cheers and slumps) placed by where the Donphan is, the crowd
+for the first one in, and the count and GO.
+
+What comes from the ROM and what is made up:
+
+| From the game | Made for the remake |
+|---|---|
+| the track and its walls, running, turning, rolling and rocket starts, the clouds and bumps, the laps and places, the CPUs, the start and the end, the cameras (module #52's code) | the field of view that fits the window, the portrait layout, the dust's colours (the game's, but 4P's are red as 3P's: as the game has it), the race called after 200 s if it isn't over |
+| Donphan (108: walking, rolling) and its clips, the track (113), the clouds (150), the dust (159), the stars (384), the shadows (307), the rank coins (387), LAP and FINAL LAP (386, 385), the badges (434) | the touch D-pad and A button (the menus' A, bank 51), the title's art (the track from above) |
+| song 34, bank 5's effects, the count | |
+
+Code: `src/rollout/rules.js` has the world (and `tools/rollout_rules.py`, the
+server's copy, line for line), `src/rollout/game.js` the race (the pads,
+running the world again, the cameras and the scene), `src/rollout/assets.js`
+the models and pictures and `src/rollout/index.js` the layout, the controls,
+its HUD and its online messages.
+
 ## Online play
 
 **Play with friends** on the title screen makes a room with a four-letter
@@ -695,7 +756,11 @@ How it works:
   `tools/barrier_rules.py`; the play can end on any frame (a fifth point), so
   the server looks again every half second, and says each one's points
   (`won`).
-- **Sent ahead** (Gutsy Golbat, Barrier Ball): a device's player's pad counts
+- **Rampage Rollout**: the same (`pad`: the D-pad held, and A), with
+  `tools/rollout_rules.py`; the race is over the frame after the last one's
+  in, and the server says when, the frame each came in on and the places
+  (`won`).
+- **Sent ahead** (Gutsy Golbat, Barrier Ball, Rampage Rollout): a device's player's pad counts
   a few frames after it's made, and goes out at once with that frame, so it
   gets to the other devices before they run it: they needn't run the world
   again, and nothing on their screens is put right after the fact. How many
@@ -838,11 +903,11 @@ Messages are JSON objects with their type in `t`. From the client:
 
 | `t` | Fields | |
 |---|---|---|
-| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat`, `barrier`) |
+| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat`, `barrier`, `rollout`) |
 | `ping` | `c`, `rtt` | the client's clock; answered with `pong`. `rtt`: a round trip it can count on, ms (from the last pongs) |
 | `name` | `name` | rename |
 | `level` | `level` | host, in the lobby: `easy`, `normal` or `hard` |
-| `game` | `game` | host, in the lobby: `egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat` or `barrier` |
+| `game` | `game` | host, in the lobby: `egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat`, `barrier` or `rollout` |
 | `start` | | host, in the lobby |
 | `lean` | `r`, `s`, `g`, `l` | in round `r`, seat `s` leans `l` (−1, 0, 1) from round time `g` (s) |
 | `ev` | `r`, `s`, `g`, `n`, `k`, `e` | seat `s` caught its drop `n` (`k: "c"`) or was shocked by it (`"h"`), as this device judged it; `e` is its egg count after. The server answers only if it disagrees |
@@ -851,7 +916,7 @@ Messages are JSON objects with their type in `t`. From the client:
 | `count` | `r`, `s`, `n`, `f` | Streaming Stampede: seat `s` pressed (counted one) on frame `f` of question `n`'s counting |
 | `press` | `r`, `s`, `f`, `d`, `b` | Pichu's Power Plant: seat `s` pressed A (`b: 5`) or B (`6`) on frame `f` from GO, held towards `d` (1 up, 2 down, 3 right, 4 left) |
 | `stick` | `r`, `s`, `f`, `x`, `y` | Tumbling Togepi: seat `s`'s stick is at `x`, `y` (-60-60 each, right and up) from frame `f` from GO |
-| `pad` | `r`, `s`, `f`, `x`, `a` | Gutsy Golbat: seat `s`'s stick is at `x` (-64-64, right) from frame `f` from GO, and A was pressed on it (`a: 1`) or not (`0`). Barrier Ball: the same, `x` along the seat's lane (+ is the court's +x) and A a smash |
+| `pad` | `r`, `s`, `f`, `x`, `a` | Gutsy Golbat: seat `s`'s stick is at `x` (-64-64, right) from frame `f` from GO, and A was pressed on it (`a: 1`) or not (`0`). Barrier Ball: the same, `x` along the seat's lane (+ is the court's +x) and A a smash. Rampage Rollout: `x` the D-pad held (up 8, down 4, left 2, right 1; + 16 on the first: A was pressed in the countdown) and A a dust cloud. A device may send its own a few frames ahead (up to 4) |
 | `done` | `r` | this device's round is over |
 | `leave` | | |
 
@@ -876,7 +941,7 @@ Togepi: `tg`, with `done`, the end as `won` gives it (null till then), and
 `sticks`, the people's stick changes so far, `[f, x, y]` by seat, to rejoin.
 Gutsy Golbat: `gb`, with `done`, the end as `won` gives it (null till then),
 and `pads`, the people's so far, `[f, x, a]` by seat, to rejoin. Barrier
-Ball: `bb`, the same as `gb`);
+Ball: `bb`, the same as `gb`. Rampage Rollout: `rr`, the same);
 `pong` (`c`, `s`); `cut` (`r`, `s`, `n`, `f`, `p`, `e`), the server's word on
 a seat's swing at a log: the frame (null: no swing), the points and the
 total after, and `a: 1` for a miss that doesn't count yet (the seat may swing
@@ -898,6 +963,8 @@ passed on to the others, and to its own device with `o`, the frame it said, if
 it counts on another one; `won` (`r`, `f`, `h`), Gutsy Golbat's end: the
 frame the play ended on and each seat's hearts; `won` (`r`, `f`, `p`),
 Barrier Ball's end: the frame the play ended on and each seat's points;
+`won` (`r`, `f`, `fin`, `p`), Rampage Rollout's end: the frame the race ended
+on, the frame each seat came in on (null: not in) and each one's place;
 `lean` as above (with the time the server kept: never before the seat's last
 lean); `ev` (`r`, `s`, `n`, `k`, `e`, `g`), the server's verdict on a drop:
 `c` caught, `h` a shock, or `m`, not a catch after all, with the egg count
