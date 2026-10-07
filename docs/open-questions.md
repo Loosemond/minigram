@@ -57,6 +57,17 @@ What isn't known yet, roughly by how useful it would be.
   the same rule, not that code); Girafarig, whom the code loads for a Game
   Pak's Girafarig (the remake has Furret for all); and the instructions' show
   (a Furret in a bush for each player), which the remake leaves out.
+- **Delibird's Delivery's loose ends** (its rules are read: [minigames.md](minigames.md#delibirds-delivery)):
+  how the save's flags that swap in the Game Boy Advance and the GameCube
+  get set (module #63's `0x87E07CB0` and `0x87E07C90` set them, reached
+  through pointers not followed; the remake plays without); where a gift being
+  picked up goes (to a point of Delibird's model, `+0xBC` of its object, read
+  as it's drawn: the remake takes it to the sack); the sack's reach, looked up
+  by the player where its table goes by the fill (the remake goes by the
+  fill); the labels' size (module #64's); the lights' ways (by eye, as in
+  Furret's Frolic); what image banks 378 and 382 (the gifts and their points,
+  by appearance) are for; and the instructions' show (state 2: the
+  Delibird walk in), which the remake leaves out.
 - **Audio:** the voices' codec (5, in sample banks 4–6), the reverb
   settings, the game's custom sequence function (`0x800275D8`), and the
   0x28-byte records at `0x49B780` ([audio.md](audio.md)).

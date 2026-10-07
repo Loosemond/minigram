@@ -315,9 +315,49 @@ FURRET = {
 FURRET.update({"label%d.png" % i: bank(260, i) for i in range(5)})
 UI["title_furret.png"] = bank(405, 0)
 
+# Delibird's Delivery is code module #60. Its code loads Delibird (object
+# 127: layout 0 the bird, 1 its sack), the Swinub (82 running right, 103
+# running left), the gift boxes on the back belt (92, and 96 for a piano or a
+# Snorlax), the gifts (175 ring, 176 piano, 181 Snorlax, 169 Nintendo 64, 180
+# Game Boy, 174 stocking, 184 candy, 177 Game Boy Advance, 170 GameCube: the
+# order of its table) and the stage (148 the field, its back belt and the
+# doors; 147 the front belt, the walls and the counter). Its pictures: the
+# shadow (307's dot), the HUD's panel (376), gift (381) and count's digits
+# (380), the combo (377: x2-x5) on a flash (398), FULL (379) and "Points" (430)
+# for the tally at the end; over each Delibird its label (260: 1P-4P, COM).
+# The ring's sparkle is its texture's 13 frames.
+# Its banner is image bank 375.
+_DB, _SW = "objects/127_delibird/", "objects/%03d_swinub_running_%s/%03d_swinub_running_%s.glb"
+DELIBIRD = {
+    "delibird.glb": _DB + "127_delibird.glb",
+    "sack.glb": _DB + "127_delibirds_sack.glb",
+    "field.glb": "objects/148_delibirds_delivery_field/148_delibirds_delivery_field.glb",
+    "walls.glb": "objects/147_delibirds_delivery_walls/147_delibirds_delivery_walls.glb",
+    "swinub_right.glb": _SW % (82, "right", 82, "right"),
+    "swinub_left.glb": _SW % (103, "left", 103, "left"),
+    "box.glb": "objects/092_gift_box/092_gift_box.glb",
+    "box_big.glb": "objects/096_gift_box_big/096_gift_box_big.glb",
+    "shadow.png": bank(307, 0),
+    "panel.png": bank(376, 0),
+    "gift.png": bank(381, 0),
+    "full.png": bank(379, 0),
+    "flash.png": bank(398, 0),
+    "points.png": bank(430, 1),
+}
+for _k, (_n, _o) in enumerate([("diamond_ring", 175), ("grand_piano", 176), ("snorlax", 181), ("pikachu_nintendo_64", 169),
+                               ("game_boy", 180), ("christmas_stocking", 174), ("candy", 184),
+                               ("game_boy_advance", 177), ("gamecube", 170)]):
+    DELIBIRD["gift%d.glb" % _k] = "objects/%03d_%s/%03d_%s.glb" % (_o, _n, _o, _n)
+DELIBIRD.update({"sparkle%d.png" % i: "objects/175_diamond_ring/textures/tex%02d.png" % i for i in range(13)})
+DELIBIRD.update({"x%d.png" % (i + 2): bank(377, i) for i in range(4)})
+DELIBIRD.update({"d%d.png" % i: bank(380, i) for i in range(10)})
+DELIBIRD.update({"label%d.png" % i: bank(260, i) for i in range(5)})  # (the labels over each Delibird: 1P-4P, COM)
+UI["title_delibird.png"] = bank(375, 0)
+
 # folder -> {asset name: file under out/}
 FILES = {"ui": UI, "egg": EGG, "clearcut": CLEARCUT, "eevee": EEVEE, "stampede": STAMPEDE, "pichu": PICHU,
-         "togepi": TOGEPI, "golbat": GOLBAT, "barrier": BARRIER, "rollout": ROLLOUT, "topsy": TOPSY, "furret": FURRET}
+         "togepi": TOGEPI, "golbat": GOLBAT, "barrier": BARRIER, "rollout": ROLLOUT, "topsy": TOPSY, "furret": FURRET,
+         "delibird": DELIBIRD}
 
 # Sound (docs/audio.md). A game asks for song n, which the game plays as
 # sequence n + 39. The effects are sounds of sequence 9, the one the game runs
@@ -545,6 +585,33 @@ SOUNDS = {
         "count": _sound(0x13, 100, 5, 0x0100, sfx=[16]),  # 0x2F00
         "go": _sound(0x14, 100, 5, 0x0100, sfx=[17]),  # 0x2F01
     }),
+    # Delibird's Delivery asks for song 52 (sequence 91) at GO. Its effects
+    # are bank 8's (0x8Fxx; the tally's tick asks for 0x8012, the same
+    # entry), placed by the player's Delibird; its count and GO are Pichu's
+    # Power Plant's (0x2F00, 0x2F01), and the shared count (0xCF00, 0xCF06)
+    # sounds the last three seconds
+    "delibird": ({"main": 91, "win": 94}, {
+        "in": _sound(0x50, 100, 20, 0x0700),  # 0x8F00, a gift through its door
+        "inBig": _sound(0x55, 100, 20, 0x0700),  # 0x8F04, a piano's or a Snorlax's
+        "spun": _sound(0x52, 100, 1, 0x0003),  # 0x8F01, a Swinub hits a sack
+        "knocked": _sound(0x53, 110, 1, 0x0003),  # 0x8F02, a Swinub knocks a Delibird over...
+        "spill": _sound(0x54, 110, 1, 0x0003),  # 0x8F03, ...and its gifts fly out
+        **{"sack%d" % (i + 1): _sound(0x56 + i, 100, 1, 0x0003) for i in range(5)},  # 0x8F05-0x8F09, a gift in the sack (1-5)
+        "hand": _sound(0x5C, 90, 1, 0x0003),  # 0x8F0B, a gift onto the back belt
+        "step": _sound(0x5D, 53, 1, 0x0003),  # 0x8F0C, a footstep (with a light sack)
+        "strain4": dict(_sound(0x51, 75, 1, 0x0003), pitch=0.65),  # 0x8F10, walking with four gifts...
+        "strain5": dict(_sound(0x51, 85, 1, 0x0003), pitch=0.5),  # 0x8F11, ...and five
+        "tick": _sound(0xA0, 100, 1, 0x0001),  # 0x8012, the points counting up at the end
+        "counted": _sound(0xA1, 120, 1, 0x0006),  # 0x8F13, a player's all counted
+        "ring": _sound(0xA4, 127, 1, 0x0700),  # 0x8F14, a ring comes in on the belt
+        "piano": _sound(0xA5, 120, 1, 0x0700),  # 0x8F15, a piano does
+        **{"combo%d" % (i + 1): _sound(0xA6 + i, 120, 1, 0x0700) for i in range(4)},  # 0x8F16-0x8F19, x2-x5
+        **SHARED,
+        "lastCount": SHARED["count"],
+        "lastGo": SHARED["go"],
+        "count": _sound(0x13, 100, 5, 0x0100, sfx=[16]),  # 0x2F00
+        "go": _sound(0x14, 100, 5, 0x0100, sfx=[17]),  # 0x2F01
+    }),
 }
 
 def flat_picture(glb_path, width, more=(), box=None, top=False, turn=0):
@@ -553,7 +620,7 @@ def flat_picture(glb_path, width, more=(), box=None, top=False, turn=0):
     and the nearest wins (a depth buffer). For the title's art, where a
     minigame has no background picture (Streaming Stampede's circus backdrop,
     Pichu's Power Plant's frame, Barrier Ball's court). more: other models
-    with it, (path, dx, dy) each; box: (x0, y0, x1, y1), the part of it to
+    with it, (path, dx, dy) each, or (path, dx, dy, scale); box: (x0, y0, x1, y1), the part of it to
     draw (else all of it); top: seen from above (looking down -y, +x right
     and -z up), for a model that lies flat (Rampage Rollout's track); turn:
     then turned this many degrees anticlockwise (Furret's Frolic's field, as
@@ -562,7 +629,7 @@ def flat_picture(glb_path, width, more=(), box=None, top=False, turn=0):
     import struct
     import zlib
 
-    def parse(path, dx, dy):
+    def parse(path, dx, dy, scale=1):
         d = open(path, "rb").read()
         n = struct.unpack_from("<I", d, 12)[0]
         j = json.loads(d[20:20 + n])
@@ -618,7 +685,7 @@ def flat_picture(glb_path, width, more=(), box=None, top=False, turn=0):
 
         def place(p, jn):
             m = world[joints[jn]] if joints else ident
-            x, y, z = (m[i][0] * p[0] + m[i][1] * p[1] + m[i][2] * p[2] + m[i][3] for i in range(3))
+            x, y, z = ((m[i][0] * p[0] + m[i][1] * p[1] + m[i][2] * p[2] + m[i][3]) * scale for i in range(3))
             if top:
                 x, y, z = x, -z, y
             if turn:
@@ -643,8 +710,8 @@ def flat_picture(glb_path, width, more=(), box=None, top=False, turn=0):
         return parts
 
     prims = parse(glb_path, 0, 0)
-    for path, dx, dy in more:
-        prims += parse(path, dx, dy)
+    for m in more:
+        prims += parse(*m)
     if box:
         x0, y0, x1, y1 = box
     else:
@@ -753,6 +820,13 @@ if os.path.exists(_field):
     with open(os.path.join(site, "furret", "art.png"), "wb") as fh:
         fh.write(png.encode_rgba(*flat_picture(_field, 400, [(os.path.join(site, "furret", "boards.glb"), 0, 0)],
                                                (-14.5, -10.9, 14.5, 10.9), top=True, turn=-45)))
+
+# Delibird's Delivery's art for the title and the lobby: the back of its stage, flat (the four doors)
+_field = os.path.join(site, "delibird", "field.glb")
+if os.path.exists(_field):
+    with open(os.path.join(site, "delibird", "art.png"), "wb") as fh:
+        fh.write(png.encode_rgba(*flat_picture(_field, 400, [(os.path.join(site, "delibird", "walls.glb"), 0, 0)],
+                                               (-21.5, 1.5, 21.5, 17))))
 
 if roms:
     rom = Rom(roms[0])

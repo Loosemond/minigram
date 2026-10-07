@@ -43,17 +43,17 @@ OBJECTS = {
     65: "Log", 66: "Log", 67: "Log", 68: "Pillar", 69: "Pillar", 70: "Pillar", 71: "Bird",
     72: "Trophy (egg)", 73: "Trophy (N)", 74: "Trophy (laurel)", 75: "Trophy (small)",
     76: "Round Face", 77: "Checkered Bowl", 78: "Green Field", 79: "Shadow Disc",
-    80: "Booth (blue)", 81: "Wooden Ring", 82: "Swinub", 83: "Signpost 4P",
+    80: "Booth (blue)", 81: "Wooden Ring", 82: "Swinub (running right)", 83: "Signpost 4P",
     84: "Signpost 3P", 85: "Signpost 1P", 86: "Signpost 2P", 87: "Signpost COM",
     98: "TV Room (miniature)", 100: "Booth (green)", 101: "Booth (purple)",
-    102: "Booth (yellow)", 103: "Swinub", 104: "Dark Obelisk", 107: "Pichu",
+    102: "Booth (yellow)", 103: "Swinub (running left)", 104: "Dark Obelisk", 107: "Pichu",
     109: "Togepi", 110: "Jynx", 111: "Wooden Ring", 114: "Cleffa", 115: "Hitmontop", 116: "Ramp",
     117: "Circus Backdrop", 118: "Books", 119: "Igglybuff", 121: "Green Arrows", 122: "Scyther",
     123: "Hitmontop", 125: "Rope Ring", 126: "Grass Arc", 128: "Floor Marks", 129: "Mr. Mime",
     132: "Rainbow Arc", 133: "Small Plants", 134: "Grass Arc", 135: "Cacti", 136: "Thin Arc",
     137: "Grass Ring", 138: "Grass Ring", 139: "Grass Pieces", 140: "Grass Arc",
     141: "Barrier", 142: "Furret", 143: "Eevee", 144: "Chansey", 145: "Egg",
-    147: "Course Corner", 148: "Course Stage", 149: "Grass Field Ring", 150: "Aipom on a Rope", 151: "Pineco",
+    147: "Delibird's Delivery Walls", 148: "Delibird's Delivery Field", 149: "Grass Field Ring", 150: "Aipom on a Rope", 151: "Pineco",
     152: "Lid Box", 155: "Furret's Frolic Field", 156: _TV + " (Wave Race 64)", 157: _TV + " (Super Mario 64)",
     158: _TV + " (castle)", 159: _TV + " (Super Mario Bros.)", 160: _TV + " (maze)",
     161: _TV + " (Donkey Kong)", 162: _TV + " (flowers)", 163: _TV + " (race track)",
@@ -74,10 +74,11 @@ OBJECTS = {
 OBJECT_NAME_FIXES = {37: "Yellow Carpet"}  # the ROM text has no space
 for _i in range(88, 100):
     OBJECTS.setdefault(_i, "Gift Box")
+OBJECTS[96] = "Gift Box (big)"  # (Delibird's Delivery's, for a piano or a Snorlax)
 LAYOUTS = {
     (108, 0): "Donphan", (108, 1): "Donphan (rolling)", (113, 0): "Green Field", (113, 1): "Red Frame",
     (120, 0): "Court Floor", (120, 1): "Court Lines", (120, 2): "Court Hole", (127, 0): "Delibird",
-    (127, 1): "Delibird Prop", (142, 0): "Furret", (142, 1): "Furret", (153, 0): "Poké Ball",
+    (127, 1): "Delibird's Sack", (142, 0): "Furret", (142, 1): "Furret", (153, 0): "Poké Ball",
     (153, 1): "Great Ball", (153, 2): "Ultra Ball", (153, 3): "Master Ball", (154, 0): "Poké Ball",
     (154, 1): "Ultra Ball", (154, 2): "Master Ball", (154, 3): "Great Ball", (155, 0): "Furret's Frolic Field",
     (155, 1): "Field Shadows", (155, 2): "Boards",
@@ -126,7 +127,14 @@ BANKS = {
     385: "Rampage Rollout final lap", 386: "Rampage Rollout lap",  # (by appearance)
     389: "Eager Eevee prizes", 390: "Eager Eevee digits", 392: "Eager Eevee rounds",
     393: "Eager Eevee sec box", 394: "Eager Eevee time digits",
-    397: "Clear Cut Spinarak", 398: "Clear Cut flash", 399: "Clear Cut cuts",
+    397: "Clear Cut Spinarak", 398: "Clear Cut flash", 399: "Clear Cut cuts",  # (398 is Delibird's Delivery's too)
+    # Delibird's Delivery (module #60): the box behind each player's count of
+    # gifts through its door, the combo ("x2"-"x5"), FULL (over a full sack),
+    # the count's digits and the gift by it; 378 (the gifts) and 382 (their
+    # points) by appearance
+    376: "Delibird's Delivery panel", 377: "Delibird's Delivery combo", 378: "Delibird's Delivery gifts",
+    379: "Delibird's Delivery full", 380: "Delibird's Delivery digits", 381: "Delibird's Delivery gift",
+    382: "Delibird's Delivery points",
     # Streaming Stampede (module #59): the Pokemon that go by, a sprite in a few
     # frames each (Diglett and Dugtrio pop up out of the ground), its digits and its words
     201: "Streaming Stampede dot", 202: "Streaming Stampede Voltorb", 203: "Streaming Stampede Magcargo",

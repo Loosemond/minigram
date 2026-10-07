@@ -355,6 +355,40 @@ input { -webkit-user-select: text; user-select: text; }
 .fu-dpad i.on { background: rgba(255, 255, 255, 0.55); border-color: #fff; }
 .fu-dpad.rest { opacity: 0.55; }
 .game-hud.off .fu-pads, .game-hud.off .fu-hint { display: none; }
+/* Delibird's Delivery: the clock at the top, the combos by the cards (the
+   flash in the combo's colour, x2-x5 on it), the points counting up at the
+   end, the hint; on a touch screen the stick (where a finger went down) */
+.dd-time { position: absolute; display: flex; flex-direction: column; align-items: center; padding: 4px 12px 6px;
+  border-radius: 12px; background: rgba(60, 60, 60, 0.6); color: #fff; line-height: 1; pointer-events: none;
+  text-shadow: 0 0 2px #222, 1px 1px 0 #222, -1px -1px 0 #222, 1px -1px 0 #222, -1px 1px 0 #222; }
+.dd-time small { font-size: 10px; font-weight: 700; letter-spacing: 1px; opacity: 0.85; }
+.dd-time b { font-size: 26px; font-weight: 900; font-variant-numeric: tabular-nums; min-width: 2ch; text-align: center; }
+.dd-time.low b { color: #ffe08a; }
+.card .label[src$="delibird/gift.png"] { width: calc(var(--k) * 18px); height: calc(var(--k) * 12px); image-rendering: pixelated; }
+.dd-combo { position: absolute; width: 84px; height: 63px; pointer-events: none; display: grid; place-items: center; }
+.dd-combo i { position: absolute; inset: 0; -webkit-mask: url(assets/delibird/flash.png) center / contain no-repeat;
+  mask: url(assets/delibird/flash.png) center / contain no-repeat; }
+.dd-combo img { position: relative; width: 48px; height: 32px; image-rendering: pixelated; }
+.dd-tally { position: absolute; display: flex; flex-direction: column; gap: 6px; padding: 12px 18px; border-radius: 14px;
+  background: rgba(0, 0, 0, 0.55); pointer-events: none; }
+.dd-row { display: flex; align-items: center; gap: 10px; padding: 2px 8px; border-radius: 8px; }
+.dd-row .dd-badge { width: 43px; height: 34px; display: block; }
+.dd-row .dd-num { display: flex; justify-content: flex-end; min-width: 120px; }
+.dd-row .dd-num img { height: 30px; width: 24px; display: block; }
+.dd-row .dd-pts { height: 25px; width: 40px; display: block; image-rendering: pixelated; }
+.dd-row.won { animation: dd-won 2s steps(6) infinite; }
+@keyframes dd-won { 0% { background: #b43c3c; } 17% { background: #b48c28; } 33% { background: #28a028; }
+  50% { background: #289696; } 67% { background: #5050c8; } 83% { background: #963c96; } }
+.dd-hint { position: absolute; left: 50%; bottom: calc(var(--safe-b) + 14%); transform: translateX(-50%);
+  padding: 6px 14px; border-radius: 16px; background: rgba(0, 0, 0, 0.5); color: #fff; font-weight: 700;
+  font-size: 15px; white-space: nowrap; text-shadow: 0 1px 2px #000; }
+.dd-pads { position: absolute; inset: 0; pointer-events: none; }
+.dd-stick { position: absolute; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%; box-sizing: border-box;
+  border: 2px dashed rgba(255, 255, 255, 0.6); background: rgba(20, 20, 30, 0.25); }
+.dd-knob { position: absolute; left: 50%; top: 50%; width: 50px; height: 50px; margin: -25px 0 0 -25px; border-radius: 50%;
+  background: rgba(235, 235, 245, 0.7); border: 2px solid #fff; box-sizing: border-box; }
+.dd-stick.rest { opacity: 0.55; }
+.game-hud.off .dd-pads, .game-hud.off .dd-hint { display: none; }
 
 #banner img { height: clamp(90px, 22vh, 200px); display: inline-block; }
 #banner {

@@ -38,6 +38,7 @@ import pichu_rules  # noqa: E402
 import rollout_rules  # noqa: E402
 import topsy_rules  # noqa: E402
 import furret_rules  # noqa: E402
+import delibird_rules  # noqa: E402
 import rooms  # noqa: E402
 import stampede_rules  # noqa: E402
 import togepi_rules  # noqa: E402
@@ -118,6 +119,29 @@ TOPSY_LEVEL = {1: "normal", 157: "hard", 2 ** 31 - 1: "easy"}
 # then the end, the points and the places (web/minigames/tests.js has the same)
 JS_FURRET = {1: "71f7890a4652fb1b", 157: "5d54951a1f163b23", 2 ** 31 - 1: "1c343168cb41c113"}
 FURRET_LEVEL = {1: "normal", 157: "hard", 2 ** 31 - 1: "easy"}
+
+
+# web/minigames/src/delibird/rules.js: a round with seats 0 and 2 on
+# delibird_pad() and two CPUs (normal, hard, easy), the world's digest() every
+# 100 frames: the hard one to its end, the tally and a second of the show
+# (1968 frames), the others 600; then the end, the points and the places
+# (web/minigames/tests.js has the same)
+JS_DELIBIRD = {1: "58a899646c2d1eaa", 157: "1ec6dc9cb71bb3f7", 2 ** 31 - 1: "3a78ef0b5a26067c"}
+DELIBIRD_LEVEL = {1: "normal", 157: "hard", 2 ** 31 - 1: "easy"}
+
+
+def delibird_pad(z, t, w):
+    """Down to a gift on the belt (each in turn), up with two (or one, now and then)."""
+    p = w.p[z]
+    if p.load >= 2 or (p.load > 0 and t % 300 > 200):
+        return [((t * 7 + z * 13) % 41) - 20, 64]
+    if not w.on_belt:
+        return [0, 0]
+    g = w.on_belt[(z + t // 90) % len(w.on_belt)]
+    dx, dz = g.x - p.x, g.z - p.zz
+    l = math.sqrt(dx * dx + dz * dz) or 1
+    rnd = lambda v: int(math.floor(v + 0.5))  # (JS's Math.round)
+    return [max(-64, min(64, rnd((dx / l) * 64))), max(-64, min(64, rnd((-dz / l) * 64)))]
 
 
 def furret_pad(z, t, w):
@@ -1369,6 +1393,91 @@ def _():
         a.close()
     finally:
         furret_rules.TIME = saved
+
+
+def delibird_digest(seed):
+    w = delibird_rules.World(seed, DELIBIRD_LEVEL[seed], [False, True, False, True])
+    parts, t = [], 0
+    while (not (w.phase == "show" and t > w.shown + 30)) if seed == 157 else t < 600:
+        w.step(t, [delibird_pad(0, t, w), None, delibird_pad(2, t, w), None])
+        w.events = []
+        if t % 100 == 0:
+            parts.append(w.digest())
+            time.sleep(0.002)  # (the other checks' clocks go on meanwhile)
+        t += 1
+    parts.append("%d:%s:%s" % (-1 if w.end is None else w.end, ",".join(map(str, w.scores)), ",".join(map(str, w.places))))
+    return hashlib.sha256(";".join(parts).encode()).hexdigest()[:16]
+
+
+@check("Delibird's Delivery: the world (the CPUs too) matches the browser's, bit for bit", together="Delibird")
+def _():
+    for seed, want in JS_DELIBIRD.items():
+        assert delibird_digest(seed) == want, seed
+    D = delibird_rules
+    # a gift through its door: its points, and the same again in a row twice as many (0x86A036F4)
+    w = D.World(3)
+    p = w.p[1]
+    for k in (5, 5, 0):
+        w.boxes.append(D.Box(99, 1, k, *D.DOORS[1], False))
+        w.box(w.boxes[-1])
+    assert p.score == 50 + 100 + 1000 and p.got == [5, 5, 0] and p.combo == 0, (p.score, p.got)
+    # the tally's length: its points count up by 0, 1, 2... a frame
+    assert D.tally_frames([0, 0, 0, 0]) == 2 and D.tally_frames([5000, 100, 0, 30]) == 102
+
+
+@check("Delibird's Delivery: the server runs the world from the sticks, says how it ended and stops cheats", together="Delibird")
+def _():
+    saved = delibird_rules.TIME
+    delibird_rules.TIME = 4 * delibird_rules.FPS  # (a short round: four seconds)
+    try:
+        a, b = Client("DA"), Client("DB")
+        a.send("hello", id="da", name="Dee", game="delibird")
+        code = a.wait("welcome")["room"]
+        b.send("hello", id="db", name="Dot", room=code)
+        b.wait("welcome")
+        time.sleep(rooms.CHANGE_GAP)
+        a.drain()
+        b.drain()
+        a.send("start")
+        st = a.wait("start")
+        assert st["game"] == "delibird" and st["dd"] == dict(done=None, pads=[[], [], None, None]), st
+        go, r = st["go"], st["round"]
+        g = rooms.rooms[code].game
+        assert g.cpus == [False, False, True, True]
+        down = (64 + 64) | ((-64 + 64) << 8)  # (the stick down)
+        at(go, 0.05)
+        a.send("pad", r=r, s=0, f=0, x=down, a=0)  # Dee: the stick down
+        a.send("pad", r=r, s=1, f=1, x=down, a=0)  # someone else's Delibird: ignored
+        for x, ok in ((-1, 0), (0x8081, 0), (0x8180, 0), (1.5, 0), ("1", 0), (down, 2)):  # no stick: ignored
+            b.send("pad", r=r, s=1, f=2, x=x, a=ok)
+        at(go, 40 / delibird_rules.FPS)
+        up = 64 | (128 << 8)
+        b.send("pad", r=r, s=1, f=0, x=up, a=0)  # Dot's, older than the way here allows: as late as that does
+        late = 40 - int(rooms.ALLOW_GUESS * delibird_rules.FPS)
+        mine = [(m["s"], m["f"], m.get("o")) for m in b.drain(0.3) if m["t"] == "pad"]
+        assert mine == [(0, 0, None), (1, late, 0)], mine  # (Dee's; and Dot's own, from where it counts)
+        heard = [(m["s"], m["f"], m["x"], m["a"]) for m in a.drain(0.1) if m["t"] == "pad"]
+        assert heard == [(1, late, up, 0)], heard
+        a.s.settimeout(10)
+        won = a.wait("won", timeout=10)
+        a.s.settimeout(3)
+        # the same round, here
+        want = delibird_rules.Round(rooms.rooms[code].seed, "normal", cpus=[False, False, True, True])
+        want.pads = [[[0, down, 0]], [[late, up, 0]], [], []]
+        said = {k: won[k] for k in ("f", "s")}
+        assert want.settle(1000, 0) == said, (won, want.done)
+        assert said["f"] == delibird_rules.TIME, said  # (the clock's run out: nothing was on its way)
+        assert g.end == (said["f"] + delibird_rules.tally_frames(said["s"]) + delibird_rules.SHOW) / delibird_rules.FPS
+        a.send("pad", r=r, s=0, f=won["f"] + 5, x=down, a=0)  # after the end: nothing
+        a.send("done", r=r)
+        b.send("done", r=r)
+        a.s.settimeout(8)  # (the round's over 3 s after the play: the tally and the show)
+        res = a.wait("results", timeout=10)
+        assert res["scores"] == said["s"], res
+        b.close()
+        a.close()
+    finally:
+        delibird_rules.TIME = saved
 
 
 @check("Telegram logins: checked, and no one can pose as a Telegram player")

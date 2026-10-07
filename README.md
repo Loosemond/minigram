@@ -91,7 +91,7 @@ Names are the game's own (text table 57). Details and method:
 | Rampage Rollout | Donphan `108` (walking and rolling), track `113` |
 | Streaming Stampede | Cleffa `114` (shiny `186`), Igglybuff `119` (shiny `205`), the players' booths `080`/`100`–`102`, ramp `116`, circus backdrop `117`, books `118` |
 | Tumbling Togepi | Togepi `109`, Omanyte `206`, course pieces `060`, `062`–`070`, `132`–`140`, ice block `188`, water `202` |
-| Delibird's Delivery | Delibird `127`, Swinub `082`/`103`, gift boxes `092`/`096`, factory `147`/`148`, the gifts (`169`, `170`, `174`–`177`, `180`, `181`, `184`) |
+| Delibird's Delivery | Delibird `127` (and its sack), Swinub `082`/`103`, gift boxes `092`/`096`, the stage `147`/`148`, the gifts (`169`, `170`, `174`–`177`, `180`, `181`, `184`) |
 | Egg Emergency | Chansey `144`, egg `145`, `185` |
 | Eager Eevee | Eevee `143`, field `149`, Aipom `150`, Pineco `151`, `203`/`204`/`207`, fruit `208`–`216` (not `214`) |
 
@@ -131,12 +131,13 @@ all here, but not the timeline.
 
 ## Play in the browser
 
-`web/minigames/` remakes eleven of the twelve minigames in three.js with the
-game's own models, backdrops, sprites, HUD graphics, music and sound: Egg
-Emergency, Clear Cut Challenge, Eager Eevee, Streaming Stampede, Pichu's Power
-Plant, Tumbling Togepi, Gutsy Golbat, Barrier Ball, Rampage Rollout,
-Topsy-Turvy and Furret's Frolic. All but Egg Emergency play by the game's own rules, read from
-their code modules ([docs/minigames.md](docs/minigames.md)).
+`web/minigames/` remakes all twelve minigames in three.js with the game's own
+models, backdrops, sprites, HUD graphics, music and sound: Egg Emergency,
+Clear Cut Challenge, Eager Eevee, Streaming Stampede, Pichu's Power Plant,
+Tumbling Togepi, Gutsy Golbat, Barrier Ball, Rampage Rollout, Topsy-Turvy,
+Furret's Frolic and Delibird's Delivery. All but Egg Emergency play by the
+game's own rules, read from their code modules
+([docs/minigames.md](docs/minigames.md)).
 Pick one on the title screen, or in the lobby when playing online: up to four
 people in a room, invited with a link, with CPUs in the empty spots. It adapts
 to phones (portrait) and PCs (landscape) and runs as a Telegram Mini App.

@@ -329,6 +329,37 @@ shared count (`0xCF00`, `0xCF06` at 0). In the last 30 seconds it calls
 | `0xBF03` | `0x64` (volume 125, pitch 2) | | a ball comes down hard on the field (deeper than 0.04 of its radius, after more than 55 in a frame) |
 | `0xBF04` | `0x78` (volume 80) | | a winner's cry, at frame 69 of its cheer, twice |
 
+Delibird's Delivery's (module #60) are bank 8's (`0x8F00`-`0x8F19`; the
+tally's tick asks for `0x8012`, the same entry), a Delibird's placed by
+where it is (`0x8002780C`, with the pan worked out from its x and z each
+frame: `0x86A05DCC`), a gift through a door's panned to its player
+(`0x80027A18`). Its count and GO are Pichu's Power Plant's (`0x2F00`,
+`0x2F01`); the shared count (`0xCF00`, `0xCF06` at 0) sounds the last three
+seconds. In the last 30 seconds it calls `0x80028108(8)`: entry 8 of
+`0x800A3B30`'s jump table is the default, 80 beats a minute, so one faster
+every 5 frames (450 / 80, in whole frames) for 450 frames: 90 faster in all.
+The strain (`0x8F10`, `0x8F11`) is asked for every frame a Delibird walks
+with four or five gifts; it shares two channels, so the remake strains for
+this device's own.
+
+| Id | Sound | When (from the code) |
+|---|---|---|
+| `0x8F00` | `0x50` (reverb 20) | a gift through its door |
+| `0x8F04` | `0x55` (reverb 20) | instead, a piano or a Snorlax |
+| `0x8F01` | `0x52` | a Swinub hits a sack (the Delibird spins round) |
+| `0x8F02`, `0x8F03` | `0x53`, `0x54` (volume 110) | a Swinub knocks a Delibird over with no gifts; with gifts, which fly out |
+| `0x8F05`-`0x8F09` | `0x56`-`0x5A` | a gift in the sack, by how full it is (1-5) |
+| `0x8F0B` | `0x5C` (volume 90) | a gift onto the back belt |
+| `0x8F0C` | `0x5D` (volume 53) | a footstep, at two frames of each walk, with fewer than four gifts |
+| `0x8F10`, `0x8F11` | `0x51` (volume 75, pitch 0.65; 85, 0.5) | walking with four gifts; five |
+| `0x8F12` (`0x8012`) | second table `0x20` | every frame the points count up at the end |
+| `0x8F13` | second table `0x21` (volume 120) | a player's points all counted |
+| `0x8F14`, `0x8F15` | second table `0x24` (volume 127), `0x25` (120) | a ring comes in on the belt; a piano |
+| `0x8F16`-`0x8F19` | second table `0x26`-`0x29` (volume 120) | x2-x5: the same gift through a door again |
+
+`0x8F0A` (sound `0x5B`) and `0x8F0D`-`0x8F0F` (`0x51` at volume 10-30) aren't
+asked for by module #60.
+
 ## Timing
 
 What `n64audio.js` uses, from the decomp (`AudioHeap_ResetStep`), for an

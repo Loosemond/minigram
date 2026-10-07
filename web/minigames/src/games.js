@@ -194,5 +194,24 @@ export const GAMES = {
     messages: ["pad", "won"],
     load: () => import("./furret/index.js"),
   },
+  delibird: {
+    id: "delibird",
+    name: "Delibird's Delivery",
+    banner: "assets/ui/title_delibird.png", // image bank 375
+    art: "assets/delibird/art.png", // (the back of its stage, flat: tools/web_assets.py)
+    color: "#4a2430",
+    how: `Fill Delibird's sack with gifts and carry it up to your door! <b>Slide a finger</b> (or the arrows) to walk.
+      Walk down to the gifts on the belt, facing one, to put it in your sack: five at most, and the heavier it is, the
+      slower you go. Walk up to the top to hand them over; each one scores once it's through your door. The same gift
+      as the last one through scores <b class="volt">double</b>, then three, four and five times! Watch out for the
+      Swinub: one that runs into you knocks your gifts out. The most points when the minute's up wins!`,
+    keys: "Keyboard: <kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd> walk",
+    unit: (n) => `${n}<small>pts</small>`,
+    invite: "Deliver gifts with me in Delibird's Delivery!",
+    store: "delibird_",
+    messages: ["pad", "won"],
+    load: () => import("./delibird/index.js"),
+  },
 };
-export const ORDER = ["egg", "clearcut", "eevee", "stampede", "pichu", "togepi", "golbat", "barrier", "rollout", "topsy", "furret"];
+export const ORDER = ["egg", "clearcut", "eevee", "stampede", "pichu", "togepi", "golbat", "barrier", "rollout", "topsy", "furret",
+  "delibird"];

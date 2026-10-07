@@ -79,6 +79,20 @@ function furretPad(z, t, w) {
   }
   return [s, t % 13 === 3];
 }
+// Delibird's Delivery: a round with seats 0 and 2 on deliPad() and two CPUs (normal, hard, easy), the world's
+// digest() every 100 frames (the hard one to its end, the tally and a second of the show, the others 600
+// frames), the end, the points and the places: the same as JS_DELIBIRD in tools/test_rooms.py
+const DELIBIRD = { 1: "58a899646c2d1eaa", 157: "1ec6dc9cb71bb3f7", 2147483647: "3a78ef0b5a26067c" };
+const DELIBIRD_LEVEL = { 1: "normal", 157: "hard", 2147483647: "easy" };
+// (down to a gift on the belt, each in turn; up with two, or one now and then)
+function deliPad(z, t, w) {
+  const p = w.p[z];
+  if (p.load >= 2 || (p.load > 0 && t % 300 > 200)) return [((t * 7 + z * 13) % 41) - 20, 64];
+  if (!w.onBelt.length) return [0, 0];
+  const g = w.onBelt[(z + Math.floor(t / 90)) % w.onBelt.length];
+  const dx = g.x - p.x, dz = g.z - p.zz, l = Math.sqrt(dx * dx + dz * dz) || 1;
+  return [Math.max(-64, Math.min(64, Math.round((dx / l) * 64))), Math.max(-64, Math.min(64, Math.round((-dz / l) * 64)))];
+}
 // the frame the first of three CPUs gets to full charge, the middle of 41 rounds (rules.js cpuPresses)
 const CHARGE_TARGETS = { easy: [500, 590], normal: [365, 420], hard: [295, 345] };
 // the best of the three CPUs' totals in a game, on average (Streaming Stampede: rules.js cpuPresses)
@@ -161,8 +175,8 @@ async function frame(query, into) {
 
 // The live tests run in lanes, side by side, each with frames of its own:
 // as many at once as MAX_FRAMES lets (each frame is a WebGL context, and a
-// page gets 16), in the order they're given, each lane's closed when it ends.
-const MAX_FRAMES = 12;
+// page gets 16: two spare), in the order they're given, each lane's closed when it ends.
+const MAX_FRAMES = 14;
 function lanesFrames() {
   const opened = [];
   return {
@@ -381,6 +395,17 @@ function autobat(w) {
       g.setSpot(s);
       if (a || (g.lastFrame + 1) % 17 === w.mg.me() * 3) g.press();
     }
+    step.call(api, dt, on);
+  };
+  return () => { api.step = step; };
+}
+
+// a Delibird's Delivery player: down to the gifts, up with them (deliPad)
+function autodeliver(w) {
+  const api = w.mg.mini, step = api.step;
+  api.step = function (dt, on) {
+    const g = api.game;
+    if (on && g.state === "play") g.setStick(...deliPad(g.me, g.lastFrame + 1, g.world));
     step.call(api, dt, on);
   };
   return () => { api.step = step; };
@@ -1573,13 +1598,161 @@ await test("Furret's Frolic: a finger is the D-pad, the way it slides; the view 
   assert(got.join() === want.join(), "still, right, down, up, left, let go; 2P's down: " + got.join());
 });
 
+await test("Delibird's Delivery: the world and the CPUs are the same as the server's copy of them", async () => {
+  const R = await moduleOf(solo, "./src/delibird/rules.js");
+  for (const [seed, want] of Object.entries(DELIBIRD)) {
+    const w = new R.World(+seed, DELIBIRD_LEVEL[seed], [false, true, false, true]), parts = [];
+    for (let t = 0; seed === "157" ? !(w.phase === "show" && t > w.shown + 30) : t < 600; t++) {
+      w.step(t, [deliPad(0, t, w), null, deliPad(2, t, w), null]);
+      w.events = [];
+      if (t % 100 === 0) parts.push(w.digest());
+    }
+    parts.push(`${w.end ?? -1}:${w.scores.join()}:${w.places.join()}`);
+    const got = await sha16(parts.join(";"));
+    assert(got === want, `seed ${seed}: ${got}; tools/delibird_rules.py expects ${want} (update both, and the digests)`);
+  }
+  // the tally: the points count up by 0, 1, 2... a frame; the world's as long
+  const w = new R.World(9, "hard", [true, true, true, true]);
+  for (let t = 0; w.phase !== "show"; t++) { w.step(t, []); w.events = []; }
+  assert(w.shown - w.end === R.tallyFrames(w.scores) && R.tallyFrames([0, 0, 0, 0]) === 2, `the tally: ${w.end} to ${w.shown} for ${w.scores}`);
+});
+
+await test("Delibird's Delivery: the harder CPUs are better (more points, and the Swinub get them less)", async () => {
+  const R = await moduleOf(solo, "./src/delibird/rules.js");
+  const play = (level) => {
+    let points = 0, knocked = 0;
+    for (let seed = 0; seed < 8; seed++) {
+      const w = new R.World(seed, level, [false, true, true, true]);
+      for (let t = 0; w.end === null; t++) {
+        w.step(t, [[0, 0]]); // (seat 0 stands at its door)
+        knocked += w.events.filter((e) => e[0] === "knocked").length;
+        w.events = [];
+      }
+      points += w.scores[1] + w.scores[2] + w.scores[3];
+    }
+    return { points: points / 8, knocked };
+  };
+  const easy = play("easy"), hard = play("hard");
+  assert(hard.points > easy.points && hard.knocked * 2 < easy.knocked, `easy ${JSON.stringify(easy)}, hard ${JSON.stringify(hard)}`);
+  return `the CPUs' points a round, on average: ${easy.points} easy, ${hard.points} hard; knocked over ${easy.knocked}, ${hard.knocked} times`;
+});
+
+await test("Delibird's Delivery: its music and sound effects play from sound.bin", () => soundTest("assets/delibird/sound.bin", [
+  ["main", 6, (r) => assert(r.notes > 10 && r.peak > 0.05 && r.peak < 1, `song 52: ${r.notes} notes, peak ${r.peak.toFixed(2)}`)],
+]));
+
+await test("Delibird's Delivery: online, the others' sticks coming in late run the world again to the same place", async () => {
+  await solo.mg.show("delibird");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners, R = await moduleOf(solo, "./src/delibird/rules.js");
+  const { pack } = await moduleOf(solo, "./src/delibird/game.js");
+  solo.mg.paused = true;
+  g.listeners = {};
+  const pattern = (t) => [[64, 0, -45, 0, 0, 45][Math.floor(t / 37) % 6], [0, -64, 45, 64, 0, -45][Math.floor(t / 37) % 6]];
+  try {
+    // seat 0 here, seat 2 someone else whose sticks come in 4-12 frames late, 1 and 3 CPUs
+    g.reset("normal", 77, { me: 0, control: ["local", "cpu", "remote", "cpu"], cpus: [false, true, false, true] });
+    g.start();
+    const late = [], theirs = new Map();
+    let lastX = null, t = 0;
+    for (; t < 1500; t++) {
+      const x = pack(...deliPad(2, t, g.world));
+      theirs.set(t, x);
+      if (x !== lastX) { late.push({ at: t + 4 + (t % 9), f: t, x }); lastX = x; }
+      for (const l of late.filter((l) => l.at === t)) g.told("pad", { s: 2, f: l.f, x: l.x, a: 0 });
+      g.setStick(...pattern(t));
+      g.step(t);
+      g.lastFrame = t;
+    }
+    for (const l of late.filter((l) => l.at >= t)) g.told("pad", { s: 2, f: l.f, x: l.x, a: 0 });
+    g.runTo(g.lastFrame);
+    // the same world with every stick on time (this device's own count g.lead frames after they're made)
+    const w = new R.World(77, "normal", [false, true, false, true]), L = g.lead;
+    const held = (f) => { let x = null; for (const l of late) if (l.f <= f) x = l.x; return x === null ? [0, 0] : [(x & 0xff) - 64, (x >> 8) - 64]; };
+    for (let f = 0; f <= g.lastFrame; f++) w.step(f, [f < L ? [0, 0] : pattern(f - L), null, held(f), null]);
+    assert(g.world.digest() === w.digest(), `at frame ${g.lastFrame}: points ${g.world.scores} here, ${w.scores} on time`);
+    return `frame ${g.lastFrame}: points ${w.scores.join(", ")}; ${g.snaps.length} saved frames`;
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+});
+
+await test("Delibird's Delivery: a solo round, played headless: the clock, the tally, places by points", async () => {
+  await solo.mg.show("delibird");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners;
+  const R = await moduleOf(solo, "./src/delibird/rules.js");
+  solo.mg.paused = true;
+  g.listeners = {};
+  const out = [];
+  try {
+    for (const [seed, level] of [[11, "easy"], [22, "hard"]]) {
+      g.reset(level, seed, { me: 0, control: ["local", "cpu", "cpu", "cpu"] });
+      g.start();
+      while (g.state === "play" && g.frame < 3000) {
+        g.setStick(...deliPad(0, g.lastFrame + 1, g.world));
+        g.update(1 / 30);
+      }
+      const res = g.results(), s = g.world.scores, w = g.world;
+      // (the play's over once the clock's out and nothing's on its way, a second after at the most)
+      assert(g.state === "over" && w.end >= R.TIME && w.end <= R.TIME + 62 && g.frame >= w.shown + R.SHOW, `${level}: ${g.state}, the end at ${w.end}`);
+      assert(res.every((r) => r.score === s[r.i]) && res.every((r, k) => !k || res[k - 1].score >= r.score), `${level}: results ${JSON.stringify(res)} for ${s}`);
+      assert(g.winners.every((x, z) => x === (s[z] === Math.max(...s) && !s.every((y) => y === s[0]))), `${level}: winners ${g.winners} for ${s}`);
+      // (the winners cheer, the others sulk; the points all counted up; the cards show the gifts through each door)
+      assert(w.p.every((p, z) => p.state === (g.winners[z] ? R.ST.cheer : R.ST.sulk) && p.shown === p.score),
+        `${level}: at the end their states are ${w.p.map((p) => p.state)} for winners ${g.winners}`);
+      assert([0, 1, 2, 3].every((z) => api.score(z) === w.p[z].got.length) && s[0] > 0, `${level}: the cards ${[0, 1, 2, 3].map(api.score)}, points ${s}`);
+      out.push(`${level}: ${s.join(", ")} (gifts ${w.p.map((p) => p.got.length).join(", ")})`);
+    }
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  return "points: " + out.join("; ");
+});
+
+await test("Delibird's Delivery: a finger is a stick, the way and how far it slides; the keys the D-pad", async () => {
+  await solo.mg.show("delibird");
+  const api = solo.mg.mini, g = api.game;
+  const got = [];
+  try {
+    g.reset("normal", 5, { me: 0, control: ["local", "cpu", "cpu", "cpu"] });
+    g.state = "play";
+    const at = (x, y) => ({ pointerId: 1, clientX: x, clientY: y, pointerType: "touch" });
+    api.pointerdown(at(200, 300));
+    for (const [x, y] of [[204, 303], [280, 300], [200, 220], [170, 300], [200, 400]]) {
+      api.pointermove(at(x, y));
+      got.push(g.stick.join(" "));
+    }
+    api.pointerup(at(200, 400));
+    got.push(g.stick.join(" "));
+    // (the keys: right and up together are the D-pad's diagonal, 45 each way; left and right, left)
+    const key = (code, down) => (down ? api.keydown : api.keyup)({ code, repeat: false });
+    key("ArrowRight", true); key("ArrowUp", true);
+    got.push(g.stick.join(" "));
+    key("ArrowLeft", true); key("ArrowUp", false);
+    got.push(g.stick.join(" "));
+    key("ArrowLeft", false); key("ArrowRight", false);
+    got.push(g.stick.join(" "));
+  } finally {
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  const want = ["0 0", "64 0", "0 64", "-29 0", "0 -64", "0 0", "45 45", "-64 0", "0 0"];
+  assert(got.join() === want.join(), "still, right, up, a little left, down, let go; keys: " + got.join());
+});
+
 await test("online: the server moving this device's own moves to later frames keeps them in its order", async () => {
-  // (Gutsy Golbat, Barrier Ball, Tumbling Togepi, Rampage Rollout, Topsy-Turvy and Furret's Frolic: two of them the
+  // (Gutsy Golbat, Barrier Ball, Tumbling Togepi, Rampage Rollout, Topsy-Turvy, Furret's Frolic and Delibird's Delivery: two of them the
   // server got late, both put on frame 15. Rampage Rollout's are D-pads: 20 is LEFT | DOWN... 40 the same, made
   // up for here; Furret's Frolic's are spots, 0-4)
   const out = [];
   try {
-    for (const [id, type] of [["golbat", "pad"], ["barrier", "pad"], ["togepi", "stick"], ["rollout", "pad"], ["topsy", "pad"], ["furret", "pad"]]) {
+    for (const [id, type] of [["golbat", "pad"], ["barrier", "pad"], ["togepi", "stick"], ["rollout", "pad"], ["topsy", "pad"], ["furret", "pad"],
+      ["delibird", "pad"]]) {
       await solo.mg.show(id);
       const api = solo.mg.mini, g = api.game, saved = g.listeners, other = type === "pad" ? "a" : "y";
       solo.mg.paused = true;
@@ -1597,7 +1770,7 @@ await test("online: the server moving this device's own moves to later frames ke
           g.step(t);
           g.lastFrame = t;
         }
-        const sent = (x) => (id === "topsy" ? (x + 64) | (64 << 8) : x); // (Topsy-Turvy's stick goes packed: (x + 64) | (y + 64) << 8)
+        const sent = (x) => (id === "topsy" || id === "delibird" ? (x + 64) | (64 << 8) : x); // (Topsy-Turvy's and Delibird's Delivery's sticks go packed: (x + 64) | (y + 64) << 8)
         g.told(type, { s: 0, f: 15, o: 10, x: sent(x1), [other]: 0 });
         g.told(type, { s: 0, f: 15, o: 11, x: sent(x2), [other]: 0 });
         const x = (t) => (type === "pad" ? g.padAt(0, t) : g.stickAt(0, t))[0];
@@ -1620,7 +1793,7 @@ await test("online: rejoining a round, a seat whose player is away is still thei
                   lineup: [{ seat: 0, here: true }, { seat: 1, here: false }, { seat: 2, here: true }] };
   const out = [];
   try {
-    for (const id of ["stampede", "pichu", "togepi", "golbat", "barrier", "rollout", "topsy", "furret"]) {
+    for (const id of ["stampede", "pichu", "togepi", "golbat", "barrier", "rollout", "topsy", "furret", "delibird"]) {
       await solo.mg.show(id);
       solo.mg.mini.reset(round);
       out.push(`${id}: ${solo.mg.mini.game.cpus.join()}`);
@@ -1694,10 +1867,12 @@ await test("online: Clear Cut Challenge's logs fall together, and a late cut goe
 // ------------------------------------------------------------ the live tests
 // Real games in real time, side by side: each lane opens frames of its own
 // (an online one a room of its own, with two players) and closes them when
-// it's done, as many lanes at once as MAX_FRAMES lets, in this order.
+// it's done, as many lanes at once as MAX_FRAMES lets: the long ones first
+// (secs: about how long each takes, at the most, so they end at about the same time), then
+// in this order.
 solo.frameElement.remove();
 const lanes = [];
-const lane = (frames, fn) => lanes.push({ frames, fn });
+const lane = (frames, fn, secs = 0) => lanes.push({ frames, fn, secs });
 
 lane(2, async (f) => {
   let ann, bob, code;
@@ -1791,7 +1966,7 @@ lane(2, async (f) => {
     assert(!recB.off.length, "the server disagreed with Bob's device: " + JSON.stringify(recB.off));
     return ranking(ann);
   }, { live: true });
-});
+}, 64);
 
 lane(2, (f) => test("online: a Gutsy Golbat round, the same on both devices, and cheating doesn't work", async () => {
   const { ann, bob } = await f.pair("golbat");
@@ -1820,7 +1995,7 @@ lane(2, (f) => test("online: a Gutsy Golbat round, the same on both devices, and
   } finally {
     stop.forEach((s) => s());
   }
-}, { live: true }));
+}, { live: true }), 69);
 
 lane(2, (f) => test("online: a Barrier Ball round, the same on both devices, and cheating doesn't work", async () => {
   const { ann, bob } = await f.pair("barrier");
@@ -1849,7 +2024,7 @@ lane(2, (f) => test("online: a Barrier Ball round, the same on both devices, and
   } finally {
     stop.forEach((s) => s());
   }
-}, { live: true }));
+}, { live: true }), 70);
 
 lane(2, (f) => test("online: a Rampage Rollout race, the same on both devices, and cheating doesn't work", async () => {
   const { ann, bob } = await f.pair("rollout");
@@ -1879,7 +2054,36 @@ lane(2, (f) => test("online: a Rampage Rollout race, the same on both devices, a
   } finally {
     stop.forEach((s) => s());
   }
-}, { live: true }));
+}, { live: true }), 72);
+
+lane(2, (f) => test("online: a Delibird's Delivery round, the same on both devices, and cheating doesn't work", async () => {
+  const { ann, bob } = await f.pair("delibird");
+  const stop = [];
+  try {
+    ann.mg.net().send("start");
+    await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the round", 20000);
+    stop.push(autodeliver(ann), autodeliver(bob));
+    const net = bob.mg.net(), r = ann.mg.room().round, g = bob.mg.game;
+    await until(() => g.frame > 60, "two seconds in", 20000);
+    // Bob steers Ann's Delibird, says a stick of his was long ago, and sends a stick that's no stick
+    net.send("pad", { r, s: 0, f: g.frame, x: 0x4080, a: 0 });
+    net.send("pad", { r, s: 1, f: 5, x: 0x8040, a: 0 });
+    net.send("pad", { r, s: 1, f: g.frame + 1, x: 0x9000, a: 0 });
+    await until(() => [ann, bob].every((w) => w.mg.game.result), "the end, on both devices", 120000);
+    const res = (w) => JSON.stringify(w.mg.game.result);
+    assert(res(ann) === res(bob), `the end: ${res(ann)} / ${res(bob)}`);
+    const f = ann.mg.game.result;
+    // each device's run of the world comes to the server's: so the server took the same sticks
+    const pts = (w) => w.mg.game.world.scores.join();
+    await until(() => ann.mg.game.lastFrame >= f.f && bob.mg.game.lastFrame >= f.f, "both at the end", 20000);
+    assert(pts(ann) === f.s.join() && pts(bob) === f.s.join(), `points: Ann's ${pts(ann)}, Bob's ${pts(bob)}, the server's ${f.s}`);
+    await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 30000);
+    assert(ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
+    return `points ${f.s.join(", ")}, over at frame ${f.f}`;
+  } finally {
+    stop.forEach((s) => s());
+  }
+}, { live: true }), 74);
 
 lane(2, (f) => test("online: a Furret's Frolic round, the same on both devices, and cheating doesn't work", async () => {
   const { ann, bob } = await f.pair("furret");
@@ -1908,7 +2112,7 @@ lane(2, (f) => test("online: a Furret's Frolic round, the same on both devices, 
   } finally {
     stop.forEach((s) => s());
   }
-}, { live: true }));
+}, { live: true }), 71);
 
 lane(2, (f) => test("online: a Topsy-Turvy round, the same on both devices, and cheating doesn't work", async () => {
   const { ann, bob } = await f.pair("topsy");
@@ -1939,7 +2143,7 @@ lane(2, (f) => test("online: a Topsy-Turvy round, the same on both devices, and 
   } finally {
     stop.forEach((s) => s());
   }
-}, { live: true }));
+}, { live: true }), 60);
 
 lane(2, (f) => test("online: Barrier Ball on slow connections: each device sends its pads a few frames ahead", async () => {
   // (80 ms there and back on each: a phone's, about. Two pages alone, Bob's pads all get to Ann
@@ -1976,7 +2180,7 @@ lane(2, (f) => test("online: Barrier Ball on slow connections: each device sends
   } finally {
     stop.forEach((s) => s());
   }
-}, { live: true }));
+}, { live: true }), 15);
 
 lane(2, (f) => test("online: an Eager Eevee game, the same on both devices, and cheating doesn't work", async () => {
   const { ann, bob } = await f.pair("eevee");
@@ -2003,7 +2207,7 @@ lane(2, (f) => test("online: an Eager Eevee game, the same on both devices, and 
   } finally {
     stop.forEach((s) => s());
   }
-}, { live: true }));
+}, { live: true }), 19);
 
 lane(2, (f) => test("online: a Streaming Stampede game, the same on both devices, and cheating doesn't work", async () => {
   const { ann, bob } = await f.pair("stampede");
@@ -2027,7 +2231,7 @@ lane(2, (f) => test("online: a Streaming Stampede game, the same on both devices
   } finally {
     stop.forEach((s) => s());
   }
-}, { live: true }));
+}, { live: true }), 12);
 
 lane(2, (f) => test("online: a Tumbling Togepi race, the same on both devices, and cheating doesn't work", async () => {
   const { ann, bob } = await f.pair("togepi");
@@ -2057,7 +2261,7 @@ lane(2, (f) => test("online: a Tumbling Togepi race, the same on both devices, a
   } finally {
     stop.forEach((s) => s());
   }
-}, { live: true }));
+}, { live: true }), 36);
 
 lane(2, (f) => test("online: a Clear Cut Challenge round, the same on both devices, and cheating doesn't work", async () => {
   const { ann, bob } = await f.pair("clearcut");
@@ -2085,7 +2289,7 @@ lane(2, (f) => test("online: a Clear Cut Challenge round, the same on both devic
   } finally {
     stop.forEach((s) => s());
   }
-}, { live: true }));
+}, { live: true }), 34);
 
 lane(2, (f) => test("online: a Pichu's Power Plant game, the same on both devices, and cheating doesn't work", async () => {
   const { ann, bob } = await f.pair("pichu");
@@ -2118,7 +2322,7 @@ lane(2, (f) => test("online: a Pichu's Power Plant game, the same on both device
   } finally {
     stop.forEach((s) => s());
   }
-}, { live: true }));
+}, { live: true }), 16);
 
 lane(1, (f) => test("a solo round starts and plays: Egg Emergency", async () => {
   const solo = await f.open("game=egg");
@@ -2285,6 +2489,21 @@ lane(1, (f) => test("a solo round starts and plays: Furret's Frolic", async () =
   return `5 s in: clips ${clips.join(", ")}; ${w.balls.length} ball(s) on the field`;
 }, { live: true }));
 
+lane(1, (f) => test("a solo round starts and plays: Delibird's Delivery", async () => {
+  const solo = await f.open("game=delibird");
+  solo.document.querySelector("#play").click();
+  const stop = autodeliver(solo);
+  try {
+    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > 240, "Delibird's Delivery's first 8 s", 30000);
+  } finally { stop(); }
+  const g = solo.mg.game, w = g.world;
+  assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
+  // (8 s in: gifts on the belt, Swinub about, someone's picked a gift up; the clock down by the frames)
+  assert(w.onBelt.length > 0 && w.ids > 10 && w.p.some((p) => p.load > 0 || p.got.length > 0) && w.clock === 1800 - 1 - w.t,
+    `8 s in: ${w.onBelt.length} gifts on the belt, ${w.swinub.length} Swinub, loads ${w.p.map((p) => p.load)}, clock ${w.clock}`);
+  return `8 s in: ${w.onBelt.length} gift(s) on the belt, ${w.swinub.length} Swinub; sacks ${w.p.map((p) => p.load).join(", ")}`;
+}, { live: true }));
+
 lane(1, (f) => test("a solo round starts and plays: Rampage Rollout", async () => {
   const solo = await f.open("game=rollout");
   solo.document.querySelector("#play").click();
@@ -2299,7 +2518,7 @@ lane(1, (f) => test("a solo round starts and plays: Rampage Rollout", async () =
   return "progress 4 s in: " + far.join(", ");
 }, { live: true }));
 
-await runLanes(lanes);
+await runLanes(lanes.sort((a, b) => b.secs - a.secs)); // (a stable sort: the rest keep their order)
 
 const passed = results.filter((r) => r.ok).length, failed = results.filter((r) => r.ok === false).length;
 const verdict = failed ? "FAIL" : passed < results.length ? "INCONCLUSIVE" : "PASS";

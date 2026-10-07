@@ -18,6 +18,7 @@ have a game picker; a game's code and files load the first time it's picked.
 | Rampage Rollout | [minigames/src/rollout/](minigames/src/rollout/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#rampage-rollout)) |
 | Topsy-Turvy | [minigames/src/topsy/](minigames/src/topsy/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#topsy-turvy)) |
 | Furret's Frolic | [minigames/src/furret/](minigames/src/furret/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#furrets-frolic)) |
+| Delibird's Delivery | [minigames/src/delibird/](minigames/src/delibird/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#delibirds-delivery)) |
 
 ## Run it
 
@@ -797,6 +798,71 @@ running the world again, and the scene), `src/furret/assets.js` the models and
 pictures and `src/furret/index.js` the layout, the controls, its HUD and its
 online messages.
 
+## Delibird's Delivery
+
+Four Delibird stand at the back of a green field, each under its own door in
+the wall behind (1P's blue on the left, then 2P's green, 3P's red and 4P's
+yellow). Gifts ride in on a belt along the front: walk down to one, facing
+it, and Delibird puts it in its sack (five at most; the heavier the sack, the
+slower Delibird goes: a grand piano or a Snorlax weighs three times a ring).
+Walk back up to the top and Delibird hands its gifts over, one by one, onto
+the belt along the back, which carries each to its door: its points count
+once it's through. A ring is 1000, a piano 600, Snorlax 350, the Pikachu
+Nintendo 64 250, a Game Boy 100, a stocking 50, candy 20, and the same gift
+as the last one through your door scores double, then three, four and five
+times. Swinub run across the middle: one that runs into a Delibird knocks it
+over and the gifts in its sack fly out and are lost; one that runs into its
+sack spins it round. The cards show how many gifts each player has got
+through its door, as the game's HUD does; the points count up at the end.
+The most points when the minute's up wins. It follows the game's own code
+(module #60: [docs/minigames.md](../docs/minigames.md#delibirds-delivery) has
+where each number is):
+
+- **One stage for all four.** As in Furret's Frolic, every device runs the
+  whole world from everyone's sticks, and the server too: the gifts coming in
+  and who picks each up, the sacks, the belts, the Swinub and the CPUs, in
+  doubles, + − × / and square roots only, the same way in both copies.
+- **The CPUs** are the game's: Easy goes for the closest gift, Normal for the
+  one worth most and Hard for one worth what its last was (for the points in
+  a row); they take their gifts up once they have three (Hard four) or after
+  a while, and look ahead for the Swinub, Hard 130 frames.
+- **The sack's reach.** How near a Swinub has to come to hit a sack, the game
+  looks up by the player (1P's the least, 4P's twice as far) where its table
+  goes by how full the sack is; the remake goes by the sack.
+
+The stage is objects 148 and 147, seen from the game's camera, with the field
+of view that shows the field, both belts and the doors' feet; in portrait the
+picture's moved up under the cards, the stick below it. Over each Delibird its
+label (1P-4P, COM), and FULL over a full sack; under each Delibird and Swinub
+a shadow. On a phone: a finger anywhere is the Control Stick (the way and how
+far it slides from where it went down). With a keyboard: the arrows (or W A S
+D), as the game takes the D-pad (64 one way, 45 each way on a diagonal). At
+the end the points count up on a board in the middle (the winners' rows going
+round the colours), then the winners cheer and the others sulk. A save's
+flags in the game swap the Game Boy and the Nintendo 64 for a Game Boy Advance
+and a GameCube; the remake plays without them.
+
+**Sound**: the game's (`assets/delibird/sound.bin`, 541 KB): song 52 from GO,
+in the last 30 s 90 beats a minute faster (a beat every 5 frames), bank 8's
+effects (a footstep, a heavy sack's strain, a gift into the sack, onto the
+back belt and through a door, the combos, a ring or a piano coming in, a
+Swinub's knock and spin, the tally's ticks) placed by where they are, and the
+count, GO and the last seconds' count.
+
+What comes from the ROM and what is made up:
+
+| From the game | Made for the remake |
+|---|---|
+| the gifts and their points, weights and sizes, the belts, the sacks, the doors, the Swinub, the knocks and spins, the combos, the CPUs, the end and its tally, the camera (module #60's code) | the field of view that fits the window, the portrait layout, the labels' size, the stick on a phone, the tally's layout, where a gift being picked up goes, the sack's reach (above) |
+| Delibird and its sack (127) and their clips, the Swinub (82, 103), the gift boxes (92, 96), the gifts (169-184), the stage (147, 148), the shadow's dot (307), FULL (379), the HUD's box, gift and digits (376, 381, 380), the combo's flash and x2-x5 (398, 377), "Points" (430), the labels (260), the badges (434), the big digits (429) | the title's art (the doors, flat) |
+| song 52, bank 8's effects, the count | |
+
+Code: `src/delibird/rules.js` has the world (and `tools/delibird_rules.py`,
+the server's copy, line for line), `src/delibird/game.js` the round (the
+sticks, running the world again, and the scene), `src/delibird/assets.js` the
+models and pictures and `src/delibird/index.js` the layout, the controls, its
+HUD and its online messages.
+
 ## Online play
 
 **Play with friends** on the title screen makes a room with a four-letter
@@ -889,7 +955,14 @@ How it works:
   with `tools/furret_rules.py`; the play's over when the minute's up, and the
   server says that frame and each one's points (`won`). A minute of it is
   about 0.3 s of the server's time.
-- **Sent ahead** (Gutsy Golbat, Barrier Ball, Rampage Rollout, Topsy-Turvy, Furret's Frolic): a device's player's pad counts
+- **Delibird's Delivery**: the same (`pad`: the stick, packed as
+  Topsy-Turvy's), with `tools/delibird_rules.py`; the play's over when the
+  minute's up and nothing's on its way (a second after, at the most), and the
+  server says that frame and each one's points (`won`); the round's over
+  once the tally (which the devices count up themselves) and the cheering are.
+  A minute of it is about 0.1-0.4 s of the server's time (Hard's CPUs look
+  ahead).
+- **Sent ahead** (Gutsy Golbat, Barrier Ball, Rampage Rollout, Topsy-Turvy, Furret's Frolic, Delibird's Delivery): a device's player's pad counts
   a few frames after it's made, and goes out at once with that frame, so it
   gets to the other devices before they run it: they needn't run the world
   again, and nothing on their screens is put right after the fact. How many
@@ -1045,7 +1118,7 @@ Messages are JSON objects with their type in `t`. From the client:
 | `count` | `r`, `s`, `n`, `f` | Streaming Stampede: seat `s` pressed (counted one) on frame `f` of question `n`'s counting |
 | `press` | `r`, `s`, `f`, `d`, `b` | Pichu's Power Plant: seat `s` pressed A (`b: 5`) or B (`6`) on frame `f` from GO, held towards `d` (1 up, 2 down, 3 right, 4 left) |
 | `stick` | `r`, `s`, `f`, `x`, `y` | Tumbling Togepi: seat `s`'s stick is at `x`, `y` (-60-60 each, right and up) from frame `f` from GO |
-| `pad` | `r`, `s`, `f`, `x`, `a` | Gutsy Golbat: seat `s`'s stick is at `x` (-64-64, right) from frame `f` from GO, and A was pressed on it (`a: 1`) or not (`0`). Barrier Ball: the same, `x` along the seat's lane (+ is the court's +x) and A a smash. Rampage Rollout: `x` the D-pad held (up 8, down 4, left 2, right 1; + 16 on the first: A was pressed in the countdown) and A a dust cloud. Topsy-Turvy: `x` the stick, (x + 64) \| (y + 64) << 8 (each -64-64, right and up; 60 frames a second), and A a RAPID SPIN. Furret's Frolic: `x` the spot the D-pad holds (0 the middle hollow; 1-4 the ones to the right, down, up and left in the game's view), and A a swing. A device may send its own a few frames ahead (up to 4; Topsy-Turvy's 8) |
+| `pad` | `r`, `s`, `f`, `x`, `a` | Gutsy Golbat: seat `s`'s stick is at `x` (-64-64, right) from frame `f` from GO, and A was pressed on it (`a: 1`) or not (`0`). Barrier Ball: the same, `x` along the seat's lane (+ is the court's +x) and A a smash. Rampage Rollout: `x` the D-pad held (up 8, down 4, left 2, right 1; + 16 on the first: A was pressed in the countdown) and A a dust cloud. Topsy-Turvy: `x` the stick, (x + 64) \| (y + 64) << 8 (each -64-64, right and up; 60 frames a second), and A a RAPID SPIN. Furret's Frolic: `x` the spot the D-pad holds (0 the middle hollow; 1-4 the ones to the right, down, up and left in the game's view), and A a swing. Delibird's Delivery: `x` the stick, packed as Topsy-Turvy's, and `a` 0 (it has no A). A device may send its own a few frames ahead (up to 4; Topsy-Turvy's 8) |
 | `done` | `r` | this device's round is over |
 | `leave` | | |
 
@@ -1070,7 +1143,7 @@ Togepi: `tg`, with `done`, the end as `won` gives it (null till then), and
 `sticks`, the people's stick changes so far, `[f, x, y]` by seat, to rejoin.
 Gutsy Golbat: `gb`, with `done`, the end as `won` gives it (null till then),
 and `pads`, the people's so far, `[f, x, a]` by seat, to rejoin. Barrier
-Ball: `bb`, the same as `gb`. Rampage Rollout: `rr`, the same. Topsy-Turvy: `tt`, the same. Furret's Frolic: `fu`, the same);
+Ball: `bb`, the same as `gb`. Rampage Rollout: `rr`, the same. Topsy-Turvy: `tt`, the same. Furret's Frolic: `fu`, the same. Delibird's Delivery: `dd`, the same);
 `pong` (`c`, `s`); `cut` (`r`, `s`, `n`, `f`, `p`, `e`), the server's word on
 a seat's swing at a log: the frame (null: no swing), the points and the
 total after, and `a: 1` for a miss that doesn't count yet (the seat may swing
@@ -1094,7 +1167,7 @@ frame the play ended on and each seat's hearts; `won` (`r`, `f`, `p`),
 Barrier Ball's end: the frame the play ended on and each seat's points;
 `won` (`r`, `f`, `fin`, `p`), Rampage Rollout's end: the frame the race ended
 on, the frame each seat came in on (null: not in) and each one's place;
-`won` (`r`, `f`, `s`), Topsy-Turvy's and Furret's Frolic's end: the frame the play ended on and
+`won` (`r`, `f`, `s`), Topsy-Turvy's, Furret's Frolic's and Delibird's Delivery's end: the frame the play ended on and
 each seat's points; `lean` as above (with the time the server kept: never before the seat's last
 lean); `ev` (`r`, `s`, `n`, `k`, `e`, `g`), the server's verdict on a drop:
 `c` caught, `h` a shock, or `m`, not a catch after all, with the egg count
