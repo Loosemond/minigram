@@ -768,7 +768,7 @@ How it works:
   or less; mild ones like "Poop" (and the real name "Dick") were near 0.1, so
   they're turned down too. Answers are remembered; if TypeSafe can't be
   reached, the name goes through.
-- `?debug` and `?server=` work on localhost only.
+- `?debug`, `?server=` and `?norender` (the tests: run without drawing) work on localhost only.
 
 What it can't stop: a script that plays perfectly by the rules (it can know
 the drops, or the frame to cut on, or count the stream it's dealt), which looks just like a flawless player; a modified host making
@@ -782,7 +782,8 @@ side by side on a wide one. `python3 tools/test_rooms.py` tests the server:
 the protocol, the games' scoring (Clear Cut Challenge's deal, Eager
 Eevee's rounds and Streaming Stampede's questions against the browser's, bit
 for bit) and the cheats it stops, picking the game, rejoining,
-Telegram logins, names and limits (about half a minute, no network).
+Telegram logins, names and limits (about 20 seconds, no network: the
+checks that play rounds in real time run side by side, each in its own room).
 `tests.html`, with `serve_web.py` running, tests the games with it, in real
 games in frames: each game's deal against the server's copy, the catching
 rule (the same short round `test_rooms.py` plays), the cut scoring and
@@ -803,9 +804,11 @@ for the other player, and says he dashed on the first frame the basket was
 up, after seeing her go. In Streaming Stampede he counts for the other
 player and for a CPU. Both devices have to agree
 with each other throughout and end with the same ranking, and the server
-must never correct an honest device. It takes about three minutes. A hidden
-page steps the games itself (browsers pause hidden pages' animation), and a
-real-time test that fails while it's hidden says so.
+must never correct an honest device. The real-time tests run side by side,
+each with frames of its own (every online game in a room of its own; the
+extra players' frames don't draw, `?norender`), so it takes about a minute
+and a half. A hidden page steps the games itself (browsers pause hidden
+pages' animation), and a real-time test that fails while it's hidden says so.
 
 Give the server `TELEGRAM_BOT_TOKEN` (from @BotFather) and `TYPESAFE_API_KEY`
 as environment variables to turn on the login and name checks; it says at

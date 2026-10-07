@@ -63,6 +63,14 @@ renderer.outputColorSpace = THREE.LinearSRGBColorSpace; // the colours as they a
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setClearColor("#17110e"); // behind the small boxes
 renderer.autoClear = false;
+// ?norender (testing): everything runs, the scene and cameras move, but
+// nothing's drawn (the tests' extra players, so many can play at once)
+if (testing && params.has("norender")) {
+  renderer.render = (scene, cam) => {
+    scene.updateMatrixWorld();
+    if (cam.parent === null) cam.updateMatrixWorld();
+  };
+}
 
 function place(el, style) { Object.assign(el.style, { left: "auto", right: "auto", top: "auto", bottom: "auto", transform: "none" }, style); }
 

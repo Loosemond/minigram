@@ -7,7 +7,9 @@ tools/pichu_rules.py, tools/togepi_rules.py, tools/golbat_rules.py, tools/barrie
 Runs a server in this process on a free port, with short rounds, and plays it
 with scripted clients: the protocol, the score kept from the leans and the cuts
 (and the cheats that stops), picking the game, rejoining a round, Telegram
-logins, name checks, limits. Standard library only; takes about half a minute.
+logins, name checks, limits. The checks that play a round in real time, each
+in a room of its own, run side by side after the others. Standard library
+only; takes about 20 seconds.
 """
 import base64
 import concurrent.futures
@@ -22,6 +24,7 @@ import struct
 import sys
 import threading
 import time
+import traceback
 import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -214,15 +217,18 @@ def init_data(user, age=0, with_signature=True, token=TOKEN):
     return urllib.parse.urlencode({**fields, "hash": h})
 
 
-checks = []
+checks = []  # (name, fn, together)
 
 
-def check(name):
-    def run(fn):
-        fn()
-        checks.append(name)
-        print("ok  ", name)
-    return run
+def check(name, together=None):
+    """A check. together: it plays rounds in real time, in a room of its own,
+    and runs side by side with the other such checks, after the rest (which
+    may change the rules' constants while they run); checks with the same
+    together (not True) share a room and run one after another."""
+    def add(fn):
+        checks.append((name, fn, together))
+        return fn
+    return add
 
 
 @check("the drops match the game's, bit for bit")
@@ -416,7 +422,7 @@ def _():
     B.wait("pong")
 
 
-@check("a round: the server keeps the score from the leans, and stops cheats")
+@check("a round: the server keeps the score from the leans, and stops cheats", together="A and B")
 def _():
     A.drain()
     B.drain()
@@ -468,7 +474,7 @@ def _():
     assert evs(a_msgs, 2) == [(2, 1, "c", 1), (2, 2, "h", 0)] and evs(a_msgs, 3) == [(3, 0, "c", 1)]
 
 
-@check("rejoining mid-round: the round so far comes back")
+@check("rejoining mid-round: the round so far comes back", together="A and B")
 def _():
     time.sleep(rooms.CHANGE_GAP)
     A.send("start")
@@ -494,7 +500,7 @@ def _():
     globals()["B"] = B2
 
 
-@check("leaving mid-round: the seat becomes a CPU, played by the host")
+@check("leaving mid-round: the seat becomes a CPU, played by the host", together="A and B")
 def _():
     A.drain()
     B.drain()
@@ -514,7 +520,7 @@ def _():
     assert A.wait("results", timeout=5)["round"] == r
 
 
-@check("the host moves on when the host leaves; a full room")
+@check("the host moves on when the host leaves; a full room", together="A and B")
 def _():
     b = Client("B3")
     b.send("hello", id="b2", name="Bea", room=code)
@@ -539,7 +545,7 @@ def _():
         c.close()
 
 
-@check("Clear Cut Challenge: the host picks it; the server judges the cuts and stops cheats")
+@check("Clear Cut Challenge: the host picks it; the server judges the cuts and stops cheats", together=True)
 def _():
     a, b = Client("CA"), Client("CB")
     a.send("hello", id="ca", name="Cid", game="clearcut")  # a new room, with the game on Cid's title
@@ -587,7 +593,7 @@ def _():
     b.close()
 
 
-@check("Eager Eevee: the server judges the races and stops cheats")
+@check("Eager Eevee: the server judges the races and stops cheats", together=True)
 def _():
     short = [dict(n=n, kind=k, fruit=f, piles=p, open=12, fakes=[], final=n == 4)
              for n, (k, f, p) in enumerate([(eevee_rules.FRUIT, eevee_rules.MELON, 1), (eevee_rules.BERRIES, 0, 1),
@@ -655,7 +661,7 @@ def _():
         eevee_rules.deal, eevee_rules.INTRO, eevee_rules.AFTER = saved
 
 
-@check("Streaming Stampede: the server counts the presses, gives the answers and stops cheats")
+@check("Streaming Stampede: the server counts the presses, gives the answers and stops cheats", together=True)
 def _():
     # short questions: 3 Pokemon that are gone by frame 10 of a 20-frame counting
     def short(seed, q, state, totals=(0,) * 4, com=None):
@@ -716,7 +722,7 @@ def _():
          stampede_rules.LAST_ANSWER) = saved
 
 
-@check("Pichu's Power Plant: the server checks the presses, says who finished first and stops cheats")
+@check("Pichu's Power Plant: the server checks the presses, says who finished first and stops cheats", together=True)
 def _():
     saved = pichu_rules.FULL, pichu_rules.cpu_presses
     pichu_rules.FULL = 3  # (three hits to win)
@@ -791,7 +797,7 @@ def togepi_digest(seed):
     return hashlib.sha256(s.encode()).hexdigest()[:16]
 
 
-@check("Tumbling Togepi: the lanes and the CPUs match the browser's, bit for bit; the race")
+@check("Tumbling Togepi: the lanes and the CPUs match the browser's, bit for bit; the race", together="Togepi")
 def _():
     for seed, want in JS_TOGEPI.items():
         assert togepi_digest(seed) == want, seed
@@ -817,7 +823,7 @@ def _():
     assert still.progress < 1 and still.tile == 1 and runner.finish is not None, (still.progress, runner.finish)
 
 
-@check("Tumbling Togepi: the server runs the lanes from the sticks, says how it ended and stops cheats")
+@check("Tumbling Togepi: the server runs the lanes from the sticks, says how it ended and stops cheats", together="Togepi")
 def _():
     saved = togepi_rules.END_TILE, togepi_rules.CALL
     togepi_rules.END_TILE, togepi_rules.CALL = 2, 45  # (a short course: in after about 60 frames; called 45 after the first)
@@ -878,7 +884,7 @@ def golbat_digest(seed):
     return hashlib.sha256(";".join(parts).encode()).hexdigest()[:16]
 
 
-@check("Gutsy Golbat: the world (the CPUs too) matches the browser's, bit for bit; the round")
+@check("Gutsy Golbat: the world (the CPUs too) matches the browser's, bit for bit; the round", together="Golbat")
 def _():
     for seed, want in JS_GOLBAT.items():
         assert golbat_digest(seed) == want, seed
@@ -895,7 +901,7 @@ def _():
     assert 0 < tops["easy"] < tops["hard"], tops
 
 
-@check("Gutsy Golbat: the server runs the world from the pads, says how it ended and stops cheats")
+@check("Gutsy Golbat: the server runs the world from the pads, says how it ended and stops cheats", together="Golbat")
 def _():
     saved = golbat_rules.TIME, golbat_rules.BACKDROPS_AT, golbat_rules.MEADOW_STOP, golbat_rules.END
     # (a short round: the cave's mouth and the meadow come at once, and it stops at 640)
@@ -961,7 +967,7 @@ def barrier_digest(seed):
     return hashlib.sha256(";".join(parts).encode()).hexdigest()[:16]
 
 
-@check("Barrier Ball: the world (the CPUs too) matches the browser's, bit for bit; the round")
+@check("Barrier Ball: the world (the CPUs too) matches the browser's, bit for bit; the round", together="Barrier")
 def _():
     for seed, want in JS_BARRIER.items():
         assert barrier_digest(seed) == want, seed
@@ -988,7 +994,7 @@ def _():
     assert w.end == barrier_rules.TIME or max(w.scores) == barrier_rules.GOAL, (w.end, w.scores)
 
 
-@check("Barrier Ball: the server runs the world from the pads, says how it ended and stops cheats")
+@check("Barrier Ball: the server runs the world from the pads, says how it ended and stops cheats", together="Barrier")
 def _():
     saved = barrier_rules.TIME, barrier_rules.LONGEST
     barrier_rules.TIME = 45  # (a short round)
@@ -1112,4 +1118,32 @@ def _():
         rooms.MAX_ROOMS = saved
 
 
+for name, fn, together in checks:
+    if not together:
+        fn()
+        print("ok  ", name)
+groups = {}  # together -> its checks, in order
+for name, fn, together in checks:
+    if together:
+        groups.setdefault(name if together is True else together, []).append((name, fn))
+failed, said = [], threading.Lock()
+
+
+def run_group(group):
+    for k, (name, fn) in enumerate(group):
+        try:
+            fn()
+        except Exception:
+            failed.append(name)
+            with said:
+                print("FAIL", name + "".join("\n(not run: %s)" % n for n, _ in group[k + 1:]) + "\n" + traceback.format_exc(), end="")
+            return
+        with said:
+            print("ok  ", name)
+
+
+with concurrent.futures.ThreadPoolExecutor(len(groups)) as pool:
+    list(pool.map(run_group, groups.values()))
+if failed:
+    sys.exit("%d of %d checks failed" % (len(failed), len(checks)))
 print("all %d checks passed" % len(checks))

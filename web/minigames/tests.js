@@ -70,11 +70,12 @@ async function until(fn, what, timeout = 15000) {
 // (window.mg.tick, a frame at a time: a hidden page's timers only run about
 // once a second). The tests that play in real time (live) note if the page
 // was hidden while they ran, in case that's why one failed.
-let hidden = false;
-document.addEventListener("visibilitychange", () => { hidden ||= document.hidden; });
+let hides = 0; // (times the page has been hidden)
+document.addEventListener("visibilitychange", () => { if (document.hidden) hides++; });
 function pump(w) {
   let last = performance.now();
-  setInterval(() => {
+  const id = setInterval(() => {
+    if (!w.frameElement) return clearInterval(id); // (its frame's gone)
     const now = performance.now(), dt = Math.min(5, (now - last) / 1000);
     last = now;
     if (!document.hidden || !w.mg?.tick) return;
@@ -88,7 +89,7 @@ async function test(name, fn, { live = false } = {}) {
   li.append(name);
   const detail = li.appendChild(document.createElement("div"));
   detail.className = "detail";
-  hidden = document.hidden;
+  const wasHidden = document.hidden, hides0 = hides;
   const t0 = performance.now();
   try {
     const d = (await fn()) || "";
@@ -97,7 +98,7 @@ async function test(name, fn, { live = false } = {}) {
     results.push({ name, ok: true, detail: d });
     console.log("ok  ", name, d);
   } catch (e) {
-    const unsure = live && hidden;
+    const unsure = live && (wasHidden || hides > hides0);
     li.className = unsure ? "skip" : "fail";
     detail.textContent = e.message + (unsure ? " (the page was hidden while it ran: run the tests again with it showing to be sure)" : "");
     results.push({ name, ok: unsure ? null : false, detail: detail.textContent });
@@ -105,13 +106,58 @@ async function test(name, fn, { live = false } = {}) {
   }
 }
 
-// a game in a frame, once it has loaded
-async function frame(query) {
+// a game in a frame, once it has loaded (into: a list to put its frame in)
+async function frame(query, into) {
   const f = $("#frames").appendChild(document.createElement("iframe"));
+  into?.push(f);
   f.src = "index.html?debug&" + query;
   await until(() => f.contentWindow.mg && f.contentWindow.mg.phase() !== "loading", "the game to load", 30000);
   pump(f.contentWindow);
   return f.contentWindow; // (it stays the frame's window across reloads)
+}
+
+// The live tests run in lanes, side by side, each with frames of its own:
+// as many at once as MAX_FRAMES lets (each frame is a WebGL context, and a
+// page gets 16), in the order they're given, each lane's closed when it ends.
+const MAX_FRAMES = 12;
+function lanesFrames() {
+  const opened = [];
+  return {
+    open: (query) => frame(query, opened),
+    // Ann (the host) and Bob in a new room on game id, in its lobby; their frames don't draw
+    async pair(id) {
+      const code = Array.from({ length: 4 }, () => "BCDFGHJKLMNPQRSTVWXZ"[Math.floor(Math.random() * 20)]).join("");
+      const ann = await this.open(`norender&create&room=${code}&as=t-${id}-0&name=Ann&game=${id}`);
+      await until(() => ann.mg.room()?.room === code, "Ann's room");
+      const bob = await this.open(`norender&create&room=${code}&as=t-${id}-1&name=Bob&game=${id}`);
+      const { GAMES } = await moduleOf(ann, "./src/games.js");
+      await until(() => [ann, bob].every((w) => w.mg.room()?.players.length === 2 && w.mg.room().game === id && w.document.title === GAMES[id].name),
+                  `Ann and Bob in the lobby, on ${GAMES[id].name}`, 30000);
+      return { ann, bob, code };
+    },
+    close: () => opened.forEach((f) => f.remove()),
+  };
+}
+function runLanes(lanes) {
+  const waiting = [...lanes];
+  let free = MAX_FRAMES, running = 0;
+  return new Promise((done) => {
+    const next = () => {
+      while (waiting.length && waiting[0].frames <= free) {
+        const l = waiting.shift(), f = lanesFrames();
+        free -= l.frames;
+        running++;
+        Promise.resolve().then(() => l.fn(f)).catch((e) => console.error("FAIL a lane", e)).finally(() => {
+          f.close();
+          free += l.frames;
+          running--;
+          next();
+        });
+      }
+      if (!waiting.length && !running) done();
+    };
+    next();
+  });
 }
 
 // a module of the frame's own, e.g. "./src/egg/game.js"
@@ -1146,232 +1192,168 @@ await test("online: Clear Cut Challenge's logs fall together, and a late cut goe
   }
 });
 
-await test("a solo round starts and plays, in all eight games", async () => {
-  solo.document.querySelector("#play").click();
-  await until(() => solo.mg.phase() === "play" && solo.mg.game.time > 4, "Egg Emergency's round to be under way");
-  let g = solo.mg.game;
-  assert(g.control.join() === "local,cpu,cpu,cpu", "seats " + g.control);
-  assert(g.players.some((p) => p.eggs > 0), "no one has caught anything");
-  solo.mg.title(); // (as Telegram's back button does)
-  await solo.mg.show("clearcut");
-  solo.document.querySelector("#play").click();
-  const stop = autocut(solo, 1);
-  try {
-    await until(() => solo.mg.phase() === "play" && solo.mg.game.logs && solo.mg.game.time > (solo.mg.game.times[0].judged + 30) / 30,
-                "Clear Cut Challenge's first log", 30000);
-  } finally { stop(); }
-  g = solo.mg.game;
-  const first = g.players.map((p) => p.cuts[0]?.pts);
-  assert(g.control.join() === "local,cpu,cpu,cpu", "seats " + g.control);
-  assert(first[0] === 10, "cut a frame early, the first log gave " + first[0]);
-  assert(first.every((x) => Number.isInteger(x)), "a seat's first log wasn't judged: " + first);
-  solo.mg.title();
-  await solo.mg.show("eevee");
-  solo.document.querySelector("#play").click();
-  const stopDash = autodash(solo, 6);
-  try {
-    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > solo.mg.game.times[0].open + 60,
-                "Eager Eevee's first race", 30000);
-  } finally { stopDash(); }
-  g = solo.mg.game;
-  const rd = g.rounds[0], v = g.verdict[0];
-  assert(rd.kind === 2 ? !v || v.pts.every((x) => x === 0) : v && v.got[0], `the first race (kind ${rd.kind}): ${JSON.stringify(v)}`);
-  solo.mg.title();
-  await solo.mg.show("stampede");
-  solo.document.querySelector("#play").click();
-  const stopCount = autocount(solo);
-  try {
-    await until(() => solo.mg.phase() === "play" && solo.mg.game.at && solo.mg.game.lastFrame > solo.mg.game.at[0].judged + 5,
-                "Streaming Stampede's first answer", 40000);
-  } finally { stopCount(); }
-  g = solo.mg.game;
-  const answer = g.verdicts[0];
-  assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
-  assert(answer && answer.counts[0] === g.qs[0].answer && answer.pts[0] === 10, "counting right, the first answer gave " + JSON.stringify(answer));
-  solo.mg.title();
-  await solo.mg.show("pichu");
-  solo.document.querySelector("#play").click();
-  const stopPress = autopress(solo, 3);
-  try {
-    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > 120, "Pichu's Power Plant's first 4 s", 30000);
-  } finally { stopPress(); }
-  g = solo.mg.game;
-  const charges = [0, 1, 2, 3].map((z) => g.charge(z));
-  assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
-  assert(charges[0] >= 30 && charges.slice(1).every((x) => x > 5 && x < charges[0]), "4 s in, the charges are " + charges);
-  solo.mg.title();
-  await solo.mg.show("togepi");
-  solo.document.querySelector("#play").click();
-  const stopRun = await autorun(solo);
-  try {
-    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > 120, "Tumbling Togepi's first 4 s", 30000);
-  } finally { stopRun(); }
-  g = solo.mg.game;
-  const far = [0, 1, 2, 3].map((z) => g.progressOf(z));
-  assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
-  assert(far.every((x) => x >= 5 && x < 30), "4 s in, the progress is " + far);
-  solo.mg.title();
-  await solo.mg.show("golbat");
-  solo.document.querySelector("#play").click();
-  const stopFlap = autoflap(solo);
-  try {
-    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > 120, "Gutsy Golbat's first 4 s", 30000);
-  } finally { stopFlap(); }
-  g = solo.mg.game;
-  const { START } = await moduleOf(solo, "./src/golbat/rules.js");
-  const moved = g.world.g.map((o, z) => Math.round(Math.hypot(o.x - START[z][0], o.y - START[z][1])));
-  assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
-  assert(moved.every((d) => d > 20) && g.world.mags.length + g.world.hearts.length > 0, `4 s in, the Golbat have moved ${moved}, with ${g.world.mags.length} Magnemite`);
-  solo.mg.title();
-  await solo.mg.show("barrier");
-  solo.document.querySelector("#play").click();
-  const stopSlide = autoslide(solo);
-  try {
-    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > 120, "Barrier Ball's first 4 s", 30000);
-  } finally { stopSlide(); }
-  g = solo.mg.game;
-  const R = await moduleOf(solo, "./src/barrier/rules.js");
-  const slid = g.world.m.map((m) => Math.round(Math.abs(m.x - -R.SEATS[m.z].n[0] * R.STAND)));
-  const served = g.world.balls.filter((b) => !b.serving).length;
-  assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
-  // (a CPU wanders to a random spot in its lane, which may be next to where it started)
-  assert(slid[0] > 5 && slid.slice(1).some((d) => d > 5) && served > 0, `4 s in, the Mr. Mime have slid ${slid}, with ${served} balls in play`);
-  solo.frameElement.remove();
-  return "Clear Cut's first log: " + first.join(", ") + `; Eevee's first race: ${v ? v.pts.join(", ") : "no one"}` +
-    `; Stampede's first answer: ${answer.pts.join(", ")}; Pichu's charges 4 s in: ${charges.join(", ")}` +
-    `; Togepi's progress 4 s in: ${far.join(", ")}%; Golbat moved ${moved.join(", ")} 4 s in; Mr. Mime slid ${slid.join(", ")}`;
-}, { live: true });
+// ------------------------------------------------------------ the live tests
+// Real games in real time, side by side: each lane opens frames of its own
+// (an online one a room of its own, with two players) and closes them when
+// it's done, as many lanes at once as MAX_FRAMES lets, in this order.
+solo.frameElement.remove();
+const lanes = [];
+const lane = (frames, fn) => lanes.push({ frames, fn });
 
-const code = Array.from({ length: 4 }, () => "BCDFGHJKLMNPQRSTVWXZ"[Math.floor(Math.random() * 20)]).join("");
-const ann = await frame(`create&room=${code}&as=t0&name=Ann&game=egg`);
-const bob = await frame(`create&room=${code}&as=t1&name=Bob&game=egg`);
+lane(2, async (f) => {
+  let ann, bob, code;
+  await test("online: a room, its lobby and the invite link", async () => {
+    ({ ann, bob, code } = await f.pair("egg"));
+    await until(() => ann.mg.room()?.players.length === 2 && bob.mg.room()?.players.length === 2, "both in the room");
+    // (with TypeSafe checking names, a name shows once the check's answered: "Player 1" till then)
+    await until(() => [ann, bob].every((w) => w.mg.room().players.every((p) => !/^Player \d$/.test(p.name))), "the name checks", 15000);
+    const r = ann.mg.room();
+    assert(r.room === code && r.host === 0, `room ${r.room}, host ${r.host}`);
+    assert(r.players.map((p) => p.name).join() === "Ann,Bob", "players " + r.players.map((p) => p.name));
+    const box = ann.document.querySelector("#linkText"), link = new URL(`index.html?room=${code}`, ann.location.href).href;
+    assert(box.value === link, "invite link " + box.value);
+    let copied = null; // (not the real clipboard)
+    Object.defineProperty(ann.navigator, "clipboard", { configurable: true, value: { writeText: async (t) => { copied = t; } } });
+    ann.document.querySelector("#copy").click();
+    await sleep(200);
+    assert(copied === link && ann.document.querySelector("#copy").textContent === "Copied!", "Copy copied " + copied);
+    assert(box.selectionStart === 0 && box.selectionEnd === link.length, "the link isn't selected");
+    bob.mg.net().emit("notice", { code: "name", name: "Rude" });
+    assert(bob.document.querySelector("#status").textContent.includes("can't be used"), "a turned-down name isn't shown");
+    return "room " + code;
+  });
 
-await test("online: a room, its lobby and the invite link", async () => {
-  await until(() => ann.mg.room()?.players.length === 2 && bob.mg.room()?.players.length === 2, "both in the room");
-  // (with TypeSafe checking names, a name shows once the check's answered: "Player 1" till then)
-  await until(() => [ann, bob].every((w) => w.mg.room().players.every((p) => !/^Player \d$/.test(p.name))), "the name checks", 15000);
-  const r = ann.mg.room();
-  assert(r.room === code && r.host === 0, `room ${r.room}, host ${r.host}`);
-  assert(r.players.map((p) => p.name).join() === "Ann,Bob", "players " + r.players.map((p) => p.name));
-  const box = ann.document.querySelector("#linkText"), link = new URL(`index.html?room=${code}`, ann.location.href).href;
-  assert(box.value === link, "invite link " + box.value);
-  let copied = null; // (not the real clipboard)
-  Object.defineProperty(ann.navigator, "clipboard", { configurable: true, value: { writeText: async (t) => { copied = t; } } });
-  ann.document.querySelector("#copy").click();
-  await sleep(200);
-  assert(copied === link && ann.document.querySelector("#copy").textContent === "Copied!", "Copy copied " + copied);
-  assert(box.selectionStart === 0 && box.selectionEnd === link.length, "the link isn't selected");
-  bob.mg.net().emit("notice", { code: "name", name: "Rude" });
-  assert(bob.document.querySelector("#status").textContent.includes("can't be used"), "a turned-down name isn't shown");
-  return "room " + code;
+  await test("online: the host picks the game in the lobby, and only the host", async () => {
+    const pick = (w, id) => w.document.querySelector(`#lobby .games button[data-game="${id}"]`).click();
+    pick(bob, "clearcut"); // not the host: nothing happens
+    await sleep(1200);
+    assert(ann.mg.room().game === "egg", "Bob changed the game");
+    pick(ann, "clearcut");
+    await until(() => bob.mg.room()?.game === "clearcut" && bob.document.title === "Clear Cut Challenge", "Bob's lobby to show Clear Cut Challenge");
+    await sleep(700);
+    pick(ann, "egg");
+    await until(() => bob.mg.room()?.game === "egg" && bob.document.title === "Egg Emergency", "Bob's lobby back on Egg Emergency");
+  });
+
+  await test("online: an Egg Emergency round, the same on both devices, and cheating doesn't work", async () => {
+    let recA = watch(ann), recB = watch(bob);
+    const stop = [autoplay(ann), autoplay(bob)];
+    try {
+      ann.mg.net().send("start");
+      await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play" && ann.mg.game.time > 6, "the round", 20000);
+      const r = ann.mg.room().round, net = bob.mg.net();
+      same(ann, bob, "6 s in");
+
+      // Bob stands still till he's missed an egg (one not in the middle: some rounds have none for a
+      // few seconds), then says he caught it, with a made-up count
+      stop[1]();
+      const gb = bob.mg.game;
+      const missedEgg = () => gb.drops[1].findIndex((d, n) => d.kind === "egg" && d.col !== 0 && gb.arrive[1][n] < gb.time - 0.5 && !gb.settled[1].has(n));
+      await until(() => missedEgg() >= 0, "Bob to miss an egg", 12000);
+      const t = gb.time, missed = missedEgg();
+      assert(missed >= 0, "Bob didn't miss an egg");
+      gb.players[1].eggs = 99;
+      net.send("ev", { r, s: 1, n: missed, k: "c", e: 99 });
+      await sleep(800);
+      assert(eggs(bob)[1] < 90 && Math.abs(eggs(bob)[1] - eggs(ann)[1]) <= 2, `the server didn't correct Bob: ${eggs(bob)} / ${eggs(ann)}`);
+      assert(recB.off.some((m) => m.n === missed && m.k === "m"), "no correction for the egg Bob missed");
+      recB.off = [];
+      // ...claims a catch for Ann, leans for her, a drop still to come, says he's done, and tries to start
+      const annCaught = [...recA.judged.values()].find((x) => x.s === 0 && x.k === "c");
+      net.send("ev", { r, s: 0, n: annCaught.n, k: "c", e: 99 });
+      for (let k = 1; k <= 10; k++) net.send("lean", { r, s: 0, g: t + 0.3 * k, l: k % 2 ? 1 : -1 });
+      const ahead = gb.arrive[1].findIndex((a, n) => gb.drops[1][n].kind === "egg" && a > t + 5);
+      net.send("ev", { r, s: 1, n: ahead, k: "c", e: 99 });
+      net.send("done", { r });
+      net.send("start");
+      stop[1] = autoplay(bob);
+      await sleep(2000);
+      assert(eggs(ann)[0] < 90 && eggs(bob)[0] < 90 && eggs(ann)[1] < 90, `a claim got through: ${eggs(ann)} / ${eggs(bob)}`);
+      assert(ann.mg.phase() === "play" && ann.mg.room().state === "playing", "the round ended early");
+
+      // Bob reloads mid-round: back in the same round, with the same counts
+      bob.location.reload();
+      await until(() => bob.mg?.phase() === "play" && Math.abs(bob.mg.game.time - ann.mg.game.time) < 0.5, "Bob back in the round", 20000);
+      const lost = recB.off;
+      recB = watch(bob);
+      recB.off = lost;
+      stop[1] = autoplay(bob);
+      await sleep(2000);
+      same(ann, bob, "after Bob's reload");
+
+      await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 90000);
+    } finally {
+      stop.forEach((s) => s());
+    }
+    assert(ranking(ann) && ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
+    assert(eggs(ann).join() === eggs(bob).join(), `final counts: ${eggs(ann)} / ${eggs(bob)}`);
+    // honest play: the devices judged every drop as the server did (Ann also for the CPUs)
+    assert(!recA.off.length, "the server disagreed with Ann's device: " + JSON.stringify(recA.off));
+    assert(!recB.off.length, "the server disagreed with Bob's device: " + JSON.stringify(recB.off));
+    return ranking(ann);
+  }, { live: true });
 });
 
-await test("online: the host picks the game in the lobby, and only the host", async () => {
-  const pick = (w, id) => w.document.querySelector(`#lobby .games button[data-game="${id}"]`).click();
-  pick(bob, "clearcut"); // not the host: nothing happens
-  await sleep(1200);
-  assert(ann.mg.room().game === "egg", "Bob changed the game");
-  pick(ann, "clearcut");
-  await until(() => bob.mg.room()?.game === "clearcut" && bob.document.title === "Clear Cut Challenge", "Bob's lobby to show Clear Cut Challenge");
-  await sleep(700);
-  pick(ann, "egg");
-  await until(() => bob.mg.room()?.game === "egg" && bob.document.title === "Egg Emergency", "Bob's lobby back on Egg Emergency");
-});
-
-await test("online: an Egg Emergency round, the same on both devices, and cheating doesn't work", async () => {
-  let recA = watch(ann), recB = watch(bob);
-  const stop = [autoplay(ann), autoplay(bob)];
-  try {
-    ann.mg.net().send("start");
-    await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play" && ann.mg.game.time > 6, "the round", 20000);
-    const r = ann.mg.room().round, net = bob.mg.net();
-    same(ann, bob, "6 s in");
-
-    // Bob stands still till he's missed an egg (one not in the middle: some rounds have none for a
-    // few seconds), then says he caught it, with a made-up count
-    stop[1]();
-    const gb = bob.mg.game;
-    const missedEgg = () => gb.drops[1].findIndex((d, n) => d.kind === "egg" && d.col !== 0 && gb.arrive[1][n] < gb.time - 0.5 && !gb.settled[1].has(n));
-    await until(() => missedEgg() >= 0, "Bob to miss an egg", 12000);
-    const t = gb.time, missed = missedEgg();
-    assert(missed >= 0, "Bob didn't miss an egg");
-    gb.players[1].eggs = 99;
-    net.send("ev", { r, s: 1, n: missed, k: "c", e: 99 });
-    await sleep(800);
-    assert(eggs(bob)[1] < 90 && Math.abs(eggs(bob)[1] - eggs(ann)[1]) <= 2, `the server didn't correct Bob: ${eggs(bob)} / ${eggs(ann)}`);
-    assert(recB.off.some((m) => m.n === missed && m.k === "m"), "no correction for the egg Bob missed");
-    recB.off = [];
-    // ...claims a catch for Ann, leans for her, a drop still to come, says he's done, and tries to start
-    const annCaught = [...recA.judged.values()].find((x) => x.s === 0 && x.k === "c");
-    net.send("ev", { r, s: 0, n: annCaught.n, k: "c", e: 99 });
-    for (let k = 1; k <= 10; k++) net.send("lean", { r, s: 0, g: t + 0.3 * k, l: k % 2 ? 1 : -1 });
-    const ahead = gb.arrive[1].findIndex((a, n) => gb.drops[1][n].kind === "egg" && a > t + 5);
-    net.send("ev", { r, s: 1, n: ahead, k: "c", e: 99 });
-    net.send("done", { r });
-    net.send("start");
-    stop[1] = autoplay(bob);
-    await sleep(2000);
-    assert(eggs(ann)[0] < 90 && eggs(bob)[0] < 90 && eggs(ann)[1] < 90, `a claim got through: ${eggs(ann)} / ${eggs(bob)}`);
-    assert(ann.mg.phase() === "play" && ann.mg.room().state === "playing", "the round ended early");
-
-    // Bob reloads mid-round: back in the same round, with the same counts
-    bob.location.reload();
-    await until(() => bob.mg?.phase() === "play" && Math.abs(bob.mg.game.time - ann.mg.game.time) < 0.5, "Bob back in the round", 20000);
-    const lost = recB.off;
-    recB = watch(bob);
-    recB.off = lost;
-    stop[1] = autoplay(bob);
-    await sleep(2000);
-    same(ann, bob, "after Bob's reload");
-
-    await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 90000);
-  } finally {
-    stop.forEach((s) => s());
-  }
-  assert(ranking(ann) && ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
-  assert(eggs(ann).join() === eggs(bob).join(), `final counts: ${eggs(ann)} / ${eggs(bob)}`);
-  // honest play: the devices judged every drop as the server did (Ann also for the CPUs)
-  assert(!recA.off.length, "the server disagreed with Ann's device: " + JSON.stringify(recA.off));
-  assert(!recB.off.length, "the server disagreed with Bob's device: " + JSON.stringify(recB.off));
-  return ranking(ann);
-}, { live: true });
-
-await test("online: a Clear Cut Challenge round, the same on both devices, and cheating doesn't work", async () => {
-  ann.document.querySelector("#menu").click(); // back to the lobby
-  bob.document.querySelector("#menu").click();
-  ann.document.querySelector(`#lobby .games button[data-game="clearcut"]`).click();
-  await until(() => bob.mg.room()?.game === "clearcut" && bob.mg.mini?.game?.logs !== undefined, "Clear Cut Challenge in the lobby");
+lane(2, (f) => test("online: a Gutsy Golbat round, the same on both devices, and cheating doesn't work", async () => {
+  const { ann, bob } = await f.pair("golbat");
   const stop = [];
   try {
     ann.mg.net().send("start");
     await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the round", 20000);
-    stop.push(autocut(ann, 0), autocut(bob, 2)); // Ann cuts on the line (20), Bob 2 frames early (5)
+    stop.push(autoflap(ann), autoflap(bob));
     const net = bob.mg.net(), r = ann.mg.room().round, g = bob.mg.game;
-    // Bob claims a perfect cut for Ann's seat, a cut for a log that hasn't come up yet, and a second cut
-    net.send("cut", { r, s: 0, n: 0, f: g.logs[0].T });
-    net.send("cut", { r, s: 1, n: 3, f: g.logs[3].T });
-    await until(() => g.players.every((p) => p.cuts[1]?.told), "the second log, judged on Bob's device", 60000);
-    net.send("cut", { r, s: 1, n: 1, f: g.logs[1].T });
-    await sleep(1000);
-    const cuts = (w) => w.mg.game.players.map((p) => p.cuts.slice(0, 2).map((c) => c && `${c.f}/${c.pts}`).join(" "));
-    assert(cuts(ann).join() === cuts(bob).join(), `the cuts differ: ${cuts(ann)} / ${cuts(bob)}`);
-    const pts = (w, z) => w.mg.game.players[z].cuts.slice(0, 2).map((c) => c.pts).join();
-    assert(pts(ann, 0) === "20,20" && pts(ann, 1) === "5,5", `Ann ${pts(ann, 0)}, Bob ${pts(ann, 1)}: a claim got through`);
-    const totals = (w) => w.mg.game.players.map((p) => p.total).join();
-    await sleep(3000);
-    assert(totals(ann) === totals(bob), `totals: ${totals(ann)} / ${totals(bob)}`);
-    return `after two logs: ${totals(ann)}`;
+    await until(() => g.frame > 60, "two seconds in", 20000);
+    // Bob flies Ann's Golbat, says a pad he didn't press was long ago, and sends one off the stick's range
+    net.send("pad", { r, s: 0, f: g.frame, x: -64, a: 1 });
+    net.send("pad", { r, s: 1, f: 5, x: 64, a: 1 });
+    net.send("pad", { r, s: 1, f: g.frame + 1, x: 90, a: 0 });
+    await until(() => [ann, bob].every((w) => w.mg.game.result), "the end, on both devices", 120000);
+    const res = (w) => JSON.stringify(w.mg.game.result);
+    assert(res(ann) === res(bob), `the end: ${res(ann)} / ${res(bob)}`);
+    const f = ann.mg.game.result;
+    // each device's run of the world comes to the server's hearts: so the server took the same
+    // pads (Bob's made-up old one on the frame it counts on, as told back to him)
+    const hearts = (w) => w.mg.game.world.scores.join();
+    assert(hearts(ann) === f.h.join() && hearts(bob) === f.h.join(), `hearts: Ann's ${hearts(ann)}, Bob's ${hearts(bob)}, the server's ${f.h}`);
+    await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 30000);
+    assert(ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
+    return `hearts ${f.h.join(", ")} at frame ${f.f}`;
   } finally {
     stop.forEach((s) => s());
   }
-}, { live: true });
+}, { live: true }));
 
-await test("online: an Eager Eevee game, the same on both devices, and cheating doesn't work", async () => {
-  await until(() => ann.mg.room()?.state === "lobby", "the Clear Cut Challenge round to end", 120000);
-  ann.document.querySelector("#menu").click(); // back to the lobby
-  bob.document.querySelector("#menu").click();
-  ann.document.querySelector(`#lobby .games button[data-game="eevee"]`).click();
-  await until(() => bob.mg.room()?.game === "eevee" && bob.document.title === "Eager Eevee", "Eager Eevee in the lobby");
+lane(2, (f) => test("online: a Barrier Ball round, the same on both devices, and cheating doesn't work", async () => {
+  const { ann, bob } = await f.pair("barrier");
+  const stop = [];
+  try {
+    ann.mg.net().send("start");
+    await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the round", 20000);
+    stop.push(autoslide(ann), autoslide(bob));
+    const net = bob.mg.net(), r = ann.mg.room().round, g = bob.mg.game;
+    await until(() => g.frame > 60, "two seconds in", 20000);
+    // Bob slides Ann's Mr. Mime, says a pad he didn't press was long ago, and sends one off the stick's range
+    net.send("pad", { r, s: 0, f: g.frame, x: -64, a: 1 });
+    net.send("pad", { r, s: 1, f: 5, x: 64, a: 1 });
+    net.send("pad", { r, s: 1, f: g.frame + 1, x: 90, a: 0 });
+    await until(() => [ann, bob].every((w) => w.mg.game.result), "the end, on both devices", 120000);
+    const res = (w) => JSON.stringify(w.mg.game.result);
+    assert(res(ann) === res(bob), `the end: ${res(ann)} / ${res(bob)}`);
+    const f = ann.mg.game.result;
+    // each device's run of the world comes to the server's points: so the server took the same
+    // pads (Bob's made-up old one on the frame it counts on, as told back to him)
+    const points = (w) => w.mg.game.world.scores.join();
+    assert(points(ann) === f.p.join() && points(bob) === f.p.join(), `points: Ann's ${points(ann)}, Bob's ${points(bob)}, the server's ${f.p}`);
+    await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 30000);
+    assert(ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
+    return `points ${f.p.join(", ")} at frame ${f.f}`;
+  } finally {
+    stop.forEach((s) => s());
+  }
+}, { live: true }));
+
+lane(2, (f) => test("online: an Eager Eevee game, the same on both devices, and cheating doesn't work", async () => {
+  const { ann, bob } = await f.pair("eevee");
   const stop = [];
   try {
     ann.mg.net().send("start");
@@ -1395,14 +1377,10 @@ await test("online: an Eager Eevee game, the same on both devices, and cheating 
   } finally {
     stop.forEach((s) => s());
   }
-}, { live: true });
+}, { live: true }));
 
-await test("online: a Streaming Stampede game, the same on both devices, and cheating doesn't work", async () => {
-  await until(() => ann.mg.room()?.state === "lobby", "the Eager Eevee game to end", 120000);
-  ann.document.querySelector("#menu").click();
-  bob.document.querySelector("#menu").click();
-  ann.document.querySelector(`#lobby .games button[data-game="stampede"]`).click();
-  await until(() => bob.mg.room()?.game === "stampede" && bob.document.title === "Streaming Stampede", "Streaming Stampede in the lobby");
+lane(2, (f) => test("online: a Streaming Stampede game, the same on both devices, and cheating doesn't work", async () => {
+  const { ann, bob } = await f.pair("stampede");
   const stop = [];
   try {
     ann.mg.net().send("start");
@@ -1423,14 +1401,68 @@ await test("online: a Streaming Stampede game, the same on both devices, and che
   } finally {
     stop.forEach((s) => s());
   }
-}, { live: true });
+}, { live: true }));
 
-await test("online: a Pichu's Power Plant game, the same on both devices, and cheating doesn't work", async () => {
-  await until(() => ann.mg.room()?.state === "lobby", "the Streaming Stampede game to end", 180000);
-  ann.document.querySelector("#menu").click();
-  bob.document.querySelector("#menu").click();
-  ann.document.querySelector(`#lobby .games button[data-game="pichu"]`).click();
-  await until(() => bob.mg.room()?.game === "pichu" && bob.document.title === "Pichu's Power Plant", "Pichu's Power Plant in the lobby");
+lane(2, (f) => test("online: a Tumbling Togepi race, the same on both devices, and cheating doesn't work", async () => {
+  const { ann, bob } = await f.pair("togepi");
+  const stop = [];
+  try {
+    ann.mg.net().send("start");
+    await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the round", 20000);
+    stop.push(await autorun(ann), await autorun(bob));
+    const net = bob.mg.net(), r = ann.mg.room().round, g = bob.mg.game;
+    await until(() => g.frame > 60, "two seconds in", 20000);
+    // Bob steers Ann's Togepi, says a change he didn't make was long ago, and sends one off the stick's range
+    net.send("stick", { r, s: 0, f: g.frame, x: 60, y: 0 });
+    net.send("stick", { r, s: 1, f: 5, x: -60, y: 0 });
+    net.send("stick", { r, s: 1, f: g.frame + 1, x: 90, y: -60 });
+    await until(() => [ann, bob].every((w) => w.mg.game.result), "the end, on both devices", 90000);
+    const res = (w) => JSON.stringify(w.mg.game.result);
+    assert(res(ann) === res(bob), `the end: ${res(ann)} / ${res(bob)}`);
+    const f = ann.mg.game.result;
+    // each device's run of each lane comes to the server's finishes: so the server took the same
+    // sticks (Bob's made-up old one at the frame it counts from, as told back to him)
+    const fins = (w) => w.mg.game.lanes.map((l) => l.finish).join();
+    assert(fins(ann) === f.fin.join() && fins(bob) === f.fin.join(), `finishes: Ann's ${fins(ann)}, Bob's ${fins(bob)}, the server's ${f.fin}`);
+    assert(f.fin[0] !== null && f.fin[1] !== null, "someone didn't get there: " + f.fin);
+    await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 30000);
+    assert(ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
+    return `finishes ${f.fin.join(", ")}`;
+  } finally {
+    stop.forEach((s) => s());
+  }
+}, { live: true }));
+
+lane(2, (f) => test("online: a Clear Cut Challenge round, the same on both devices, and cheating doesn't work", async () => {
+  const { ann, bob } = await f.pair("clearcut");
+  await until(() => bob.mg.mini?.game?.logs !== undefined, "Clear Cut Challenge loaded");
+  const stop = [];
+  try {
+    ann.mg.net().send("start");
+    await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the round", 20000);
+    stop.push(autocut(ann, 0), autocut(bob, 2)); // Ann cuts on the line (20), Bob 2 frames early (5)
+    const net = bob.mg.net(), r = ann.mg.room().round, g = bob.mg.game;
+    // Bob claims a perfect cut for Ann's seat, a cut for a log that hasn't come up yet, and a second cut
+    net.send("cut", { r, s: 0, n: 0, f: g.logs[0].T });
+    net.send("cut", { r, s: 1, n: 3, f: g.logs[3].T });
+    await until(() => g.players.every((p) => p.cuts[1]?.told), "the second log, judged on Bob's device", 60000);
+    net.send("cut", { r, s: 1, n: 1, f: g.logs[1].T });
+    await sleep(1000);
+    const cuts = (w) => w.mg.game.players.map((p) => p.cuts.slice(0, 2).map((c) => c && `${c.f}/${c.pts}`).join(" "));
+    assert(cuts(ann).join() === cuts(bob).join(), `the cuts differ: ${cuts(ann)} / ${cuts(bob)}`);
+    const pts = (w, z) => w.mg.game.players[z].cuts.slice(0, 2).map((c) => c.pts).join();
+    assert(pts(ann, 0) === "20,20" && pts(ann, 1) === "5,5", `Ann ${pts(ann, 0)}, Bob ${pts(ann, 1)}: a claim got through`);
+    const totals = (w) => w.mg.game.players.map((p) => p.total).join();
+    await sleep(3000);
+    assert(totals(ann) === totals(bob), `totals: ${totals(ann)} / ${totals(bob)}`);
+    return `after two logs: ${totals(ann)}`;
+  } finally {
+    stop.forEach((s) => s());
+  }
+}, { live: true }));
+
+lane(2, (f) => test("online: a Pichu's Power Plant game, the same on both devices, and cheating doesn't work", async () => {
+  const { ann, bob } = await f.pair("pichu");
   const stop = [];
   try {
     ann.mg.net().send("start");
@@ -1460,107 +1492,126 @@ await test("online: a Pichu's Power Plant game, the same on both devices, and ch
   } finally {
     stop.forEach((s) => s());
   }
-}, { live: true });
+}, { live: true }));
 
-await test("online: a Tumbling Togepi race, the same on both devices, and cheating doesn't work", async () => {
-  await until(() => ann.mg.room()?.state === "lobby", "the Pichu's Power Plant game to end", 180000);
-  ann.document.querySelector("#menu").click();
-  bob.document.querySelector("#menu").click();
-  ann.document.querySelector(`#lobby .games button[data-game="togepi"]`).click();
-  await until(() => bob.mg.room()?.game === "togepi" && bob.document.title === "Tumbling Togepi", "Tumbling Togepi in the lobby");
-  const stop = [];
-  try {
-    ann.mg.net().send("start");
-    await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the round", 20000);
-    stop.push(await autorun(ann), await autorun(bob));
-    const net = bob.mg.net(), r = ann.mg.room().round, g = bob.mg.game;
-    await until(() => g.frame > 60, "two seconds in", 20000);
-    // Bob steers Ann's Togepi, says a change he didn't make was long ago, and sends one off the stick's range
-    net.send("stick", { r, s: 0, f: g.frame, x: 60, y: 0 });
-    net.send("stick", { r, s: 1, f: 5, x: -60, y: 0 });
-    net.send("stick", { r, s: 1, f: g.frame + 1, x: 90, y: -60 });
-    await until(() => [ann, bob].every((w) => w.mg.game.result), "the end, on both devices", 90000);
-    const res = (w) => JSON.stringify(w.mg.game.result);
-    assert(res(ann) === res(bob), `the end: ${res(ann)} / ${res(bob)}`);
-    const f = ann.mg.game.result;
-    // each device's run of each lane comes to the server's finishes: so the server took the same
-    // sticks (Bob's made-up old one at the frame it counts from, as told back to him)
-    const fins = (w) => w.mg.game.lanes.map((l) => l.finish).join();
-    assert(fins(ann) === f.fin.join() && fins(bob) === f.fin.join(), `finishes: Ann's ${fins(ann)}, Bob's ${fins(bob)}, the server's ${f.fin}`);
-    assert(f.fin[0] !== null && f.fin[1] !== null, "someone didn't get there: " + f.fin);
-    await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 30000);
-    assert(ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
-    return `finishes ${f.fin.join(", ")}`;
-  } finally {
-    stop.forEach((s) => s());
-  }
-}, { live: true });
+lane(1, (f) => test("a solo round starts and plays: Egg Emergency", async () => {
+  const solo = await f.open("game=egg");
+  solo.document.querySelector("#play").click();
+  await until(() => solo.mg.phase() === "play" && solo.mg.game.time > 4, "Egg Emergency's round to be under way");
+  const g = solo.mg.game;
+  assert(g.control.join() === "local,cpu,cpu,cpu", "seats " + g.control);
+  assert(g.players.some((p) => p.eggs > 0), "no one has caught anything");
+  solo.mg.title(); // (as Telegram's back button does)
+  assert(solo.mg.phase() === "title", "back to the title: " + solo.mg.phase());
+}, { live: true }));
 
-await test("online: a Gutsy Golbat round, the same on both devices, and cheating doesn't work", async () => {
-  await until(() => ann.mg.room()?.state === "lobby", "the Tumbling Togepi race to end", 180000);
-  ann.document.querySelector("#menu").click();
-  bob.document.querySelector("#menu").click();
-  ann.document.querySelector(`#lobby .games button[data-game="golbat"]`).click();
-  await until(() => bob.mg.room()?.game === "golbat" && bob.document.title === "Gutsy Golbat", "Gutsy Golbat in the lobby");
-  const stop = [];
+lane(1, (f) => test("a solo round starts and plays: Clear Cut Challenge", async () => {
+  const solo = await f.open("game=clearcut");
+  solo.document.querySelector("#play").click();
+  const stop = autocut(solo, 1);
   try {
-    ann.mg.net().send("start");
-    await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the round", 20000);
-    stop.push(autoflap(ann), autoflap(bob));
-    const net = bob.mg.net(), r = ann.mg.room().round, g = bob.mg.game;
-    await until(() => g.frame > 60, "two seconds in", 20000);
-    // Bob flies Ann's Golbat, says a pad he didn't press was long ago, and sends one off the stick's range
-    net.send("pad", { r, s: 0, f: g.frame, x: -64, a: 1 });
-    net.send("pad", { r, s: 1, f: 5, x: 64, a: 1 });
-    net.send("pad", { r, s: 1, f: g.frame + 1, x: 90, a: 0 });
-    await until(() => [ann, bob].every((w) => w.mg.game.result), "the end, on both devices", 120000);
-    const res = (w) => JSON.stringify(w.mg.game.result);
-    assert(res(ann) === res(bob), `the end: ${res(ann)} / ${res(bob)}`);
-    const f = ann.mg.game.result;
-    // each device's run of the world comes to the server's hearts: so the server took the same
-    // pads (Bob's made-up old one on the frame it counts on, as told back to him)
-    const hearts = (w) => w.mg.game.world.scores.join();
-    assert(hearts(ann) === f.h.join() && hearts(bob) === f.h.join(), `hearts: Ann's ${hearts(ann)}, Bob's ${hearts(bob)}, the server's ${f.h}`);
-    await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 30000);
-    assert(ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
-    return `hearts ${f.h.join(", ")} at frame ${f.f}`;
-  } finally {
-    stop.forEach((s) => s());
-  }
-}, { live: true });
+    await until(() => solo.mg.phase() === "play" && solo.mg.game.logs && solo.mg.game.time > (solo.mg.game.times[0].judged + 30) / 30,
+                "Clear Cut Challenge's first log", 30000);
+  } finally { stop(); }
+  const g = solo.mg.game;
+  const first = g.players.map((p) => p.cuts[0]?.pts);
+  assert(g.control.join() === "local,cpu,cpu,cpu", "seats " + g.control);
+  assert(first[0] === 10, "cut a frame early, the first log gave " + first[0]);
+  assert(first.every((x) => Number.isInteger(x)), "a seat's first log wasn't judged: " + first);
+  return "the first log: " + first.join(", ");
+}, { live: true }));
 
-await test("online: a Barrier Ball round, the same on both devices, and cheating doesn't work", async () => {
-  await until(() => ann.mg.room()?.state === "lobby", "the Gutsy Golbat round to end", 180000);
-  ann.document.querySelector("#menu").click();
-  bob.document.querySelector("#menu").click();
-  ann.document.querySelector(`#lobby .games button[data-game="barrier"]`).click();
-  await until(() => bob.mg.room()?.game === "barrier" && bob.document.title === "Barrier Ball", "Barrier Ball in the lobby");
-  const stop = [];
+lane(1, (f) => test("a solo round starts and plays: Eager Eevee", async () => {
+  const solo = await f.open("game=eevee");
+  solo.document.querySelector("#play").click();
+  const stopDash = autodash(solo, 6);
   try {
-    ann.mg.net().send("start");
-    await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the round", 20000);
-    stop.push(autoslide(ann), autoslide(bob));
-    const net = bob.mg.net(), r = ann.mg.room().round, g = bob.mg.game;
-    await until(() => g.frame > 60, "two seconds in", 20000);
-    // Bob slides Ann's Mr. Mime, says a pad he didn't press was long ago, and sends one off the stick's range
-    net.send("pad", { r, s: 0, f: g.frame, x: -64, a: 1 });
-    net.send("pad", { r, s: 1, f: 5, x: 64, a: 1 });
-    net.send("pad", { r, s: 1, f: g.frame + 1, x: 90, a: 0 });
-    await until(() => [ann, bob].every((w) => w.mg.game.result), "the end, on both devices", 120000);
-    const res = (w) => JSON.stringify(w.mg.game.result);
-    assert(res(ann) === res(bob), `the end: ${res(ann)} / ${res(bob)}`);
-    const f = ann.mg.game.result;
-    // each device's run of the world comes to the server's points: so the server took the same
-    // pads (Bob's made-up old one on the frame it counts on, as told back to him)
-    const points = (w) => w.mg.game.world.scores.join();
-    assert(points(ann) === f.p.join() && points(bob) === f.p.join(), `points: Ann's ${points(ann)}, Bob's ${points(bob)}, the server's ${f.p}`);
-    await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 30000);
-    assert(ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
-    return `points ${f.p.join(", ")} at frame ${f.f}`;
-  } finally {
-    stop.forEach((s) => s());
-  }
-}, { live: true });
+    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > solo.mg.game.times[0].open + 60,
+                "Eager Eevee's first race", 30000);
+  } finally { stopDash(); }
+  const g = solo.mg.game;
+  const rd = g.rounds[0], v = g.verdict[0];
+  assert(rd.kind === 2 ? !v || v.pts.every((x) => x === 0) : v && v.got[0], `the first race (kind ${rd.kind}): ${JSON.stringify(v)}`);
+  return `the first race: ${v ? v.pts.join(", ") : "no one"}`;
+}, { live: true }));
+
+lane(1, (f) => test("a solo round starts and plays: Streaming Stampede", async () => {
+  const solo = await f.open("game=stampede");
+  solo.document.querySelector("#play").click();
+  const stopCount = autocount(solo);
+  try {
+    await until(() => solo.mg.phase() === "play" && solo.mg.game.at && solo.mg.game.lastFrame > solo.mg.game.at[0].judged + 5,
+                "Streaming Stampede's first answer", 40000);
+  } finally { stopCount(); }
+  const g = solo.mg.game;
+  const answer = g.verdicts[0];
+  assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
+  assert(answer && answer.counts[0] === g.qs[0].answer && answer.pts[0] === 10, "counting right, the first answer gave " + JSON.stringify(answer));
+  return "the first answer: " + answer.pts.join(", ");
+}, { live: true }));
+
+lane(1, (f) => test("a solo round starts and plays: Pichu's Power Plant", async () => {
+  const solo = await f.open("game=pichu");
+  solo.document.querySelector("#play").click();
+  const stopPress = autopress(solo, 3);
+  try {
+    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > 120, "Pichu's Power Plant's first 4 s", 30000);
+  } finally { stopPress(); }
+  const g = solo.mg.game;
+  const charges = [0, 1, 2, 3].map((z) => g.charge(z));
+  assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
+  assert(charges[0] >= 30 && charges.slice(1).every((x) => x > 5 && x < charges[0]), "4 s in, the charges are " + charges);
+  return "the charges 4 s in: " + charges.join(", ");
+}, { live: true }));
+
+lane(1, (f) => test("a solo round starts and plays: Tumbling Togepi", async () => {
+  const solo = await f.open("game=togepi");
+  solo.document.querySelector("#play").click();
+  const stopRun = await autorun(solo);
+  try {
+    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > 120, "Tumbling Togepi's first 4 s", 30000);
+  } finally { stopRun(); }
+  const g = solo.mg.game;
+  const far = [0, 1, 2, 3].map((z) => g.progressOf(z));
+  assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
+  assert(far.every((x) => x >= 5 && x < 30), "4 s in, the progress is " + far);
+  return `the progress 4 s in: ${far.join(", ")}%`;
+}, { live: true }));
+
+lane(1, (f) => test("a solo round starts and plays: Gutsy Golbat", async () => {
+  const solo = await f.open("game=golbat");
+  solo.document.querySelector("#play").click();
+  const stopFlap = autoflap(solo);
+  try {
+    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > 120, "Gutsy Golbat's first 4 s", 30000);
+  } finally { stopFlap(); }
+  const g = solo.mg.game;
+  const { START } = await moduleOf(solo, "./src/golbat/rules.js");
+  const moved = g.world.g.map((o, z) => Math.round(Math.hypot(o.x - START[z][0], o.y - START[z][1])));
+  assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
+  assert(moved.every((d) => d > 20) && g.world.mags.length + g.world.hearts.length > 0, `4 s in, the Golbat have moved ${moved}, with ${g.world.mags.length} Magnemite`);
+  return "moved 4 s in: " + moved.join(", ");
+}, { live: true }));
+
+lane(1, (f) => test("a solo round starts and plays: Barrier Ball", async () => {
+  const solo = await f.open("game=barrier");
+  solo.document.querySelector("#play").click();
+  const stopSlide = autoslide(solo);
+  try {
+    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > 120, "Barrier Ball's first 4 s", 30000);
+  } finally { stopSlide(); }
+  const g = solo.mg.game;
+  const R = await moduleOf(solo, "./src/barrier/rules.js");
+  const slid = g.world.m.map((m) => Math.round(Math.abs(m.x - -R.SEATS[m.z].n[0] * R.STAND)));
+  // (balls flown off: or one's already gone in, and the next is still in the hole)
+  const served = g.world.balls.filter((b) => !b.serving).length || g.world.ids - 1;
+  assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
+  // (a CPU wanders to a random spot in its lane, which may be next to where it started)
+  assert(slid[0] > 5 && slid.slice(1).some((d) => d > 5) && served > 0, `4 s in, the Mr. Mime have slid ${slid}, with ${served} balls in play`);
+  return "slid 4 s in: " + slid.join(", ");
+}, { live: true }));
+
+await runLanes(lanes);
 
 const passed = results.filter((r) => r.ok).length, failed = results.filter((r) => r.ok === false).length;
 const verdict = failed ? "FAIL" : passed < results.length ? "INCONCLUSIVE" : "PASS";

@@ -25,10 +25,11 @@
 <!-- Regression tests for the minigames and online play, in the browser,
      against the rooms server: run tools/serve_web.py and open this page
      (hidden, it steps the games itself, as browsers pause hidden pages'
-     animation). They play real games in the frames and take about three
-     minutes. The results go in the title (PASS, FAIL or INCONCLUSIVE), the
-     list, the console, and window.results (ok: true, false, or null for
-     inconclusive). -->
+     animation). They play real games in the frames, the ones in real time
+     side by side (each online game in a room of its own), and take about a
+     minute and a half. The results go in the title (PASS, FAIL or
+     INCONCLUSIVE), the list, the console, and window.results (ok: true,
+     false, or null for inconclusive). -->
 <div id="report"><h1>Minigames tests</h1>
   <ol id="list"></ol></div>
 <div id="frames"></div>
