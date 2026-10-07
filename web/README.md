@@ -726,8 +726,8 @@ What comes from the ROM and what is made up:
 
 | From the game | Made for the remake |
 |---|---|
-| the ring, the physics and the bumps, the stick, the RAPID SPIN, reeling, points, jumping in, the CPUs, the end and the winners' spots, the camera (module #47's code) | 60 frames a second (the game's frame's length isn't traced), the field of view that fits the window, the portrait layout, the floor round the picture, the sparks' size, the hum for this device's player only |
-| Hitmontop (115) and its clips and faces, the shadow (79), the rings (195-198), the sparks (199, 200), the ring's picture (223), the points' dots and the clock's balloon (401), its swirl (402), the glow (151), the badges (434) | the touch stick and A button (the menus' A, bank 51), the title's art (the ring's picture) |
+| the ring, the physics and the bumps, the stick, the RAPID SPIN, reeling, points, jumping in, the CPUs, the end and the winners' spots, the camera (module #47's code) | 60 frames a second (the game's frame's length isn't traced), the field of view that fits the window, the portrait layout, the floor round the picture, the sparks' look (streaks and a flash, from their pictures), the hum for this device's player only |
+| Hitmontop (115) and its clips and faces, the shadow (79), the rings (195-198), the sparks' pictures (199, 200), the ring's picture (223), the points' dots and the clock's balloon (401), its swirl (402), the glow (151), the badges (434) | the touch stick and A button (the menus' A, bank 51), the title's art (the ring's picture) |
 | song 33, bank 4's effects, the count | |
 
 Code: `src/topsy/rules.js` has the world (and `tools/topsy_rules.py`, the

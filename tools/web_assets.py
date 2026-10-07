@@ -279,8 +279,9 @@ TOPSY = {
     "ring1.glb": "objects/198_ring_green/198_ring_green.glb",
     "ring2.glb": "objects/195_ring_red/195_ring_red.glb",
     "ring3.glb": "objects/196_ring_yellow/196_ring_yellow.glb",
-    "spark.glb": "objects/199_spark/199_spark.glb",
-    "flash.glb": "objects/200_flash/200_flash.glb",
+    # (the sparks' own pictures: their models' texture coordinates come out wrong, so the remake draws them itself)
+    "spark.png": "objects/199_spark/textures/tex03.png",
+    "flash.png": "objects/200_flash/textures/tex01.png",
     "ring.png": bank(223, 0),
     "glow.png": bank(151, 0),  # (Barrier Ball's glow: the trail behind a Hitmontop sent reeling, in its hitter's colour)
     "balloon.png": bank(401, 5),

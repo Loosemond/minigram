@@ -1,7 +1,7 @@
 // Loads Topsy-Turvy's files (tools/web_assets.py puts them in assets/topsy/):
 // Hitmontop (object 115) with its faces, the shadow (79), the rings round a
 // Hitmontop after its RAPID SPIN (195-198, one in each player's colour) and
-// the sparks of a bump (199, and 200 with a RAPID SPIN); and the ring itself,
+// the sparks of a bump (199, and 200 with a RAPID SPIN: their pictures); and the ring itself,
 // the game's background picture (image bank 223), and the glow (151) that
 // trails a Hitmontop sent reeling. Lighting is done on the
 // textures' display values, as the N64 does (see src/egg/assets.js,
@@ -53,9 +53,9 @@ function faceTexture(url, like) {
   });
 }
 
-const MODELS = ["hitmontop", "shadow", "ring0", "ring1", "ring2", "ring3", "spark", "flash"];
+const MODELS = ["hitmontop", "shadow", "ring0", "ring1", "ring2", "ring3"];
 const FACES = [2, 3, 4, 5, 6, 8, 9, 10]; // Hitmontop's eyes (2-6) and mouth (8-10)
-const PICTURES = ["ring", "glow", "bricks"];
+const PICTURES = ["ring", "glow", "bricks", "spark", "flash"];
 
 export async function loadAssets(base, onProgress = () => {}) {
   const jobs = [];

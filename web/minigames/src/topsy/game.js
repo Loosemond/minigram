@@ -40,7 +40,7 @@ const REELING_RED = new THREE.Color(1, 127 / 255, 127 / 255); // (0x86002780: en
 // and growing again its last 0.4 s
 const SPIN_SIZE = 6, CHARGE_SIZE = 6, CHARGE_SIZE_MIN = 1.5, CHARGE_SIZE_LAST = 5.5, MIN_TIME = 0.4, AFTER_IMPACT = 1.5;
 const SPARK_TIME = 16 / 30; // a spark's life (16 frames of its clip)
-const SPARK_SCALE = 0.35; // (made for the remake: the module leaves the sparks at the list's own scale)
+const STREAKS = 8, STREAK = [48, 140], SPARK_OUT = 260, FLASH = 420; // (the sparks' look: made for the remake, after their clips)
 const TRAIL = 10; // the glow behind a Hitmontop sent reeling: its last 10 places (0x86000C6C)
 const GLOW = 270; // (36 of the game's 320 columns across: about a Hitmontop)
 // each player's colours (0x8600D1A0): the glow's
@@ -96,16 +96,20 @@ export class Game {
       v.blink = -1;
       return v;
     });
-    // the sparks, one of each kind for each pair (0x86005B3C)
+    // the sparks, one of each kind for each pair (0x86005B3C: objects 199 and 200, drawn here from their
+    // pictures): streaks flying out of where they bumped, and a flash with a RAPID SPIN, facing the camera
+    const glowMat = (map, color) => new THREE.MeshBasicMaterial({ map, color, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
     this.sparks = PAIRS.map(() => {
-      const s = { spark: makeModel(assets.spark, SPARK_SCALE), flash: makeModel(assets.flash, SPARK_SCALE), t: 0, flashT: 0, at: new THREE.Vector3() };
-      for (const m of [s.spark, s.flash]) {
-        add(m.root);
-        m.root.renderOrder = 3;
-        for (const mat of m.mats) { mat.depthWrite = false; mat.transparent = true; mat.blending = THREE.AdditiveBlending; }
-        m.root.visible = false;
-      }
-      return s;
+      const spark = new THREE.Group(), flash = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), glowMat(assets.flash, 0xffffff));
+      const streaks = [...Array(STREAKS)].map((_, k) => {
+        const arm = new THREE.Group(), m = new THREE.Mesh(new THREE.PlaneGeometry(STREAK[0], STREAK[1]), glowMat(assets.spark, 0xfff5a0));
+        arm.rotation.z = (k / STREAKS) * Math.PI * 2 + (k % 2) * 0.3;
+        arm.add(m);
+        spark.add(arm);
+        return m;
+      });
+      for (const o of [spark, flash]) { o.renderOrder = 3; o.visible = false; add(o); }
+      return { spark, flash, streaks, t: 0, flashT: 0, at: new THREE.Vector3() };
     });
     this.camQ = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(new THREE.Vector3(...CAMERA.eye), new THREE.Vector3(...CAMERA.at), new THREE.Vector3(0, 1, 0)));
     this.reset("normal");
@@ -408,14 +412,25 @@ export class Game {
         s.material.opacity = 0.6 * (1 - k / TRAIL) * g.k;
       });
     });
-    // the sparks: their clip as they fade (0x860049B8), facing the camera
+    // the sparks: flying out and fading as their clips do (0x860049B8), facing the camera
     for (const s of this.sparks) {
-      for (const [m, t] of [[s.spark, s.t], [s.flash, s.flashT]]) {
-        m.root.visible = t > 0;
-        if (t <= 0) continue;
-        m.root.position.copy(s.at);
-        m.root.quaternion.copy(this.camQ);
-        m.pose(0, 16 - (t * 16) / SPARK_TIME, true);
+      const k = 1 - Math.max(0, s.t) / SPARK_TIME, kf = 1 - Math.max(0, s.flashT) / SPARK_TIME;
+      s.spark.visible = s.t > 0;
+      if (s.t > 0) {
+        s.spark.position.copy(s.at);
+        s.spark.quaternion.copy(this.camQ);
+        s.streaks.forEach((m) => {
+          m.position.y = 40 + SPARK_OUT * Math.sqrt(k);
+          m.scale.set(1, 0.6 + k, 1);
+          m.material.opacity = Math.min(1, 2 * (1 - k));
+        });
+      }
+      s.flash.visible = s.flashT > 0;
+      if (s.flashT > 0) {
+        s.flash.position.copy(s.at);
+        s.flash.quaternion.copy(this.camQ);
+        s.flash.scale.setScalar(FLASH * (0.3 + 0.7 * Math.sqrt(kf)));
+        s.flash.material.opacity = Math.min(1, 2 * (1 - kf));
       }
       s.t -= dt;
       s.flashT -= dt;

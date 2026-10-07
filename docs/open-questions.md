@@ -39,7 +39,8 @@ What isn't known yet, roughly by how useful it would be.
   scheduler's retrace count wasn't traced); what its list's 123 (a Hitmontop
   in one piece), 124 (the same, white), 152 and the whirlwinds 191-194 are for
   (nothing in module #47 draws them; 191-194 are hidden every frame,
-  `0x86001DBC`); the sparks' size (the list's own scale: the remake guesses);
+  `0x86001DBC`); the sparks (199, 200: their texture coordinates come out wrong from the
+  extractor, so the remake draws them from their pictures; and their size);
   how the shadow and the glow are combined (their colours and alpha:
   `0x86000CCC` draws the glow twice, the remake once); the HUD gauge at
   `0x86004544` (a RAPID SPIN's charge, by its look), which nothing calls; and
