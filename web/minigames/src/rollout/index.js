@@ -78,7 +78,7 @@ export async function create(shell, onProgress) {
   game.on("rocket", (z) => { if (mine(z)) shell.haptic("medium"); });
   game.on("lap", () => shell.sound("lap")); // (0x5F09: the leader's)
   game.on("final", () => shell.sound("final")); // (0x5F0A)
-  game.on("finish", (z, pan, won) => { // (0x5F08; the first in, 0x1C07)
+  game.on("in", (z, pan, won) => { // someone's in (0x5F08; the first in, 0x1C07)
     shell.sound("go", { pan });
     if (won) shell.sound("crowd");
     shell.flash(z, "bump");

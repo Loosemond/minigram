@@ -801,7 +801,16 @@ async function boot() {
   $("#loading").hidden = true;
 
   const clock = new THREE.Clock();
-  renderer.setAnimationLoop(() => tick(window.mg?.paused ? 0 : Math.min(clock.getDelta(), 0.1)));
+  // (a frame that throws is reported, once, and the next goes on: three.js stops its loop on a throw,
+  // and the game would freeze there)
+  const said = new Set();
+  renderer.setAnimationLoop(() => {
+    try {
+      tick(window.mg?.paused ? 0 : Math.min(clock.getDelta(), 0.1));
+    } catch (e) {
+      if (!said.has(e.message)) { said.add(e.message); console.error(e); }
+    }
+  });
   if (window.mg) window.mg.tick = tick; // (the tests step it by hand while the page is hidden)
 }
 

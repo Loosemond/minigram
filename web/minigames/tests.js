@@ -1820,6 +1820,26 @@ lane(1, (f) => test("a solo round starts and plays: Barrier Ball", async () => {
   return "slid 4 s in: " + slid.join(", ");
 }, { live: true }));
 
+lane(1, (f) => test("a solo Rampage Rollout race, run on to the end, gets to the results", async () => {
+  // (through the shell, as a person plays it, but quicker: from GO this test runs the frames itself)
+  const solo = await f.open("norender&game=rollout");
+  solo.document.querySelector("#play").click();
+  await until(() => solo.mg.phase() === "play", "GO", 15000);
+  const g = solo.mg.game;
+  solo.mg.paused = true;
+  try {
+    for (let k = 0; k < 4000 && solo.mg.phase() === "play"; k++) {
+      g.setDpad(rolloutDrive(g.world.d[g.me]));
+      if (k % 40 === 0) g.press();
+      solo.mg.tick(1 / 30);
+    }
+  } finally { solo.mg.paused = false; }
+  await until(() => solo.mg.phase() === "results", `the results (the race over at frame ${g.world.end}, ${solo.mg.phase()})`, 20000);
+  const rows = ranking(solo).split(" | ");
+  assert(rows.length === 4, "the ranking: " + ranking(solo));
+  return ranking(solo);
+}, { live: true }));
+
 lane(1, (f) => test("a solo round starts and plays: Rampage Rollout", async () => {
   const solo = await f.open("game=rollout");
   solo.document.querySelector("#play").click();

@@ -1154,6 +1154,7 @@ def _():
         a.send("pad", r=r, s=0, f=won["f"] + 5, x=1, a=1)  # after the end: nothing
         a.send("done", r=r)
         b.send("done", r=r)
+        a.s.settimeout(8)  # (the round's over 3 s after the race: AFTER)
         res = a.wait("results", timeout=10)
         assert res["scores"] == [round(f * 100 / rollout_rules.FPS) for f in said["fin"]], res
         b.close()

@@ -235,7 +235,7 @@ export class World {
     for (const d of lapped) {
       if (d.laps > 0) d.clouds = Math.min(3, d.clouds + d.rank); // (the further back, the more)
       else d.clouds = 0;
-      if (d.rank === 0) this.events.push([d.laps === 1 ? "final" : d.laps >= 2 ? "lap" : "in", d.z]);
+      if (d.rank === 0 && d.laps >= 1) this.events.push([d.laps === 1 ? "final" : "lap", d.z]);
     }
     for (const c of [...this.clouds]) { this.cloud(c); c.timer++; }
     for (const d of this.d) this.walls(d);
@@ -513,7 +513,7 @@ export class World {
         d.done = true;
         d.fin = t;
         d.progress = 10000 - d.rank;
-        this.events.push(["finish", d.z, +d.won]);
+        this.events.push(["in", d.z, +d.won]); // (not "finish": that's the game's own, the round over)
       }
     }
     if (over || t >= LONGEST) {

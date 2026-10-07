@@ -271,8 +271,8 @@ class World:
                 d.clouds = min(3, d.clouds + d.rank)
             else:
                 d.clouds = 0
-            if d.rank == 0:
-                self.events.append(["final" if d.laps == 1 else "lap" if d.laps >= 2 else "in", d.z])
+            if d.rank == 0 and d.laps >= 1:
+                self.events.append(["final" if d.laps == 1 else "lap", d.z])
         for c in list(self.clouds):
             self.cloud(c)
             c.timer += 1
@@ -609,7 +609,7 @@ class World:
                 d.done = True
                 d.fin = t
                 d.progress = 10000 - d.rank
-                self.events.append(["finish", d.z, int(d.won)])
+                self.events.append(["in", d.z, int(d.won)])
         if over or t >= LONGEST:
             self.end = t
             for c in self.clouds:
