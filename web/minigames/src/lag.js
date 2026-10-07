@@ -41,7 +41,7 @@ export class Lag {
 }
 
 // Frames this device sends its own player's moves ahead of when they count,
-// in the games that share one world (Barrier Ball, Rampage Rollout): enough
+// in the games that share one world (Barrier Ball, Rampage Rollout, Topsy-Turvy): enough
 // for them to get to the other people's devices before those run that frame
 // (so they needn't run the world again), and no more than LEAD_MOST (the
 // moves count that much later here too: 100 ms at most). people: which seats

@@ -36,6 +36,7 @@ import barrier_rules  # noqa: E402
 import golbat_rules  # noqa: E402
 import pichu_rules  # noqa: E402
 import rollout_rules  # noqa: E402
+import topsy_rules  # noqa: E402
 import rooms  # noqa: E402
 import stampede_rules  # noqa: E402
 import togepi_rules  # noqa: E402
@@ -101,6 +102,28 @@ def rollout_pad(z, t, w):
         way = 2 if d.y < -150 and d.x > -200 else 4 if d.x < -200 and d.y < 150 else 1 if d.y > 150 and d.x < 200 else 8
         return [way | (16 if t == 0 else 0), t % 47 == 3]
     return [[8, 4, 2, 1, 0, 2][t // 40 % 6], t % 61 == 11]
+
+# web/minigames/src/topsy/rules.js: a round with seats 0 and 2 on topsy_pad()
+# and two CPUs (normal, hard, easy), the world's digest() every 100 frames:
+# the hard one to its end and the show after (1186 frames), the others 600;
+# then the end, the points and the places (web/minigames/tests.js has the same)
+JS_TOPSY = {1: "f73c640b45d45abe", 157: "8dcf2582748da502", 2 ** 31 - 1: "e51f8987128a2605"}
+TOPSY_LEVEL = {1: "normal", 157: "hard", 2 ** 31 - 1: "easy"}
+
+
+def topsy_pad(z, t, w):
+    if z == 0:  # (at whoever's nearest, a RAPID SPIN now and then)
+        me, best, bd = w.p[0], None, math.inf
+        for q in w.p:
+            if q is me:
+                continue
+            dx, dz = q.pos[0] - me.pos[0], q.pos[2] - me.pos[2]
+            if dx * dx + dz * dz < bd:
+                bd, best = dx * dx + dz * dz, (dx, dz)
+        dx, dz = best
+        return [64 if dx > 50 else -64 if dx < -50 else 0, 64 if dz < -50 else -64 if dz > 50 else 0, t % 53 == 5]
+    x, y = [(64, 0), (0, 64), (-45, -45), (0, 0)][t // 60 % 4]
+    return [x, y, t % 71 == 13]
 
 # a short round, the same for every seat: (t, col, kind, fall); they reach the
 # hands at 0.5, 0.8, 1.1 (the Voltorb), 1.4 and 2.1
@@ -445,7 +468,7 @@ def _():
     time.sleep(rooms.CHANGE_GAP)
     A.send("start")
     sa, sb = A.wait("start"), B.wait("start")
-    assert sa["seed"] == sb["seed"] and sa["round"] == 1 and sa["go"] > rooms.clock() - 100
+    assert sa["seed"] == sb["seed"] and sa["round"] == 1 and sa["go"] > rooms.clock() - 2000  # (GO's this round's: the others' checks keep the CPU busy)
     assert sa["drops"][0][2] == [0.6, 1, "v", 0.5] and sa["settled"] == [0] * 4 and sa["leans"] == [None] * 4
     assert sa["rtt"] == [42, None, 42, 42], sa["rtt"]  # each seat's device: Ann plays the CPUs
     go, r = sa["go"], sa["round"]
@@ -1161,6 +1184,90 @@ def _():
         a.close()
     finally:
         rollout_rules.LAPS = saved
+
+
+def topsy_digest(seed):
+    w = topsy_rules.World(seed, TOPSY_LEVEL[seed], [False, True, False, True])
+    parts, t = [], 0
+    while (not (w.over and t > w.end + 120)) if seed == 157 else t < 600:
+        w.step(t, [topsy_pad(0, t, w), None, topsy_pad(2, t, w), None])
+        w.events = []
+        if t % 100 == 0:
+            parts.append(w.digest())
+        if t % 50 == 0:
+            time.sleep(0.002)  # (a busy minute of Python: the other checks' clocks go on meanwhile)
+        t += 1
+    parts.append("%d:%s:%s" % (-1 if w.end is None else w.end, ",".join(map(str, w.scores)), ",".join(map(str, w.places))))
+    return hashlib.sha256(";".join(parts).encode()).hexdigest()[:16]
+
+
+@check("Topsy-Turvy: the world (the CPUs too) matches the browser's, bit for bit", together="Topsy")
+def _():
+    for seed, want in JS_TOPSY.items():
+        assert topsy_digest(seed) == want, seed
+    # the game's sine, cosine and arctangent (libultra's sinf and cosf; module #48's continued fraction)
+    T = topsy_rules
+    for x in (0.0, 0.3, -1.2, 2.5, 3.1, -3.14, 7.0, 40.0):
+        assert abs(T.sinf(x) - math.sin(x)) < 2e-6 and abs(T.cosf(x) - math.cos(x)) < 2e-6, x
+    for y, x in ((1, 2), (-3, 1), (2, -5), (-1, -1), (5, 0), (0, 0)):
+        assert abs(T.atan2(y, x) - math.atan2(y, x)) < 1e-6, (y, x)
+    assert T.atan2(0, -1) == -T.PI  # (straight back is -pi, not pi: its last case)
+    # the ring: the rim 1800 across, its floor 1620, 222 deep in the middle (0x86004BD4)
+    assert abs(T.surface_y(T.OUTER, 1800, 0)) < 0.01 and round(T.surface_y(T.INNER, 0, 0)) == -222, T.surface_y(T.INNER, 0, 0)
+
+
+@check("Topsy-Turvy: the server runs the world from the pads, says how it ended and stops cheats", together="Topsy")
+def _():
+    saved = topsy_rules.TIME_LIMIT
+    topsy_rules.TIME_LIMIT = 4 * topsy_rules.FPS  # (a short round: four seconds)
+    try:
+        a, b = Client("TA"), Client("TB")
+        a.send("hello", id="ta", name="Tia", game="topsy")
+        code = a.wait("welcome")["room"]
+        b.send("hello", id="tb", name="Tom", room=code)
+        b.wait("welcome")
+        time.sleep(rooms.CHANGE_GAP)
+        a.drain()
+        b.drain()
+        a.send("start")
+        st = a.wait("start")
+        assert st["game"] == "topsy" and st["tt"] == dict(done=None, pads=[[], [], None, None]), st
+        go, r = st["go"], st["round"]
+        g = rooms.rooms[code].game
+        assert g.cpus == [False, False, True, True]
+        right = (64 + 64) | (64 << 8)  # (the stick right: (x + 64) | (y + 64) << 8)
+        at(go, 0.05)
+        a.send("pad", r=r, s=0, f=0, x=right, a=1)  # Tia: pushing right, and A (to jump in)
+        a.send("pad", r=r, s=1, f=1, x=right, a=1)  # someone else's Hitmontop: ignored
+        for x, ok in ((-1, 1), (0x8081, 1), (129, 1), (right, 2), (1.5, 1)):  # no stick (or not A or none): ignored
+            b.send("pad", r=r, s=1, f=2, x=x, a=ok)
+        at(go, 40 / topsy_rules.FPS)
+        b.send("pad", r=r, s=1, f=0, x=right, a=0)  # Tom's, older than the way here allows: as late as that does
+        late = 40 - int(rooms.ALLOW_GUESS * topsy_rules.FPS)
+        mine = [(m["s"], m["f"], m.get("o")) for m in b.drain(0.3) if m["t"] == "pad"]
+        assert mine == [(0, 0, None), (1, late, 0)], mine  # (Tia's; and Tom's own, from where it counts)
+        heard = [(m["s"], m["f"], m["x"], m["a"]) for m in a.drain(0.1) if m["t"] == "pad"]
+        assert heard == [(1, late, right, 0)], heard
+        a.s.settimeout(10)
+        won = a.wait("won", timeout=10)
+        a.s.settimeout(3)
+        # the same round, here
+        want = topsy_rules.Round(rooms.rooms[code].seed, "normal", cpus=[False, False, True, True])
+        want.pads = [[[0, right, 1]], [[late, right, 0]], [], []]
+        said = {k: won[k] for k in ("f", "s")}
+        assert want.settle(1000, 0) == said, (won, want.done)
+        assert said["f"] == topsy_rules.TIME_LIMIT - 1, said  # (nobody gets five points in four seconds)
+        assert g.end == (said["f"] + topsy_rules.AFTER) / topsy_rules.FPS
+        a.send("pad", r=r, s=0, f=won["f"] + 5, x=right, a=1)  # after the end: nothing
+        a.send("done", r=r)
+        b.send("done", r=r)
+        a.s.settimeout(8)  # (the round's over 3 s after the play: AFTER)
+        res = a.wait("results", timeout=10)
+        assert res["scores"] == said["s"], res
+        b.close()
+        a.close()
+    finally:
+        topsy_rules.TIME_LIMIT = saved
 
 
 @check("Telegram logins: checked, and no one can pose as a Telegram player")

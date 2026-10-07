@@ -33,7 +33,6 @@ Outside the minigames:
 
 | Code module | VRAM | Loads |
 |---|---|---|
-| #48 | `0x87C00000` | 152 (lid box) |
 | #57 | `0x83300000` | 187, 189, 214, 217, 219 (the "Lab Room" set) |
 | #58 | `0x83400000` | 217, 222 |
 | #63 | `0x87E00000` | 152, 220, 221 |
@@ -41,6 +40,11 @@ Outside the minigames:
 | main program | `0x80000000` | 2 calls with a computed number |
 
 What these modules are (menus, My Room, the Pokémon Lab…) is *unknown*.
+Module #48 (`0x87C00000`) loads nothing: it's a library of vectors,
+quaternions and a clip player that Topsy-Turvy's code uses. Topsy-Turvy loads
+most of its objects through a list (`0x80071B20`, the list at `0x8600D760`:
+79, 115, 123, 124, 152, 191-200), which a search for `0x8004DED4` misses
+([minigames.md](minigames.md#topsy-turvy)).
 
 The room decorations, trophies, signposts, TV screens and most gift boxes are
 never loaded by a constant number. They are probably loaded from tables, for

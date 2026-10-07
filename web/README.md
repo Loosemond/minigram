@@ -16,6 +16,7 @@ have a game picker; a game's code and files load the first time it's picked.
 | Gutsy Golbat | [minigames/src/golbat/](minigames/src/golbat/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#gutsy-golbat)) |
 | Barrier Ball | [minigames/src/barrier/](minigames/src/barrier/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#barrier-ball)) |
 | Rampage Rollout | [minigames/src/rollout/](minigames/src/rollout/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#rampage-rollout)) |
+| Topsy-Turvy | [minigames/src/topsy/](minigames/src/topsy/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#topsy-turvy)) |
 
 ## Run it
 
@@ -676,6 +677,65 @@ running the world again, the cameras and the scene), `src/rollout/assets.js`
 the models and pictures and `src/rollout/index.js` the layout, the controls,
 its HUD and its online messages.
 
+## Topsy-Turvy
+
+Four Hitmontop spin in a ring, a wooden bowl sunk in a brick floor. Push
+yours about with the stick (it leans the way it's pushed) and knock the others
+over the rim: whoever hit one last, within a second, gets the point. Press A
+for a RAPID SPIN: for 0.4 s it's five times as heavy, can't be hurt, and sends
+whoever it hits reeling (light, out of control, on a ring with no friction
+under them for 1.2 s); then it recharges for 1.5 s (a ring in your colour
+shrinks round your Hitmontop meanwhile). Any bump leaves both reeling for a
+moment. One knocked out lands on the floor, stands there a moment, and jumps
+back in. First to 5 points, or the most when the minute's up, wins. It
+follows the game's own code (module #47:
+[docs/minigames.md](../docs/minigames.md#topsy-turvy) has where each number
+is):
+
+- **One ring for all four.** As in Rampage Rollout, every device runs the
+  whole world from everyone's pads, and the server too: the game's physics,
+  six steps a frame, 60 frames a second, in doubles (module #48's vectors),
+  its float square roots (`Math.fround`) and its own sine, cosine (libultra's)
+  and arctangent, made from + − × / alone the same way in both copies.
+- **The CPUs** are the game's: each a part by level and by where it stands
+  among the CPUs (how near the middle it keeps, its push, whom it minds), a
+  RAPID SPIN when someone's about to hit it (and now and then a wrong one), at
+  whoever comes nearest from the middle side, and away while it recharges.
+
+The ring is the game's own picture (image bank 223: the game draws it as a
+background, and the remake puts it where the game's camera sees it), with
+its brick floor going on round it for a window wider or taller than the
+game's; the game's camera, with the field of view that shows the whole rim
+(at least the game's), over the whole window; in portrait the picture is
+moved up so the ring sits under the top cards. At the top the clock in its
+balloon; by each card, five dots, filled in the colour of each one that player
+knocked out. A glow in the hitter's colour trails one sent reeling. On a
+phone: a finger anywhere is a stick (the way and how far it slides from where
+it went down, a full push at 56 px), and the A button is the RAPID SPIN. With
+a keyboard: the arrows (or W A S D: the D-pad's push) and Space. At GO they
+crouch at their corners and hop in; at the end the winners go to their spots
+and cheer, and the others fall over.
+
+**Sound**: the game's (`assets/topsy/sound.bin`, 419 KB): song 33 from GO,
+faster in the last 30 s, bank 4's effects (a RAPID SPIN, bumps by how hard,
+knocked out, jumping in) placed by where they are, Gutsy Golbat's heart for a
+point, this device's own Hitmontop's hum (higher in a RAPID SPIN, lower while
+it recharges), and the count, GO and the last seconds' count.
+
+What comes from the ROM and what is made up:
+
+| From the game | Made for the remake |
+|---|---|
+| the ring, the physics and the bumps, the stick, the RAPID SPIN, reeling, points, jumping in, the CPUs, the end and the winners' spots, the camera (module #47's code) | 60 frames a second (the game's frame's length isn't traced), the field of view that fits the window, the portrait layout, the floor round the picture, the sparks' size, the hum for this device's player only |
+| Hitmontop (115) and its clips and faces, the shadow (79), the rings (195-198), the sparks (199, 200), the ring's picture (223), the points' dots and the clock's balloon (401), its swirl (402), the glow (151), the badges (434) | the touch stick and A button (the menus' A, bank 51), the title's art (the ring's picture) |
+| song 33, bank 4's effects, the count | |
+
+Code: `src/topsy/rules.js` has the world (and `tools/topsy_rules.py`, the
+server's copy, line for line), `src/topsy/game.js` the round (the pads,
+running the world again, and the scene), `src/topsy/assets.js` the models and
+pictures and `src/topsy/index.js` the layout, the controls, its HUD and its
+online messages.
+
 ## Online play
 
 **Play with friends** on the title screen makes a room with a four-letter
@@ -760,14 +820,18 @@ How it works:
   `tools/rollout_rules.py`; the race is over the frame after the last one's
   in, and the server says when, the frame each came in on and the places
   (`won`).
-- **Sent ahead** (Gutsy Golbat, Barrier Ball, Rampage Rollout): a device's player's pad counts
+- **Topsy-Turvy**: the same (`pad`: the stick, and A), with
+  `tools/topsy_rules.py`, 60 frames a second; the server says the frame the
+  play ended on and each one's points (`won`). A minute of it is about 2 s of
+  the server's time (Python).
+- **Sent ahead** (Gutsy Golbat, Barrier Ball, Rampage Rollout, Topsy-Turvy): a device's player's pad counts
   a few frames after it's made, and goes out at once with that frame, so it
   gets to the other devices before they run it: they needn't run the world
   again, and nothing on their screens is put right after the fact. How many
   frames (`src/lag.js` `leadFor`): enough for the way to the slowest other
   person's device (both round trips, from `start`'s `rtt`), 1 to 3 (100 ms at
-  most; none offline, or with only CPUs); the server takes pads up to 4 frames
-  ahead (`AHEAD`). Going for the mouse or a finger, Mr. Mime's pad is worked
+  most; none offline, or with only CPUs; Topsy-Turvy's, 60 a second, twice as
+  many); the server takes pads up to 4 frames ahead (`AHEAD`; Topsy-Turvy's 8). Going for the mouse or a finger, Mr. Mime's pad is worked
   out from where it will be by then. Measured with `?lag=80` on two pages
   (80 ms there and back each, a phone's) in Barrier Ball, 15 s each: with the
   keys (the stick jumps), Ann's device put Mr. Mime right by 96 units a second
@@ -903,11 +967,11 @@ Messages are JSON objects with their type in `t`. From the client:
 
 | `t` | Fields | |
 |---|---|---|
-| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat`, `barrier`, `rollout`) |
+| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat`, `barrier`, `rollout`, `topsy`) |
 | `ping` | `c`, `rtt` | the client's clock; answered with `pong`. `rtt`: a round trip it can count on, ms (from the last pongs) |
 | `name` | `name` | rename |
 | `level` | `level` | host, in the lobby: `easy`, `normal` or `hard` |
-| `game` | `game` | host, in the lobby: `egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat`, `barrier` or `rollout` |
+| `game` | `game` | host, in the lobby: `egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat`, `barrier`, `rollout` or `topsy` |
 | `start` | | host, in the lobby |
 | `lean` | `r`, `s`, `g`, `l` | in round `r`, seat `s` leans `l` (−1, 0, 1) from round time `g` (s) |
 | `ev` | `r`, `s`, `g`, `n`, `k`, `e` | seat `s` caught its drop `n` (`k: "c"`) or was shocked by it (`"h"`), as this device judged it; `e` is its egg count after. The server answers only if it disagrees |
@@ -916,7 +980,7 @@ Messages are JSON objects with their type in `t`. From the client:
 | `count` | `r`, `s`, `n`, `f` | Streaming Stampede: seat `s` pressed (counted one) on frame `f` of question `n`'s counting |
 | `press` | `r`, `s`, `f`, `d`, `b` | Pichu's Power Plant: seat `s` pressed A (`b: 5`) or B (`6`) on frame `f` from GO, held towards `d` (1 up, 2 down, 3 right, 4 left) |
 | `stick` | `r`, `s`, `f`, `x`, `y` | Tumbling Togepi: seat `s`'s stick is at `x`, `y` (-60-60 each, right and up) from frame `f` from GO |
-| `pad` | `r`, `s`, `f`, `x`, `a` | Gutsy Golbat: seat `s`'s stick is at `x` (-64-64, right) from frame `f` from GO, and A was pressed on it (`a: 1`) or not (`0`). Barrier Ball: the same, `x` along the seat's lane (+ is the court's +x) and A a smash. Rampage Rollout: `x` the D-pad held (up 8, down 4, left 2, right 1; + 16 on the first: A was pressed in the countdown) and A a dust cloud. A device may send its own a few frames ahead (up to 4) |
+| `pad` | `r`, `s`, `f`, `x`, `a` | Gutsy Golbat: seat `s`'s stick is at `x` (-64-64, right) from frame `f` from GO, and A was pressed on it (`a: 1`) or not (`0`). Barrier Ball: the same, `x` along the seat's lane (+ is the court's +x) and A a smash. Rampage Rollout: `x` the D-pad held (up 8, down 4, left 2, right 1; + 16 on the first: A was pressed in the countdown) and A a dust cloud. Topsy-Turvy: `x` the stick, (x + 64) \| (y + 64) << 8 (each -64-64, right and up; 60 frames a second), and A a RAPID SPIN. A device may send its own a few frames ahead (up to 4; Topsy-Turvy's 8) |
 | `done` | `r` | this device's round is over |
 | `leave` | | |
 
@@ -941,7 +1005,7 @@ Togepi: `tg`, with `done`, the end as `won` gives it (null till then), and
 `sticks`, the people's stick changes so far, `[f, x, y]` by seat, to rejoin.
 Gutsy Golbat: `gb`, with `done`, the end as `won` gives it (null till then),
 and `pads`, the people's so far, `[f, x, a]` by seat, to rejoin. Barrier
-Ball: `bb`, the same as `gb`. Rampage Rollout: `rr`, the same);
+Ball: `bb`, the same as `gb`. Rampage Rollout: `rr`, the same. Topsy-Turvy: `tt`, the same);
 `pong` (`c`, `s`); `cut` (`r`, `s`, `n`, `f`, `p`, `e`), the server's word on
 a seat's swing at a log: the frame (null: no swing), the points and the
 total after, and `a: 1` for a miss that doesn't count yet (the seat may swing
@@ -965,7 +1029,8 @@ frame the play ended on and each seat's hearts; `won` (`r`, `f`, `p`),
 Barrier Ball's end: the frame the play ended on and each seat's points;
 `won` (`r`, `f`, `fin`, `p`), Rampage Rollout's end: the frame the race ended
 on, the frame each seat came in on (null: not in) and each one's place;
-`lean` as above (with the time the server kept: never before the seat's last
+`won` (`r`, `f`, `s`), Topsy-Turvy's end: the frame the play ended on and
+each seat's points; `lean` as above (with the time the server kept: never before the seat's last
 lean); `ev` (`r`, `s`, `n`, `k`, `e`, `g`), the server's verdict on a drop:
 `c` caught, `h` a shock, or `m`, not a catch after all, with the egg count
 `e`; `left` (`seat`); `results` (`round`, `scores`, `lineup`); `notice`

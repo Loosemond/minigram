@@ -295,6 +295,36 @@ input { -webkit-user-select: text; user-select: text; }
 .rr-stick.rest { opacity: 0.55; }
 .game-hud.off .rr-pads, .game-hud.off .rr-hint, .game-hud.off .rr-board { display: none; }
 
+/* Topsy-Turvy: the clock in its balloon at the top (the swirl round it), each
+   player's points (five dots by its card), the hint; on a touch screen the
+   stick (where a finger went down) and A */
+.tt-clock { position: absolute; width: calc(var(--u) * 6); height: calc(var(--u) * 4.6); pointer-events: none; }
+.tt-clock img { position: absolute; image-rendering: pixelated; }
+.tt-balloon { left: 50%; top: 50%; width: calc(var(--u) * 4.4 * var(--pulse, 1)); transform: translate(-50%, -50%); }
+.tt-swirl { left: 50%; top: 58%; width: calc(var(--u) * 6.4); transform: translate(-50%, -50%); }
+.tt-clock b { position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%); color: #dcbe78; font-weight: 900;
+  font-size: calc(var(--u) * 1.7); font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 2px #3c3c64, 1px 1px 0 #3c3c64, -1px -1px 0 #3c3c64, 1px -1px 0 #3c3c64, -1px 1px 0 #3c3c64; }
+.tt-points { position: absolute; display: flex; gap: calc(var(--u) * 0.15); pointer-events: none; }
+.tt-points.right { flex-direction: row-reverse; }
+.tt-points img { width: calc(var(--u) * 1.15); height: calc(var(--u) * 1.15); image-rendering: pixelated; }
+.tt-hint { position: absolute; left: 50%; bottom: calc(var(--safe-b) + 14%); transform: translateX(-50%);
+  padding: 6px 14px; border-radius: 16px; background: rgba(0, 0, 0, 0.5); color: #fff; font-weight: 700;
+  font-size: 15px; white-space: nowrap; text-shadow: 0 1px 2px #000; }
+.tt-pads { position: absolute; inset: 0; pointer-events: none; --btn: clamp(72px, 20vmin, 110px); }
+.tt-a { position: absolute; right: calc(var(--safe-r) + 18px); bottom: calc(var(--safe-b) + 18px); width: var(--btn); height: var(--btn);
+  border-radius: 50%; display: grid; place-items: center; box-sizing: border-box;
+  background: rgba(20, 20, 30, 0.35); border: 2px solid rgba(255, 255, 255, 0.6); transition: transform 0.05s; }
+.tt-a img { width: 78%; height: 78%; display: block; }
+.tt-a.on { transform: scale(1.12); border-color: #fff; }
+.tt-pads.tt-below .tt-a { bottom: calc(var(--safe-b) + max(16px, (var(--room) - var(--safe-b) - var(--btn)) / 2)); }
+.tt-stick { position: absolute; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%; box-sizing: border-box;
+  border: 2px dashed rgba(255, 255, 255, 0.6); background: rgba(20, 20, 30, 0.25); }
+.tt-knob { position: absolute; left: 50%; top: 50%; width: 50px; height: 50px; margin: -25px 0 0 -25px; border-radius: 50%;
+  background: rgba(235, 235, 245, 0.7); border: 2px solid #fff; box-sizing: border-box; }
+.tt-stick.rest { opacity: 0.55; }
+.game-hud.off .tt-pads, .game-hud.off .tt-hint { display: none; }
+
 #banner img { height: clamp(90px, 22vh, 200px); display: inline-block; }
 #banner {
   position: absolute; left: 0; right: 0; top: 34%; text-align: center; pointer-events: none;

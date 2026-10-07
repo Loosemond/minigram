@@ -83,7 +83,7 @@ Names are the game's own (text table 57). Details and method:
 | Minigame | Objects |
 |---|---|
 | Gutsy Golbat | Golbat `053`, Jynx `110` |
-| Topsy-Turvy | Hitmontop `115` (and `052`, `123`) |
+| Topsy-Turvy | Hitmontop `115` (and `052`); through a list: the shadow `079`, rings `195`–`198`, sparks `199`/`200`, and `123`, `124`, `152`, whirlwinds `191`–`194` (never drawn) |
 | Clear Cut Challenge | Scyther `122`, Pinsir `055`, Scizor `179`, signpost `059`, log slices `081`/`111`, `112` (the cut line), effects `130`/`131`, dizzy stars `190` |
 | Furret's Frolic | Furret `142`, Girafarig `223`, Poké Balls `153`, leaves/shards/chips `155`, bush `183` |
 | Barrier Ball | Mr. Mime `129`/`218`, court pieces `120`, mesh panels `141`, `146`, Poké Balls `154` |
@@ -95,7 +95,7 @@ Names are the game's own (text table 57). Details and method:
 | Egg Emergency | Chansey `144`, egg `145`, `185` |
 | Eager Eevee | Eevee `143`, field `149`, Aipom `150`, Pineco `151`, `203`/`204`/`207`, fruit `208`–`216` (not `214`) |
 
-The other two Hitmontop models and four of the fruit are grouped by
+The other Hitmontop model (`052`) and four of the fruit are grouped by
 appearance: no minigame code loads them by number. The other Pokémon of the
 minigames (Voltorb, Spinarak, Diglett, Magnemite, …) are 2D sprites in the
 image banks (below). Numbers without a name draw effects
@@ -131,10 +131,12 @@ all here, but not the timeline.
 
 ## Play in the browser
 
-`web/minigames/` remakes minigames in three.js with the game's own models,
-backdrops, sprites, HUD graphics, music and sound: **Egg Emergency** and
-**Clear Cut Challenge** (the second plays by the game's own rules, read from
-its code module: [docs/minigames.md](docs/minigames.md#clear-cut-challenge)).
+`web/minigames/` remakes ten of the twelve minigames in three.js with the
+game's own models, backdrops, sprites, HUD graphics, music and sound: Egg
+Emergency, Clear Cut Challenge, Eager Eevee, Streaming Stampede, Pichu's Power
+Plant, Tumbling Togepi, Gutsy Golbat, Barrier Ball, Rampage Rollout and
+Topsy-Turvy. All but Egg Emergency play by the game's own rules, read from
+their code modules ([docs/minigames.md](docs/minigames.md)).
 Pick one on the title screen, or in the lobby when playing online: up to four
 people in a room, invited with a link, with CPUs in the empty spots. It adapts
 to phones (portrait) and PCs (landscape) and runs as a Telegram Mini App.

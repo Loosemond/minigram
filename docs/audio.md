@@ -290,6 +290,28 @@ channel. Sound `0x41`'s script works out its effect from the sound number as
 `0x5F01` (sound `0x3C`, rolling's) and `0x5F02` (`0x39`) aren't asked for by
 module #52 by that id.
 
+Topsy-Turvy's (module #47) are bank 4's (`0x4F00`-`0x4F07`; `0x4400` and
+`0x4401` are its first two entries), placed by where the Hitmontop is
+(`0x86001924`: `0x87C03B60`), and Gutsy Golbat's heart for a point. The hum
+is asked for every frame a Hitmontop spins (`0x860032DC`, `0x800278B0`, with a
+pitch): all four share its one channel, so the remake hums for this device's
+own. Sound `0x36`'s script picks its effect as it plays (40), so
+`tools/web_assets.py` lists it by hand. Its count and GO are Pichu's Power
+Plant's (`0x2F00`, `0x2F01`); the shared count (`0xCF00`) sounds 3, 2 and 1
+seconds before the time's up, `0xCF06` at 0 (the clock's last second). In the
+last 30 seconds it calls `0x80028108(4)`: one beat a minute faster every 30
+frames (450 / 15, entry 4 of `0x800A3B30`'s table), to 15.
+
+| Id | Sound | Effects of font 12 | When (from the code) |
+|---|---|---|---|
+| `0x4400` | `0x30` (volume 75; pitch 1.25, 1 while its RAPID SPIN recharges) | | every frame a Hitmontop spins |
+| `0x4401` | `0x31` (volume 98, pitch 1.75) | | instead, in a RAPID SPIN |
+| `0x4F02` | `0x32` | | a RAPID SPIN |
+| `0x4F03`, `0x4F07`, `0x4F04` | `0x33`, `0x37`, `0x34` | | a bump: harder than 700000, 2000000, and 8000000 with a RAPID SPIN |
+| `0x4F05` | `0x35` | | knocked out of the ring |
+| `0x4F06` | `0x36` | 40 | crouching to jump in |
+| `0x0F04` | `0x03` | | a point, panned to the player |
+
 ## Timing
 
 What `n64audio.js` uses, from the decomp (`AudioHeap_ResetStep`), for an

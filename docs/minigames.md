@@ -42,7 +42,7 @@ characters' models.
 | Minigame | Player | Other objects the code loads |
 |---|---|---|
 | Gutsy Golbat | Golbat 053 | Jynx 110 (she stands in the meadow at the end and throws hearts) |
-| Topsy-Turvy | Hitmontop 115 | (Hitmontop 052 and 123 *by appearance*: no code loads them by number) |
+| Topsy-Turvy | Hitmontop 115 (one for each player: a Game Pak's shiny one) | through a list (`0x8600D760`, loaded by `0x80071B20`): the shadow 079, the rings round a Hitmontop after its RAPID SPIN 195-198 (in 1P-4P's colours), the sparks of a bump 199 and 200; and 123, 124 (a white Hitmontop), 152 and the whirlwinds 191-194, which nothing in it draws (Hitmontop 052 *by appearance*) |
 | Clear Cut Challenge | Scyther 122, Pinsir 055, Scizor 179 | signpost 059, log slices 081 and 111, cut line 112, effects 130 and 131, dizzy stars 190 |
 | Furret's Frolic | Furret 142, Girafarig 223 | Poké Balls 153, leaf pile / shards / chips 155, bush 183 |
 | Barrier Ball | Mr. Mime 218 (the play), 129 (the countdown and the end) | the court 120 (7 layouts: its floor, lines and hole, and its four walls), the barrier 141 (named mesh panels by appearance before), 146 (loaded; nothing found draws it), Poké Ball 154 |
@@ -1298,6 +1298,150 @@ countdown, 4 the race, 5 the end, 6 the results, 7 the menu after.
 The browser remake runs this world on every device and on the server, from
 everyone's pads (the CPUs think in it) ([web/README.md](../web/README.md#rampage-rollout)).
 
+## Topsy-Turvy
+
+Module #47 (ROM `0x2469A0`, linked at `0x86000000`; code to `0xD150`, data
+from `0xD150`, constants and strings from `0xD450`) was read with `m2c` on a
+`spimdisasm` listing, checked against the instructions where `m2c` lost the
+doubles passed on the stack, and the remake (`web/minigames/src/topsy/`)
+plays by its rules. Its physics leans on module #48 (`0x87C00000`), a library
+of vectors and quaternions in doubles: `0x87C00160` subtracts, `0x87C00198`
+adds, `0x87C00208` a dot product, `0x87C00238` a cross product, `0x87C002A8`
+scales, `0x87C003BC` takes away a vector's part along another, `0x87C0068C` a
+length (by `sqrtf`: in floats), `0x87C00718` sets a length (nothing under
+0.0001 squared), `0x87C00D14` an arctangent by a continued fraction (14
+terms), `0x87C00020` an angle to ±π, `0x87C00090` steps a value towards
+another, and quaternions (w first) from `0x87C008B0`. The world is W (the
+module's first argument): four players at W + 0x1998 × p, the ring's spheres
+at W + 0x6668, the clock at +0x6888 (seconds), a frame's length at +0x6890,
+the state at +0x7518, the menu's data at +0x7580 (+0x2180 the mode, +0x2181
+the COM level, +0x2182 a bit per person). A player: +0 a ball (its middle,
++0x18 its speed, +0x30 its spin, +0x78 its turn, +0xC8 its radius, +0xE0 its
+weight, +0xE8 its top speed, +0xF0 and +0x108 the pushes and turns on it this
+step), +0x1800 its stick, +0x1814 its points, +0x1818 who hit it last, +0x1820
+times out of the ring, +0x1824 its CPU (a function), +0x1828 its state,
++0x1838 how it leans (only drawn), +0x1868 in the play, +0x186C solid,
++0x17D0 a timer (reeling; crouched; waiting), +0x17E0 its RAPID SPIN, +0x17E8
+its recharge, +0x17F0 the hit's glow, +0x17F8 a hit that counts, +0x1890 its
+sound's place, +0x1894 its CPU's part, +0x1990 whom it knocked out. The
+instructions (text 50.9): "Use the Control Stick to strike the opponent.
+Knock your opponent out of the ring five times to win. Press the A Button to
+use RAPID SPIN. Use this move to knock your opponent out of the ring."
+
+**Its tuning** (a debug menu, the values set at `0x8600B610`, the variables
+from `0x8600DE30`): CALICULATION REPEAT 6 (steps a frame), BALL RADIUS 135, a
+weight of 100 (× IMPACT WEIGHT 5 in a RAPID SPIN, × DAMAGE WEIGHT 0.25
+reeling), GRAVITY CONSTANT 20000, STICK POWER 16000, MAX SPEED 3400 (MAX
+SPEED DAMAGED 10000), MIN BOUND 600000 and MAX BOUND 260000000 (the least and
+most push of a bump), BOUND FACTOR 3, IMPACT BOUND FACTOR 5, IMPACT IMPACT
+BOUND 0, OUTER BOUND 0.5 and FRICTION 0.1, INNER BOUND 0.2 and FRICTION 0.04
+(DAMAGE INNER and OUTER: 0), IMPACT TIME 0.4, AFTER IMPACT 1.5, DAMAGE TIME
+1.2, TOUCH TIME 0.5, START CHARGE 0, INITIAL OFFSET 160, INITIAL SPEED H 800
+and V 4000, LEAN BY STICK −0.3, POSTURE RESPONSE 0.5, ROTATION 0.5,
+IMPACT ROTATION 67, DAMAGE ROTATION 0, SPIN SIZE 6, CHARGE SIZE 6, MIN 1.5,
+LAST 5.5, MIN TIME 0.4, SPARK on, SPARK TIME 16/30, WINNERS POINT 5, DAMAGE TO
+DEATH 0 (off), TIME LIMIT 60, NUM PLAYERS 4. Times are in seconds: the game
+takes a frame's length from the retraces since the last (`0x80008950` /
+`0x80001FC0`). The remake runs it 60 frames a second: only then does a
+Hitmontop knocked out come to rest (its test, below, needs a step's gravity
+under 100), and a Hitmontop's drawn spin, 0.5 a frame, is its 27 a second.
+
+**The ring** (`0x86004BD4`) is two caps of spheres (`0x86009D7C`; +0 the
+sphere's radius, +8 the cap's, +0x10 its middle, +0x28 and +0x38 its bounce
+and friction, +0x48 1 for a dome): the rim, 1800 across and 85° steep (a
+sphere of 2664 whose middle is 1964 up, so the rim is at y = 0), and the
+floor, inside 90% of it and 10° (a sphere of 18587; 222 deep in the middle).
+Past the rim is the floor round it, the plane y = 0 (bounce and friction 0).
+There are three sets: the play's, the reeling one's (bounce and friction 0)
+and the losers' at the end (0.1 and 0.95). The ring is drawn as a picture
+(image bank 223, 320 × 240, the whole screen: `0x8004D27C`), seen from
+(0, 3878, 4979) towards (0, −300, 0), 40° up and 6500 away, with a fov of 30
+(`0x86004840`).
+
+**A step** (`0x86005CB4`, six a frame, each a sixth of the frame's time):
+the players in the play (+0x1868) that aren't solid and aren't reeling
+barely bounce off the others (`0x860086A4`: 0.1, and only they are moved
+apart); each player's stick (`0x86005A00`: the Control Stick, or the D-pad's
+64, 45 on a diagonal) or CPU, if it's on the ground (no higher than its
+radius and 10) and in control, pushes it (`0x86007D98`: STICK POWER × the
+stick × the step × its weight, at its middle); A pressed is a RAPID SPIN
+(`0x860022F8`); then each against the ring (`0x86008F4C`, `0x86008D2C`: the
+floor's sphere, then the rim's past the floor's edge; or the floor round it);
+then the solid pairs bump (`0x8600853C`); then each moves (`0x86009674`:
+gravity, its pushes, its top speed, and its spin). **A bump** between two
+balls closer than their radii and 1 (`0x86008038`): a push along the line
+between them, −(1 + bounce) × their closing speed / (the step × (1/m₁ + 1/m₂
++ r₁²/I₁ + r₂²/I₂)), at least MIN BOUND, and they're put just touching; the
+bounce is BOUND FACTOR, IMPACT BOUND FACTOR if one is in a RAPID SPIN, IMPACT
+IMPACT BOUND if both. Against the ring (`0x86008BB4`): a push of −(1 +
+bounce) × its speed into it × its weight / the step, and a rub of friction ×
+that along the way it slides (its spin counts: each frame starts with none,
+and coming in it has 27 about y), and it's put back on the surface.
+
+**A Hitmontop's states** (`0x86003EFC`; each frame, `0x860033E8`): 0
+waiting outside the ring; 1 crouched (0.35 s; A jumps at once), placed on the
+floor at its corner (`0x86001FCC`: at its angle, 1960 out; the players'
+corners, `0x8600D1C8`: 1P top left, 2P top right, 3P bottom left, 4P bottom
+right) and launched in (800 in, 4000 up: the floor under it takes the 4000
+back, so it slides in); 2 in the play but not solid for 1.4 s, then till no
+one is within 50 of touching; 3 in the ring; 4 knocked out (`0x86003B10`:
+past the rim; a point to whoever hit it last, if that was within a second and
+they're in the ring, 0x0F04), landing on the floor (moving down under 100 and
+no higher than its radius and 10: stopped), 1.4 s there, then back to 1; 5
+and 6 a winner (driven to its spot, `0x86000AE0`, then standing); 7 and 8 a
+loser (8: three times as big, slowing ×0.4 a frame). **A RAPID SPIN**
+(`0x860022F8`, 0x4F02): only in the ring, charged and not reeling; for 0.4 s
+it weighs 500 and can't be hurt, then recharges for 1.5 s. **A bump** in the
+play (`0x86003868`, at each step they touch): each counts as hit by the other
+(for a point, for a second) and, if it isn't in a RAPID SPIN, reels: out of
+control, weighing 25 and as fast as 10000, for 0.5 s; for 1.2 s if the other
+was in one, and then the ring under it has no friction or bounce. Its sound
+by the push: over 700000 0x4F03, 2000000 0x4F07, 8000000 with a RAPID SPIN
+0x4F04.
+
+**The end** (`0x86005434`): someone has 5 points, the minute's up, or three
+are out of it for good (never, with DAMAGE TO DEATH off). All with the same
+points: nobody wins (all 8). Else those with the most win (6: those out of the
+ring jump back in at once) and go to their spots, side by side 30° apart in
+front, 1170 out (`0x86005740`); the others lose (8, then 7).
+
+**The CPUs** (`0x8600062C`, a step at a time; their parts by level and by
+where they stand among the CPUs, best first: `0x860076EC`, `0x8600D2CC`,
+`0x8600D800`): a RAPID SPIN when another (people, CPUs, as the part says) is
+about to touch it within 0.08 s (`0x86000170`: where they'll be nearest, going
+as they go), wrong a part's chance a step (0-4%); in its part's share of the
+floor, at whoever comes nearest within 0.3 s (or 0.02), aiming at the side of
+them nearer the middle, with the part's push (20-60 of the stick's 64)
+(`0x8600050C`); recharging, away from whoever's coming; past its share,
+back to the middle. Its "lowest scorer" pick (`0x860003DC`) never picks
+anyone: it wants fewer than 0 points.
+
+**What's drawn** (`0x86006F20`): the picture; each Hitmontop at its ball's
+bottom (scale radius/200), leaning on the ring and the way it's pushed (half
+way a frame), spun about its up; its shadow on the ring under it (079); its
+ring (195-198, its player's) round its top while it spins and recharges,
+shrinking from 6 to 1.5 and growing to 5.5 for the last 0.4 s
+(`0x86001DCC`); a red tint reeling from a RAPID SPIN; a glow (image bank
+151, Barrier Ball's) trailing it while it reels or flies out, in its hitter's
+colour (`0x86000C6C`, `0x86000CCC`: its last 10 places); the sparks of a bump
+(199, and 200 with a RAPID SPIN: `0x86005B3C`); each player's points by its
+badge, a dot in the colour of each one it knocked out (image bank 401: grey,
+then 1P-4P; `0x8600AE6C`); the clock, whole seconds, in a balloon (401) in a
+swirl (402) at the top (`0x8600B474`). The song is 33 (sequence 72), from
+GO; in the last 30 s it speeds up (`0x80028108(4)`: a beat a minute every
+30 frames, to 15); the shared count sounds at 3, 2 and 1 seconds and 0xCF06
+at 0 ([audio.md](audio.md)). Its name banner is image bank 400. Hitmontop's
+clips (`0x8600D540`, played in sequences, `0x8600D5DC`-`0x8600D61C`): 0
+spinning, 1 a RAPID SPIN, 7 hit, 6 hopping into a spin, 8 landing on its
+feet, 3 standing sadly, 4 and 5 standing, 9 a cheer, 11 and 12 falling over.
+
+**The states** (`0x86006D64`): 0 and 1 the instructions (a show of four
+Hitmontop rolling on a tilted floor, `0x860057D0`), 2 the countdown, 3 the
+play, 4 the end, 5 and 6 the results and the menu after.
+
+The browser remake runs this world on every device and on the server, from
+everyone's pads (the CPUs think in it) ([web/README.md](../web/README.md#topsy-turvy)).
+
 ## How this was found
 
 1. **Find the loader.** Scanning the code modules for `jal` targets that
@@ -1329,6 +1473,9 @@ everyone's pads (the CPUs think in it) ([web/README.md](../web/README.md#rampage
    Egg Emergency). The result is cross-checked by the 12 modules running in
    consecutive slots `0x86000000`–`0x86B00000`, and against Serebii's rosters.
 
-Modules #48, #57, #58, #63 and #67 also load objects but aren't minigames
-([objects.md](objects.md)). #62 (`0x86C00000`, 0x460 bytes) sits right after
+Modules #57, #58, #63 and #67 also load objects but aren't minigames
+([objects.md](objects.md)). Topsy-Turvy loads most of its objects through a
+list (`0x80071B20`), which a search for `0x8004DED4` misses. Module #48
+(`0x87C00000`) is a library Topsy-Turvy's code uses: vectors and quaternions
+in doubles, and a clip player. #62 (`0x86C00000`, 0x460 bytes) sits right after
 the minigame slots and loads nothing (*unknown*).

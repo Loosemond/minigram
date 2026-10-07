@@ -160,5 +160,22 @@ export const GAMES = {
     messages: ["pad", "won"],
     load: () => import("./rollout/index.js"),
   },
+  topsy: {
+    id: "topsy",
+    name: "Topsy-Turvy",
+    banner: "assets/ui/title_topsy.png", // image bank 400
+    art: "assets/topsy/ring.png", // (its ring: image bank 223)
+    color: "#4a2a24",
+    how: `Spin your Hitmontop round the ring and knock the others out of it! <b>Slide a finger</b> (or the arrows) to
+      push it about. Press <b>A</b> for a <b>RAPID SPIN</b>: harder and heavier for a moment, it sends whoever it hits
+      <b class="volt">reeling</b>; then it takes a moment to charge again. Knock someone out and the point's yours.
+      First to 5 points, or the most when the minute's up, wins!`,
+    keys: "Keyboard: <kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd> push, <kbd>Space</kbd> RAPID SPIN",
+    unit: (n) => `${n}<small>pts</small>`,
+    invite: "Spin with me in Topsy-Turvy!",
+    store: "topsy_",
+    messages: ["pad", "won"],
+    load: () => import("./topsy/index.js"),
+  },
 };
-export const ORDER = ["egg", "clearcut", "eevee", "stampede", "pichu", "togepi", "golbat", "barrier", "rollout"];
+export const ORDER = ["egg", "clearcut", "eevee", "stampede", "pichu", "togepi", "golbat", "barrier", "rollout", "topsy"];

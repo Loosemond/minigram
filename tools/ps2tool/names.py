@@ -62,7 +62,9 @@ OBJECTS = {
     174: "Christmas Stocking", 175: "Diamond Ring", 176: "Grand Piano", 177: "Game Boy Advance",
     178: "Bag of Chips", 179: "Scizor", 180: "Game Boy", 181: "Snorlax", 182: "Trainer Doll",
     183: "Bush", 184: "Candy", 186: "Cleffa (shiny)", 187: "Pole", 188: "Dash Aura", 189: "Lab Room",
-    190: "Dizzy Stars", 195: "White Ring", 196: "White Ring", 197: "White Ring", 198: "White Ring",
+    190: "Dizzy Stars", 191: "Whirlwind (blue)", 192: "Whirlwind (green)", 193: "Whirlwind (yellow)",
+    194: "Whirlwind (red)", 195: "Ring (red)", 196: "Ring (yellow)", 197: "Ring (blue)", 198: "Ring (green)",
+    199: "Spark", 200: "Flash", 124: "Hitmontop (white)",
     201: "Pikachu", 202: "Dash Arrow", 205: "Igglybuff (shiny)", 206: "Omanyte", 208: "Orange",
     209: "Melon", 210: "Bananas", 211: "Strawberry", 212: "Apple", 213: "Grapes", 214: "Lab Room",
     215: "Peach", 216: "Strawberries", 217: "Green Glow Panel", 218: "Mr. Mime", 219: "Grey Panel",
@@ -90,11 +92,12 @@ for _k, _side in enumerate(["top", "left", "bottom", "right"]):
 # loads its objects through one loader (0x8004DED4) with the object number
 # as a constant, and picks the player's character model with constants too
 # (Scyther/Pinsir/Scizor, Pichu/Pikachu, ...).
-# Added by appearance: the other Hitmontop and fruit models, which no code
-# loads by constant.
+# Topsy-Turvy loads its list through another loader (0x80071B20, the list at
+# 0x8600D760). Added by appearance: the other Hitmontop (52) and the fruit
+# models, which no code loads by constant.
 MINIGAMES = {
     "Gutsy Golbat": [53, 110],
-    "Topsy-Turvy": [115, 52, 123],
+    "Topsy-Turvy": [115, 79, 123, 124, 152] + list(range(191, 201)) + [52],
     "Clear Cut Challenge": [122, 55, 179, 59, 81, 111, 112, 130, 131, 190],
     "Furret's Frolic": [142, 223, 153, 155, 183],
     "Barrier Ball": [129, 218, 120, 141, 146, 154],
@@ -154,6 +157,10 @@ BANKS = {
     # dust a running Donphan kicks up (8 frames), and the stars over a Donphan
     # (one for each cloud it has), the clouds and stars in each player's colours
     150: "Rampage Rollout cloud", 159: "Rampage Rollout dust", 384: "Rampage Rollout star",
+    # Topsy-Turvy (module #47): the ring (its background picture: the bowl in
+    # a brick floor), the points (a grey dot, then one in each player's colour)
+    # and the clock's balloon, and the swirl round the clock (4 frames)
+    223: "Topsy-Turvy ring", 401: "Topsy-Turvy points and clock", 402: "Topsy-Turvy clock swirl",
     412: "Streaming Stampede all", 413: "Streaming Stampede names", 414: "Streaming Stampede answer digits",
     # shared by menus and boards (by appearance, and Streaming Stampede's question board)
     51: "buttons", 165: "board rod and chain", 345: "arrows",

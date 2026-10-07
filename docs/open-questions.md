@@ -34,6 +34,16 @@ What isn't known yet, roughly by how useful it would be.
   the remake takes its arguments in order: from the winners, (−200, +450,
   +80), looking at (+90, −40, 0)); and sound `0x5F02` (`0x39`), in bank 5 but
   not asked for.
+- **Topsy-Turvy's loose ends** (its rules are read: [minigames.md](minigames.md#topsy-turvy)):
+  its frame rate (60 a second is assumed, as the game's numbers suggest: the
+  scheduler's retrace count wasn't traced); what its list's 123 (a Hitmontop
+  in one piece), 124 (the same, white), 152 and the whirlwinds 191-194 are for
+  (nothing in module #47 draws them; 191-194 are hidden every frame,
+  `0x86001DBC`); the sparks' size (the list's own scale: the remake guesses);
+  how the shadow and the glow are combined (their colours and alpha:
+  `0x86000CCC` draws the glow twice, the remake once); the HUD gauge at
+  `0x86004544` (a RAPID SPIN's charge, by its look), which nothing calls; and
+  the instructions' show (`0x860057D0`), which the remake leaves out.
 - **Audio:** the voices' codec (5, in sample banks 4–6), the reverb
   settings, the game's custom sequence function (`0x800275D8`), and the
   0x28-byte records at `0x49B780` ([audio.md](audio.md)).
@@ -61,14 +71,14 @@ What isn't known yet, roughly by how useful it would be.
 
 ## Code
 
-- The modules that load objects outside the minigames: #48, #57, #58, #63,
-  #67 (menus? My Room? the Pokémon Lab?) and the tiny #62 after the minigame
+- The modules that load objects outside the minigames: #57, #58, #63, #67
+  (menus? My Room? the Pokémon Lab?) and the tiny #62 after the minigame
   slots ([objects.md](objects.md)).
 - What `0x8004DFF8` does. It's called on the same objects as the loader
   `0x8004DED4`.
-- Where these are loaded: Hitmontop 052 and 123, fruit 208, 210, 212 and 215,
-  gift boxes 088–091, 093–095, 097 and 099. No code loads them by a constant
-  number.
+- Where these are loaded: Hitmontop 052, fruit 208, 210, 212 and 215, gift
+  boxes 088–091, 093–095, 097 and 099. No code loads them by a constant number
+  (Hitmontop 123 is in Topsy-Turvy's list).
 
 ## Models
 

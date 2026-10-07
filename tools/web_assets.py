@@ -260,9 +260,40 @@ UI["title_rollout.png"] = bank(383, 0)
 ROLLOUT_COLOURS = [((0xA5, 0xEB, 0xFF), (0x00, 0x23, 0xCD)), ((0xB9, 0xFF, 0xA5), (0x00, 0x69, 0x00)),
                    ((0xFF, 0xB9, 0xC3), (0x9B, 0x0F, 0x23)), ((0xFF, 0xF5, 0x87), (0x7D, 0x41, 0x00))]
 
+# Topsy-Turvy is code module #47. It loads Hitmontop (115, one for each player:
+# a Game Pak's shiny one) and, through a list (0x8600D760: 0x80071B20), the
+# shadow (79), the rings round a Hitmontop after its RAPID SPIN (195-198, in
+# 1P-4P's colours: 197 blue, 198 green, 195 red, 196 yellow), the sparks of a
+# bump (199 and 200), and 123, 124, 152 and the whirlwinds 191-194, which
+# nothing in it draws; and image banks 223 (the ring: its background picture),
+# 401 (the points: a grey dot, then each player's colour; and the clock's
+# balloon), 402 (the swirl round the clock), 151 (Barrier Ball's glow: the
+# trail behind a Hitmontop sent reeling) and 434 (the badges). Its name banner
+# is bank 400.
+_HM = "objects/115_hitmontop/"
+TOPSY = {
+    "hitmontop.glb": _HM + "115_hitmontop.glb",
+    "hitmontop.json": _HM + "115_hitmontop.json",  # clip lengths, face tracks
+    "shadow.glb": "objects/079_shadow_disc/079_shadow_disc.glb",
+    "ring0.glb": "objects/197_ring_blue/197_ring_blue.glb",
+    "ring1.glb": "objects/198_ring_green/198_ring_green.glb",
+    "ring2.glb": "objects/195_ring_red/195_ring_red.glb",
+    "ring3.glb": "objects/196_ring_yellow/196_ring_yellow.glb",
+    "spark.glb": "objects/199_spark/199_spark.glb",
+    "flash.glb": "objects/200_flash/200_flash.glb",
+    "ring.png": bank(223, 0),
+    "glow.png": bank(151, 0),  # (Barrier Ball's glow: the trail behind a Hitmontop sent reeling, in its hitter's colour)
+    "balloon.png": bank(401, 5),
+    "button_a.png": bank(51, 0),  # (the menus' A button: the RAPID SPIN button on a phone)
+}
+TOPSY.update({"dot%d.png" % i: bank(401, i) for i in range(5)})
+TOPSY.update({"face%d.png" % i: _HM + "textures/face/tex%02d.png" % i for i in range(2, 7)})
+TOPSY.update({"face%d.png" % i: _HM + "textures/face/tex%02d_ms.png" % i for i in range(8, 11)})
+UI["title_topsy.png"] = bank(400, 0)
+
 # folder -> {asset name: file under out/}
 FILES = {"ui": UI, "egg": EGG, "clearcut": CLEARCUT, "eevee": EEVEE, "stampede": STAMPEDE, "pichu": PICHU,
-         "togepi": TOGEPI, "golbat": GOLBAT, "barrier": BARRIER, "rollout": ROLLOUT}
+         "togepi": TOGEPI, "golbat": GOLBAT, "barrier": BARRIER, "rollout": ROLLOUT, "topsy": TOPSY}
 
 # Sound (docs/audio.md). A game asks for song n, which the game plays as
 # sequence n + 39. The effects are sounds of sequence 9, the one the game runs
@@ -450,6 +481,30 @@ SOUNDS = {
         **SHARED,
         "count": _sound(0x3F, 100, 2, 0x0C00),  # 0x5F07, each count tick
         "go": _sound(0x40, 127, 2, 0x0C00),  # 0x5F08, GO, and each one in
+    }),
+    # Topsy-Turvy asks for song 33 (sequence 72) as the play starts. Its
+    # effects are bank 4's (0x4Fxx; 0x4400 and 0x4401 are its first two
+    # entries), placed by where they happen; a point is Gutsy Golbat's heart
+    # (0x0F04); its count and GO are Pichu's Power Plant's (0x2F00, 0x2F01),
+    # and the shared count (0xCF00, 0xCF06) sounds the last three seconds
+    "topsy": ({"main": 72, "win": 94}, {
+        # 0x4400, asked for each frame a Hitmontop spins (0x860032DC): at 1.25
+        # (1 while its RAPID SPIN recharges); 0x4401 at 1.75 in a RAPID SPIN
+        "hum": dict(_sound(0x30, 75, 1, 0x0001), pitch=1.25),
+        "humCharge": _sound(0x30, 75, 1, 0x0001),
+        "humSpin": dict(_sound(0x31, 98, 1, 0x0010), pitch=1.75),
+        "spin": _sound(0x32, 98, 1, 0x1000),  # 0x4F02, a RAPID SPIN
+        "hit1": _sound(0x33, 93, 1, 0x0700),  # 0x4F03, a bump (harder than 700000)
+        "hit2": _sound(0x37, 93, 1, 0x0700),  # 0x4F07, a hard one (2000000)
+        "hit3": _sound(0x34, 88, 1, 0x0700),  # 0x4F04, a RAPID SPIN's (8000000)
+        "out": _sound(0x35, 108, 1, 0x0010),  # 0x4F05, knocked out of the ring
+        "jump": _sound(0x36, 103, 1, 0x0010, sfx=[40]),  # 0x4F06, jumping in (its script picks its effect as it plays)
+        "point": _sound(0x03, 110, 3, 0x0100),  # 0x0F04, a point
+        **SHARED,
+        "lastCount": SHARED["count"],
+        "lastGo": SHARED["go"],
+        "count": _sound(0x13, 100, 5, 0x0100, sfx=[16]),  # 0x2F00
+        "go": _sound(0x14, 100, 5, 0x0100, sfx=[17]),  # 0x2F01
     }),
 }
 
@@ -763,6 +818,21 @@ if roms:
         with open(os.path.join(site, "rollout", "star%d.png" % z), "wb") as fh:
             fh.write(png.encode_rgba(star[1], star[2], tint(star[3], prim, env)))
     print("rollout: the dust and cloud strips and the stars (image banks 159, 150, 384)")
+    # Topsy-Turvy's brick floor, to go on past its picture's edges in a window
+    # wider or taller than the game's: a strip of it from the picture's top, between the corner rings
+    _, rw, rh, ring = images.bank_images(rom, 223)[0]
+    x0, y0, cw, ch = 96, 0, 128, 32
+    with open(os.path.join(site, "topsy", "bricks.png"), "wb") as fh:
+        fh.write(png.encode_rgba(cw, ch, b"".join(ring[((y0 + y) * rw + x0) * 4:((y0 + y) * rw + x0 + cw) * 4] for y in range(ch))))
+    # and the swirl round its clock (bank 402, 4 frames): white, as bright as the picture is (0x8600B328)
+    for k, (_, sw, sh, rgba) in enumerate(images.bank_images(rom, 402)):
+        px = bytearray(rgba)
+        for o in range(0, len(px), 4):
+            px[o + 3] = px[o + 3] * max(px[o:o + 3]) // 255
+            px[o:o + 3] = b"\xff\xff\xff"
+        with open(os.path.join(site, "topsy", "swirl%d.png" % k), "wb") as fh:
+            fh.write(png.encode_rgba(sw, sh, bytes(px)))
+    print("topsy: the brick floor and the clock's swirl (image banks 223, 402)")
     sound = audio.Audio(rom.data)
     for game, (songs, sounds) in SOUNDS.items():
         dst = os.path.join(site, game, "sound.bin")
