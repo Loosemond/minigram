@@ -37,6 +37,7 @@ import golbat_rules  # noqa: E402
 import pichu_rules  # noqa: E402
 import rollout_rules  # noqa: E402
 import topsy_rules  # noqa: E402
+import furret_rules  # noqa: E402
 import rooms  # noqa: E402
 import stampede_rules  # noqa: E402
 import togepi_rules  # noqa: E402
@@ -109,6 +110,24 @@ def rollout_pad(z, t, w):
 # then the end, the points and the places (web/minigames/tests.js has the same)
 JS_TOPSY = {1: "f73c640b45d45abe", 157: "8dcf2582748da502", 2 ** 31 - 1: "e51f8987128a2605"}
 TOPSY_LEVEL = {1: "normal", 157: "hard", 2 ** 31 - 1: "easy"}
+
+
+# web/minigames/src/furret/rules.js: a round with seats 0 and 2 on furret_pad()
+# and two CPUs (normal, hard, easy), the world's digest() every 100 frames:
+# the hard one to its end and the show after (1921 frames), the others 600;
+# then the end, the points and the places (web/minigames/tests.js has the same)
+JS_FURRET = {1: "71f7890a4652fb1b", 157: "5d54951a1f163b23", 2 ** 31 - 1: "1c343168cb41c113"}
+FURRET_LEVEL = {1: "normal", 157: "hard", 2 ** 31 - 1: "easy"}
+
+
+def furret_pad(z, t, w):
+    if z == 0:  # (at the first ball's hollow, a swing now and then)
+        s = 0
+        if w.balls:
+            x, zz = w.balls[0].pos[0], w.balls[0].pos[2]
+            s = 1 if x > 150 and zz < -150 else 2 if x > 150 and zz > 150 else 3 if x < -150 and zz < -150 else 4 if x < -150 and zz > 150 else 0
+        return [s, t % 13 == 3]
+    return [[1, 2, 0, 3, 4, 0][t // 45 % 6], t % 29 == 7]
 
 
 def topsy_pad(z, t, w):
@@ -1268,6 +1287,88 @@ def _():
         a.close()
     finally:
         topsy_rules.TIME_LIMIT = saved
+
+
+def furret_digest(seed):
+    w = furret_rules.World(seed, FURRET_LEVEL[seed], [False, True, False, True])
+    parts, t = [], 0
+    while (not (w.over and t > w.end + 120)) if seed == 157 else t < 600:
+        w.step(t, [furret_pad(0, t, w), None, furret_pad(2, t, w), None])
+        w.events = []
+        if t % 100 == 0:
+            parts.append(w.digest())
+            time.sleep(0.002)  # (the other checks' clocks go on meanwhile)
+        t += 1
+    parts.append("%d:%s:%s" % (-1 if w.end is None else w.end, ",".join(map(str, w.scores)), ",".join(map(str, w.places))))
+    return hashlib.sha256(";".join(parts).encode()).hexdigest()[:16]
+
+
+@check("Furret's Frolic: the world (the CPUs too) matches the browser's, bit for bit", together="Furret")
+def _():
+    for seed, want in JS_FURRET.items():
+        assert furret_digest(seed) == want, seed
+    F = furret_rules
+    # the floor: 4 pieces of 38 triangles, the hollows' bottoms 46 down (0x8620DF60); a ball over a goal's line scores
+    assert [len(p) for p in F.PIECES] == [38] * 4
+    w = F.World(3)
+    w.spawn(3)
+    b = w.balls[0]
+    b.pos = [-700, 0, -700]  # (4P's lane, past its line)
+    w.goal(b)
+    assert w.scores == [0, 0, 0, 3] and b.scored, w.scores
+
+
+@check("Furret's Frolic: the server runs the world from the pads, says how it ended and stops cheats", together="Furret")
+def _():
+    saved = furret_rules.TIME
+    furret_rules.TIME = 4 * furret_rules.FPS  # (a short round: four seconds)
+    try:
+        a, b = Client("FA"), Client("FB")
+        a.send("hello", id="fa", name="Fay", game="furret")
+        code = a.wait("welcome")["room"]
+        b.send("hello", id="fb", name="Fin", room=code)
+        b.wait("welcome")
+        time.sleep(rooms.CHANGE_GAP)
+        a.drain()
+        b.drain()
+        a.send("start")
+        st = a.wait("start")
+        assert st["game"] == "furret" and st["fu"] == dict(done=None, pads=[[], [], None, None]), st
+        go, r = st["go"], st["round"]
+        g = rooms.rooms[code].game
+        assert g.cpus == [False, False, True, True]
+        at(go, 0.05)
+        a.send("pad", r=r, s=0, f=0, x=1, a=1)  # Fay: the D-pad right, and A
+        a.send("pad", r=r, s=1, f=1, x=2, a=1)  # someone else's Furret: ignored
+        for x, ok in ((-1, 1), (5, 1), (2, 2), (1.5, 1), ("1", 0)):  # no spot (or not A or none): ignored
+            b.send("pad", r=r, s=1, f=2, x=x, a=ok)
+        at(go, 40 / furret_rules.FPS)
+        b.send("pad", r=r, s=1, f=0, x=3, a=0)  # Fin's, older than the way here allows: as late as that does
+        late = 40 - int(rooms.ALLOW_GUESS * furret_rules.FPS)
+        mine = [(m["s"], m["f"], m.get("o")) for m in b.drain(0.3) if m["t"] == "pad"]
+        assert mine == [(0, 0, None), (1, late, 0)], mine  # (Fay's; and Fin's own, from where it counts)
+        heard = [(m["s"], m["f"], m["x"], m["a"]) for m in a.drain(0.1) if m["t"] == "pad"]
+        assert heard == [(1, late, 3, 0)], heard
+        a.s.settimeout(10)
+        won = a.wait("won", timeout=10)
+        a.s.settimeout(3)
+        # the same round, here
+        want = furret_rules.Round(rooms.rooms[code].seed, "normal", cpus=[False, False, True, True])
+        want.pads = [[[0, 1, 1]], [[late, 3, 0]], [], []]
+        said = {k: won[k] for k in ("f", "s")}
+        assert want.settle(1000, 0) == said, (won, want.done)
+        assert said["f"] == furret_rules.TIME, said  # (the clock's run out)
+        assert g.end == (said["f"] + furret_rules.AFTER) / furret_rules.FPS
+        a.send("pad", r=r, s=0, f=won["f"] + 5, x=1, a=1)  # after the end: nothing
+        a.send("done", r=r)
+        b.send("done", r=r)
+        a.s.settimeout(8)  # (the round's over 4 s after the play: AFTER)
+        res = a.wait("results", timeout=10)
+        assert res["scores"] == said["s"], res
+        b.close()
+        a.close()
+    finally:
+        furret_rules.TIME = saved
 
 
 @check("Telegram logins: checked, and no one can pose as a Telegram player")

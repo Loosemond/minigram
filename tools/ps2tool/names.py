@@ -54,7 +54,7 @@ OBJECTS = {
     137: "Grass Ring", 138: "Grass Ring", 139: "Grass Pieces", 140: "Grass Arc",
     141: "Barrier", 142: "Furret", 143: "Eevee", 144: "Chansey", 145: "Egg",
     147: "Course Corner", 148: "Course Stage", 149: "Grass Field Ring", 150: "Aipom on a Rope", 151: "Pineco",
-    152: "Lid Box", 155: "Debris", 156: _TV + " (Wave Race 64)", 157: _TV + " (Super Mario 64)",
+    152: "Lid Box", 155: "Furret's Frolic Field", 156: _TV + " (Wave Race 64)", 157: _TV + " (Super Mario 64)",
     158: _TV + " (castle)", 159: _TV + " (Super Mario Bros.)", 160: _TV + " (maze)",
     161: _TV + " (Donkey Kong)", 162: _TV + " (flowers)", 163: _TV + " (race track)",
     164: _TV + " (sky)", 165: _TV + " (off)", 167: "White Ring", 169: "Pikachu Nintendo 64",
@@ -79,8 +79,8 @@ LAYOUTS = {
     (120, 0): "Court Floor", (120, 1): "Court Lines", (120, 2): "Court Hole", (127, 0): "Delibird",
     (127, 1): "Delibird Prop", (142, 0): "Furret", (142, 1): "Furret", (153, 0): "Poké Ball",
     (153, 1): "Great Ball", (153, 2): "Ultra Ball", (153, 3): "Master Ball", (154, 0): "Poké Ball",
-    (154, 1): "Ultra Ball", (154, 2): "Master Ball", (154, 3): "Great Ball", (155, 0): "Leaf Pile",
-    (155, 1): "Shards", (155, 2): "Chips",
+    (154, 1): "Ultra Ball", (154, 2): "Master Ball", (154, 3): "Great Ball", (155, 0): "Furret's Frolic Field",
+    (155, 1): "Field Shadows", (155, 2): "Boards",
 }
 # Barrier Ball's court (module #51 draws 0-2 in the middle, and 3-6 as the
 # four walls, placed at the top, left, bottom and right)

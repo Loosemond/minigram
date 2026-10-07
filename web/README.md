@@ -17,6 +17,7 @@ have a game picker; a game's code and files load the first time it's picked.
 | Barrier Ball | [minigames/src/barrier/](minigames/src/barrier/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#barrier-ball)) |
 | Rampage Rollout | [minigames/src/rollout/](minigames/src/rollout/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#rampage-rollout)) |
 | Topsy-Turvy | [minigames/src/topsy/](minigames/src/topsy/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#topsy-turvy)) |
+| Furret's Frolic | [minigames/src/furret/](minigames/src/furret/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#furrets-frolic)) |
 
 ## Run it
 
@@ -736,6 +737,66 @@ running the world again, and the scene), `src/topsy/assets.js` the models and
 pictures and `src/topsy/index.js` the layout, the controls, its HUD and its
 online messages.
 
+## Furret's Frolic
+
+Four Furret stand in the middle of a field, a 3 × 3 grid of grassy hollows
+with a checkered lane running out from each side: each player's goal (1P's
+at the bottom in the game; the remake turns the view so yours is). Poké Balls
+drop onto the ramps in the corners and roll down into the hollows. Hold the
+D-pad to hop your Furret into the hollow that way ("into the grass"), let go
+to hop back to the middle one, and press A to swing its tail: the first ball
+it touches early in the swing is batted towards your goal, and the rest it
+stops. A ball rolled over a goal's line scores for that goal's player: a Poké
+Ball 1, a Great Ball 2, an Ultra Ball 3, a Master Ball 5 (the bigger ones are
+slower). One ball at a time at first, two after 20 s, three after 40 s, the
+better ones coming later. The most points when the minute's up wins. It
+follows the game's own code (module #50:
+[docs/minigames.md](../docs/minigames.md#furrets-frolic) has where each number
+is):
+
+- **One field for all four.** As in Topsy-Turvy, every device runs the whole
+  world from everyone's pads, and the server too: the game's ball physics
+  (three steps a frame, against the field's own collision mesh of 152
+  triangles, kept in the module), the tails and the balls' knocks on each
+  other, in doubles, + − × / and square roots only, the same way in both
+  copies.
+- **The CPUs** are the game's: by skill (the COM level gives each CPU one,
+  shuffled), they wait a while, pick the hollow where their tail would bat a
+  ball best towards their goal (the 1st-3rd best on Easy, the best on Hard,
+  if it's worth enough), hop there and swing.
+
+The field is object 155 (the field, its shadows, the ramps' boards), seen
+from the game's camera (turned a quarter at a time for this device's
+player), with the field of view that shows the lanes and the ramps; in
+portrait the picture's moved up under the top cards, the buttons below it.
+Over each goal its player's badge, over each Furret its label (1P-4P, COM),
+under each ball its shadow. On a phone: a finger anywhere is the D-pad (the
+way it slides from where it went down, held), and the A button swings. With a
+keyboard: the arrows (or W A S D; two at once: left, then right, up, down, as
+the game takes them) and Space. At GO they pop up on the hollow across the
+middle from their goal and hop into the middle; at the end the winners hop
+back to the middle and cheer, the others sulk, and the camera closes in and
+goes round.
+
+**Sound**: the game's (`assets/furret/sound.bin`, 321 KB): song 47 from GO,
+faster in the last 30 s, bank 11's effects (a swing, a ball batted, a goal, a
+ball landing hard, a winner's cry) placed by where they are, and the count,
+GO and the last seconds' count.
+
+What comes from the ROM and what is made up:
+
+| From the game | Made for the remake |
+|---|---|
+| the field's mesh, the balls and their physics, the spots, the hops, the swing and the bat, the goals, the balls coming, the CPUs, the end, the camera and the clear colour (module #50's code) | the view turned for each player, the field of view that fits the window, the portrait layout, the labels' and badges' size, the D-pad on a phone |
+| Furret (142) and its clips, the Poké Balls (153), the field, its shadows and the boards (155), the shadow's dot (307), the labels (260), the badges (434) | the title's art (the field from above) |
+| song 47, bank 11's effects, the count | |
+
+Code: `src/furret/rules.js` has the world (and `tools/furret_rules.py`, the
+server's copy, line for line), `src/furret/game.js` the round (the pads,
+running the world again, and the scene), `src/furret/assets.js` the models and
+pictures and `src/furret/index.js` the layout, the controls, its HUD and its
+online messages.
+
 ## Online play
 
 **Play with friends** on the title screen makes a room with a four-letter
@@ -824,7 +885,11 @@ How it works:
   `tools/topsy_rules.py`, 60 frames a second; the server says the frame the
   play ended on and each one's points (`won`). A minute of it is about 2 s of
   the server's time (Python).
-- **Sent ahead** (Gutsy Golbat, Barrier Ball, Rampage Rollout, Topsy-Turvy): a device's player's pad counts
+- **Furret's Frolic**: the same (`pad`: the spot the D-pad holds, and A),
+  with `tools/furret_rules.py`; the play's over when the minute's up, and the
+  server says that frame and each one's points (`won`). A minute of it is
+  about 0.3 s of the server's time.
+- **Sent ahead** (Gutsy Golbat, Barrier Ball, Rampage Rollout, Topsy-Turvy, Furret's Frolic): a device's player's pad counts
   a few frames after it's made, and goes out at once with that frame, so it
   gets to the other devices before they run it: they needn't run the world
   again, and nothing on their screens is put right after the fact. How many
@@ -967,11 +1032,11 @@ Messages are JSON objects with their type in `t`. From the client:
 
 | `t` | Fields | |
 |---|---|---|
-| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat`, `barrier`, `rollout`, `topsy`) |
+| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat`, `barrier`, `rollout`, `topsy`, `furret`) |
 | `ping` | `c`, `rtt` | the client's clock; answered with `pong`. `rtt`: a round trip it can count on, ms (from the last pongs) |
 | `name` | `name` | rename |
 | `level` | `level` | host, in the lobby: `easy`, `normal` or `hard` |
-| `game` | `game` | host, in the lobby: `egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat`, `barrier`, `rollout` or `topsy` |
+| `game` | `game` | host, in the lobby: `egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat`, `barrier`, `rollout`, `topsy` or `furret` |
 | `start` | | host, in the lobby |
 | `lean` | `r`, `s`, `g`, `l` | in round `r`, seat `s` leans `l` (−1, 0, 1) from round time `g` (s) |
 | `ev` | `r`, `s`, `g`, `n`, `k`, `e` | seat `s` caught its drop `n` (`k: "c"`) or was shocked by it (`"h"`), as this device judged it; `e` is its egg count after. The server answers only if it disagrees |
@@ -980,7 +1045,7 @@ Messages are JSON objects with their type in `t`. From the client:
 | `count` | `r`, `s`, `n`, `f` | Streaming Stampede: seat `s` pressed (counted one) on frame `f` of question `n`'s counting |
 | `press` | `r`, `s`, `f`, `d`, `b` | Pichu's Power Plant: seat `s` pressed A (`b: 5`) or B (`6`) on frame `f` from GO, held towards `d` (1 up, 2 down, 3 right, 4 left) |
 | `stick` | `r`, `s`, `f`, `x`, `y` | Tumbling Togepi: seat `s`'s stick is at `x`, `y` (-60-60 each, right and up) from frame `f` from GO |
-| `pad` | `r`, `s`, `f`, `x`, `a` | Gutsy Golbat: seat `s`'s stick is at `x` (-64-64, right) from frame `f` from GO, and A was pressed on it (`a: 1`) or not (`0`). Barrier Ball: the same, `x` along the seat's lane (+ is the court's +x) and A a smash. Rampage Rollout: `x` the D-pad held (up 8, down 4, left 2, right 1; + 16 on the first: A was pressed in the countdown) and A a dust cloud. Topsy-Turvy: `x` the stick, (x + 64) \| (y + 64) << 8 (each -64-64, right and up; 60 frames a second), and A a RAPID SPIN. A device may send its own a few frames ahead (up to 4; Topsy-Turvy's 8) |
+| `pad` | `r`, `s`, `f`, `x`, `a` | Gutsy Golbat: seat `s`'s stick is at `x` (-64-64, right) from frame `f` from GO, and A was pressed on it (`a: 1`) or not (`0`). Barrier Ball: the same, `x` along the seat's lane (+ is the court's +x) and A a smash. Rampage Rollout: `x` the D-pad held (up 8, down 4, left 2, right 1; + 16 on the first: A was pressed in the countdown) and A a dust cloud. Topsy-Turvy: `x` the stick, (x + 64) \| (y + 64) << 8 (each -64-64, right and up; 60 frames a second), and A a RAPID SPIN. Furret's Frolic: `x` the spot the D-pad holds (0 the middle hollow; 1-4 the ones to the right, down, up and left in the game's view), and A a swing. A device may send its own a few frames ahead (up to 4; Topsy-Turvy's 8) |
 | `done` | `r` | this device's round is over |
 | `leave` | | |
 
@@ -1005,7 +1070,7 @@ Togepi: `tg`, with `done`, the end as `won` gives it (null till then), and
 `sticks`, the people's stick changes so far, `[f, x, y]` by seat, to rejoin.
 Gutsy Golbat: `gb`, with `done`, the end as `won` gives it (null till then),
 and `pads`, the people's so far, `[f, x, a]` by seat, to rejoin. Barrier
-Ball: `bb`, the same as `gb`. Rampage Rollout: `rr`, the same. Topsy-Turvy: `tt`, the same);
+Ball: `bb`, the same as `gb`. Rampage Rollout: `rr`, the same. Topsy-Turvy: `tt`, the same. Furret's Frolic: `fu`, the same);
 `pong` (`c`, `s`); `cut` (`r`, `s`, `n`, `f`, `p`, `e`), the server's word on
 a seat's swing at a log: the frame (null: no swing), the points and the
 total after, and `a: 1` for a miss that doesn't count yet (the seat may swing
@@ -1029,7 +1094,7 @@ frame the play ended on and each seat's hearts; `won` (`r`, `f`, `p`),
 Barrier Ball's end: the frame the play ended on and each seat's points;
 `won` (`r`, `f`, `fin`, `p`), Rampage Rollout's end: the frame the race ended
 on, the frame each seat came in on (null: not in) and each one's place;
-`won` (`r`, `f`, `s`), Topsy-Turvy's end: the frame the play ended on and
+`won` (`r`, `f`, `s`), Topsy-Turvy's and Furret's Frolic's end: the frame the play ended on and
 each seat's points; `lean` as above (with the time the server kept: never before the seat's last
 lean); `ev` (`r`, `s`, `n`, `k`, `e`, `g`), the server's verdict on a drop:
 `c` caught, `h` a shock, or `m`, not a catch after all, with the egg count

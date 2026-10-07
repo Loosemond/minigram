@@ -312,6 +312,23 @@ frames (450 / 15, entry 4 of `0x800A3B30`'s table), to 15.
 | `0x4F06` | `0x36` | 40 | crouching to jump in |
 | `0x0F04` | `0x03` | | a point, panned to the player |
 
+Furret's Frolic's (module #50) are bank 11's (`0xBF00`-`0xBF04`), placed by
+where the Furret or the ball is (`0x87C03B60`, then `0x8002780C` or
+`0x800277E0`); a goal's is panned to its player (`0x80027A18`). Its count and
+GO are Pichu's Power Plant's (`0x2F00`, `0x2F01`), the last three seconds the
+shared count (`0xCF00`, `0xCF06` at 0). In the last 30 seconds it calls
+`0x80028108(11)`: one beat a minute faster every 15 frames (450 / 30, the
+12th entry of `0x800A3B30`'s jump table), to 30. Bank 11's `0xBF05` and
+`0xBF06` (sounds `0x79`, `0x7A`) aren't asked for by module #50.
+
+| Id | Sound | Effects of font 12 | When (from the code) |
+|---|---|---|---|
+| `0xBF00` | `0x74` | | a Furret swings its tail |
+| `0xBF01` | `0x75` (volume 110) | | its tail bats a ball |
+| `0xBF02` | `0x76` (volume 120) | | a ball over a goal's line |
+| `0xBF03` | `0x64` (volume 125, pitch 2) | | a ball comes down hard on the field (deeper than 0.04 of its radius, after more than 55 in a frame) |
+| `0xBF04` | `0x78` (volume 80) | | a winner's cry, at frame 69 of its cheer, twice |
+
 ## Timing
 
 What `n64audio.js` uses, from the decomp (`AudioHeap_ResetStep`), for an

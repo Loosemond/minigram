@@ -177,5 +177,22 @@ export const GAMES = {
     messages: ["pad", "won"],
     load: () => import("./topsy/index.js"),
   },
+  furret: {
+    id: "furret",
+    name: "Furret's Frolic",
+    banner: "assets/ui/title_furret.png", // image bank 405
+    art: "assets/furret/art.png", // (its field from above: tools/web_assets.py)
+    color: "#2f4a24",
+    how: `Bat the Poké Balls into your goal with Furret's tail! Your goal is the lane at the bottom. <b>Slide a
+      finger</b> (or the arrows) and hold to hop into the grass that way; let go to hop back to the middle. Press
+      <b>A</b> to swing your tail: it bats the ball it touches towards your goal. A Poké Ball scores 1, a Great Ball 2,
+      an Ultra Ball 3 and a <b class="volt">Master Ball</b> 5. The most points when the minute's up wins!`,
+    keys: "Keyboard: <kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd> hop, <kbd>Space</kbd> swing",
+    unit: (n) => `${n}<small>pts</small>`,
+    invite: "Bat Poké Balls with me in Furret's Frolic!",
+    store: "furret_",
+    messages: ["pad", "won"],
+    load: () => import("./furret/index.js"),
+  },
 };
-export const ORDER = ["egg", "clearcut", "eevee", "stampede", "pichu", "togepi", "golbat", "barrier", "rollout", "topsy"];
+export const ORDER = ["egg", "clearcut", "eevee", "stampede", "pichu", "togepi", "golbat", "barrier", "rollout", "topsy", "furret"];

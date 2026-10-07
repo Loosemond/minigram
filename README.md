@@ -85,7 +85,7 @@ Names are the game's own (text table 57). Details and method:
 | Gutsy Golbat | Golbat `053`, Jynx `110` |
 | Topsy-Turvy | Hitmontop `115` (and `052`); through a list: the shadow `079`, rings `195`–`198`, sparks `199`/`200`, and `123`, `124`, `152`, whirlwinds `191`–`194` (never drawn) |
 | Clear Cut Challenge | Scyther `122`, Pinsir `055`, Scizor `179`, signpost `059`, log slices `081`/`111`, `112` (the cut line), effects `130`/`131`, dizzy stars `190` |
-| Furret's Frolic | Furret `142`, Girafarig `223`, Poké Balls `153`, leaves/shards/chips `155`, bush `183` |
+| Furret's Frolic | Furret `142` (Girafarig `223` for a Game Pak's), Poké Balls `153`, the field `155` (its shadows and the ramps' boards too), bush `183` |
 | Barrier Ball | Mr. Mime `129`/`218`, court pieces `120`, mesh panels `141`, `146`, Poké Balls `154` |
 | Pichu's Power Plant | Pichu `107`, Pikachu `201`, the power plant's frame `056`, electrode lamps `057`, dizzy stars `190` |
 | Rampage Rollout | Donphan `108` (walking and rolling), track `113` |
@@ -131,11 +131,11 @@ all here, but not the timeline.
 
 ## Play in the browser
 
-`web/minigames/` remakes ten of the twelve minigames in three.js with the
+`web/minigames/` remakes eleven of the twelve minigames in three.js with the
 game's own models, backdrops, sprites, HUD graphics, music and sound: Egg
 Emergency, Clear Cut Challenge, Eager Eevee, Streaming Stampede, Pichu's Power
-Plant, Tumbling Togepi, Gutsy Golbat, Barrier Ball, Rampage Rollout and
-Topsy-Turvy. All but Egg Emergency play by the game's own rules, read from
+Plant, Tumbling Togepi, Gutsy Golbat, Barrier Ball, Rampage Rollout,
+Topsy-Turvy and Furret's Frolic. All but Egg Emergency play by the game's own rules, read from
 their code modules ([docs/minigames.md](docs/minigames.md)).
 Pick one on the title screen, or in the lobby when playing online: up to four
 people in a room, invited with a link, with CPUs in the empty spots. It adapts

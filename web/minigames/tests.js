@@ -64,6 +64,21 @@ function topsyPad(z, t, w) {
   const [dx, dz] = best;
   return [dx > 50 ? 64 : dx < -50 ? -64 : 0, dz < -50 ? 64 : dz > 50 ? -64 : 0, t % 53 === 5];
 }
+// Furret's Frolic: a round with seats 0 and 2 on furretPad() and two CPUs (normal, hard, easy), the world's
+// digest() every 100 frames (the hard one to its end and the show after, the others 600 frames), the end,
+// the points and the places: the same as JS_FURRET in tools/test_rooms.py
+const FURRET = { 1: "71f7890a4652fb1b", 157: "5d54951a1f163b23", 2147483647: "1c343168cb41c113" };
+const FURRET_LEVEL = { 1: "normal", 157: "hard", 2147483647: "easy" };
+// (seat 0 at the first ball's hollow, a swing now and then; seat 2 a pattern)
+function furretPad(z, t, w) {
+  if (z !== 0) return [[1, 2, 0, 3, 4, 0][Math.floor(t / 45) % 6], t % 29 === 7];
+  let s = 0;
+  if (w.balls.length) {
+    const [x, , zz] = w.balls[0].pos;
+    s = x > 150 && zz < -150 ? 1 : x > 150 && zz > 150 ? 2 : x < -150 && zz < -150 ? 3 : x < -150 && zz > 150 ? 4 : 0;
+  }
+  return [s, t % 13 === 3];
+}
 // the frame the first of three CPUs gets to full charge, the middle of 41 rounds (rules.js cpuPresses)
 const CHARGE_TARGETS = { easy: [500, 590], normal: [365, 420], hard: [295, 345] };
 // the best of the three CPUs' totals in a game, on average (Streaming Stampede: rules.js cpuPresses)
@@ -350,6 +365,21 @@ function autospin(w) {
       const [x, y, a] = topsyPad(0, g.lastFrame + 1, { p: [g.world.p[g.me], ...g.world.p.filter((q) => q !== g.world.p[g.me])] });
       g.setStick(x, y);
       if (a || (g.lastFrame + 1) % 29 === w.mg.me() * 3) g.press();
+    }
+    step.call(api, dt, on);
+  };
+  return () => { api.step = step; };
+}
+
+// a Furret's Frolic player: at the first ball's hollow, a swing now and then
+function autobat(w) {
+  const api = w.mg.mini, step = api.step;
+  api.step = function (dt, on) {
+    const g = api.game;
+    if (on && g.state === "play") {
+      const [s, a] = furretPad(0, g.lastFrame + 1, g.world);
+      g.setSpot(s);
+      if (a || (g.lastFrame + 1) % 17 === w.mg.me() * 3) g.press();
     }
     step.call(api, dt, on);
   };
@@ -1396,12 +1426,160 @@ await test("Topsy-Turvy: a finger is a stick: the way and how far it slides from
   assert(got.join() === want.join(), "still, right, up, a little left, down, let go: " + got.join());
 });
 
-await test("online: the server moving this device's own moves to later frames keeps them in its order", async () => {
-  // (Gutsy Golbat, Barrier Ball, Tumbling Togepi, Rampage Rollout and Topsy-Turvy: two of them the server got late,
-  // both put on frame 15. Rampage Rollout's are D-pads: 20 is LEFT | DOWN... 40 the same, made up for here)
+await test("Furret's Frolic: the world and the CPUs are the same as the server's copy of them", async () => {
+  const R = await moduleOf(solo, "./src/furret/rules.js");
+  for (const [seed, want] of Object.entries(FURRET)) {
+    const w = new R.World(+seed, FURRET_LEVEL[seed], [false, true, false, true]), parts = [];
+    for (let t = 0; seed === "157" ? !(w.over && t > w.end + 120) : t < 600; t++) {
+      w.step(t, [furretPad(0, t, w), null, furretPad(2, t, w), null]);
+      w.events = [];
+      if (t % 100 === 0) parts.push(w.digest());
+    }
+    parts.push(`${w.end ?? -1}:${w.scores.join()}:${w.places.join()}`);
+    const got = await sha16(parts.join(";"));
+    assert(got === want, `seed ${seed}: ${got}; tools/furret_rules.py expects ${want} (update both, and the digests)`);
+  }
+  // the floor (module #50's own mesh): 4 pieces of 38 triangles; the middle hollow 46 down, a spot's too
+  const mid = R.groundY(0, 0), spot = R.groundY(282.84, 282.84);
+  assert(R.PIECES.every((p) => p.length === 38) && Math.round(mid) === -46 && Math.round(spot) === -46, `the hollows at ${mid}, ${spot}`);
+});
+
+await test("Furret's Frolic: the harder CPUs are better (more points in the minute)", async () => {
+  const R = await moduleOf(solo, "./src/furret/rules.js");
+  const play = (level) => {
+    let points = 0, swings = 0;
+    for (let seed = 0; seed < 8; seed++) {
+      const w = new R.World(seed, level, [false, true, true, true]);
+      for (let t = 0; w.end === null; t++) {
+        w.step(t, [[0, false]]); // (seat 0 stands in the middle)
+        swings += w.events.filter((e) => e[0] === "swing").length;
+        w.events = [];
+      }
+      points += w.scores[1] + w.scores[2] + w.scores[3];
+    }
+    return { points: points / 8, swings };
+  };
+  const easy = play("easy"), hard = play("hard");
+  assert(hard.points > easy.points * 1.2, `easy ${JSON.stringify(easy)}, hard ${JSON.stringify(hard)}`);
+  return `the CPUs' points a round, on average: ${easy.points} easy, ${hard.points} hard; swings ${easy.swings}, ${hard.swings}`;
+});
+
+await test("Furret's Frolic: its music and sound effects play from sound.bin", () => soundTest("assets/furret/sound.bin", [
+  ["main", 6, (r) => assert(r.notes > 10 && r.peak > 0.05 && r.peak < 1, `song 47: ${r.notes} notes, peak ${r.peak.toFixed(2)}`)],
+]));
+
+await test("Furret's Frolic: online, the others' pads coming in late run the world again to the same place", async () => {
+  await solo.mg.show("furret");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners, R = await moduleOf(solo, "./src/furret/rules.js");
+  solo.mg.paused = true;
+  g.listeners = {};
+  const pattern = (t) => [[1, 0, 3, 0, 2, 4][Math.floor(t / 37) % 6], t % 23 === 9];
+  try {
+    // seat 0 here, seat 2 someone else whose pads come in 4-12 frames late, 1 and 3 CPUs
+    g.reset("normal", 77, { me: 0, control: ["local", "cpu", "remote", "cpu"], cpus: [false, true, false, true] });
+    g.start();
+    const late = [];
+    let lastX = null, t = 0;
+    const theirs = (t) => furretPad(2, t);
+    for (; t < 1500; t++) {
+      const [x, a] = theirs(t);
+      if (x !== lastX || a) { late.push({ at: t + 4 + (t % 9), e: [t, x, a ? 1 : 0] }); lastX = x; }
+      for (const l of late.filter((l) => l.at === t)) g.told("pad", { s: 2, f: l.e[0], x: l.e[1], a: l.e[2] });
+      const [mx, ma] = pattern(t);
+      g.setSpot(mx);
+      g.presses = ma ? 1 : 0;
+      g.step(t);
+      g.lastFrame = t;
+    }
+    for (const l of late.filter((l) => l.at >= t)) g.told("pad", { s: 2, f: l.e[0], x: l.e[1], a: l.e[2] });
+    g.runTo(g.lastFrame);
+    // the same world with every pad on time (this device's own count g.lead frames after they're made)
+    const w = new R.World(77, "normal", [false, true, false, true]), L = g.lead;
+    for (let f = 0; f <= g.lastFrame; f++) w.step(f, [f < L ? [0, false] : pattern(f - L), null, theirs(f), null]);
+    assert(g.world.digest() === w.digest(), `at frame ${g.lastFrame}: points ${g.world.scores} here, ${w.scores} on time`);
+    return `frame ${g.lastFrame}: points ${w.scores.join(", ")}; ${g.snaps.length} saved frames`;
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+});
+
+await test("Furret's Frolic: a solo round, played headless: it ends on the clock, places by points", async () => {
+  await solo.mg.show("furret");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners, { AFTER } = await moduleOf(solo, "./src/furret/game.js");
+  const R = await moduleOf(solo, "./src/furret/rules.js");
+  solo.mg.paused = true;
+  g.listeners = {};
   const out = [];
   try {
-    for (const [id, type] of [["golbat", "pad"], ["barrier", "pad"], ["togepi", "stick"], ["rollout", "pad"], ["topsy", "pad"]]) {
+    for (const [seed, level] of [[11, "easy"], [22, "hard"]]) {
+      g.reset(level, seed, { me: 0, control: ["local", "cpu", "cpu", "cpu"] });
+      g.start();
+      while (g.state === "play" && g.frame < R.TIME + AFTER + 60) {
+        const [s, a] = furretPad(0, g.lastFrame + 1, g.world);
+        g.setSpot(s);
+        if (a) g.press();
+        g.update(1 / 30);
+      }
+      const res = g.results(), s = g.world.scores, end = g.world.end;
+      assert(g.state === "over" && end === R.TIME && g.frame >= end + AFTER, `${level}: ${g.state}, the end at ${end}`);
+      assert(res.every((r) => r.score === s[r.i]) && res.every((r, k) => !k || res[k - 1].score >= r.score), `${level}: results ${JSON.stringify(res)} for ${s}`);
+      assert(g.winners.every((w, z) => w === (s[z] === Math.max(...s) && !s.every((x) => x === s[0]))), `${level}: winners ${g.winners} for ${s}`);
+      // (the winners hop to the middle and cheer; the others sulk)
+      const clips = g.world.p.map((p) => p.f.clip);
+      assert(g.world.p.every((p, z) => clips[z] === (g.winners[z] ? R.CLIP.cheer : R.CLIP.sad) && (!g.winners[z] || p.f.spot === 0)),
+        `${level}: at the end their clips are ${clips} for winners ${g.winners}`);
+      out.push(`${level}: ${s.join(", ")}`);
+    }
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  return "points: " + out.join("; ");
+});
+
+await test("Furret's Frolic: a finger is the D-pad, the way it slides; the view turned to each player's goal", async () => {
+  await solo.mg.show("furret");
+  const api = solo.mg.mini, g = api.game;
+  const got = [];
+  try {
+    g.reset("normal", 5, { me: 0, control: ["local", "cpu", "cpu", "cpu"] });
+    g.state = "play";
+    const at = (x, y) => ({ pointerId: 1, clientX: x, clientY: y, pointerType: "touch" });
+    api.pointerdown(at(200, 300));
+    for (const [x, y] of [[205, 303], [260, 300], [200, 360], [200, 240], [150, 310]]) {
+      api.pointermove(at(x, y));
+      got.push(g.spot);
+    }
+    api.pointerup(at(150, 310));
+    got.push(g.spot);
+    // (2P's goal is on the right of the game's view: turned so it's at the bottom, the D-pad turns with it)
+    const r = solo.document.documentElement.getBoundingClientRect();
+    api.layout(r.width, r.height, { top: 0, left: 0, right: r.width, bottom: r.height }, 1, []);
+    api.debug.way("d");
+    got.push(g.spot);
+    api.debug.way(null);
+    api.layout(r.width, r.height, { top: 0, left: 0, right: r.width, bottom: r.height }, 0, []);
+  } finally {
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  // (14 px still; then right, down, up, left: spots 1, 2, 3, 4; let go: the middle. For 2P, down is its goal's way: spot 1)
+  const want = [0, 1, 2, 3, 4, 0, 1];
+  assert(got.join() === want.join(), "still, right, down, up, left, let go; 2P's down: " + got.join());
+});
+
+await test("online: the server moving this device's own moves to later frames keeps them in its order", async () => {
+  // (Gutsy Golbat, Barrier Ball, Tumbling Togepi, Rampage Rollout, Topsy-Turvy and Furret's Frolic: two of them the
+  // server got late, both put on frame 15. Rampage Rollout's are D-pads: 20 is LEFT | DOWN... 40 the same, made
+  // up for here; Furret's Frolic's are spots, 0-4)
+  const out = [];
+  try {
+    for (const [id, type] of [["golbat", "pad"], ["barrier", "pad"], ["togepi", "stick"], ["rollout", "pad"], ["topsy", "pad"], ["furret", "pad"]]) {
       await solo.mg.show(id);
       const api = solo.mg.mini, g = api.game, saved = g.listeners, other = type === "pad" ? "a" : "y";
       solo.mg.paused = true;
@@ -1409,9 +1587,13 @@ await test("online: the server moving this device's own moves to later frames ke
       try {
         g.reset("normal", 5, { me: 0, control: ["local", "cpu", "cpu", "cpu"], cpus: [false, true, true, true] });
         g.start();
-        const [x1, x2] = id === "rollout" ? [2, 4] : [20, 40];
+        const [x1, x2] = id === "rollout" ? [2, 4] : id === "furret" ? [1, 2] : [20, 40];
         for (let t = 0; t <= 12; t++) {
-          if (t === 10 || t === 11) { if (id === "rollout") g.setDpad(t === 10 ? x1 : x2); else g.setStick(t === 10 ? x1 : x2, 0); }
+          if (t === 10 || t === 11) {
+            if (id === "rollout") g.setDpad(t === 10 ? x1 : x2);
+            else if (id === "furret") g.setSpot(t === 10 ? x1 : x2);
+            else g.setStick(t === 10 ? x1 : x2, 0);
+          }
           g.step(t);
           g.lastFrame = t;
         }
@@ -1428,7 +1610,8 @@ await test("online: the server moving this device's own moves to later frames ke
     }
   } finally { await solo.mg.show("egg"); }
   // (the server's: the one it got last counts on frame 15)
-  assert(out.every((o) => o.endsWith(o.startsWith("rollout") ? ": 0, 4, 4" : ": 0, 40, 40")), "the stick on frames 14, 15 and 20: " + out.join("; "));
+  const want = (o) => (o.startsWith("rollout") ? ": 0, 4, 4" : o.startsWith("furret") ? ": 0, 2, 2" : ": 0, 40, 40");
+  assert(out.every((o) => o.endsWith(want(o))), "the stick on frames 14, 15 and 20: " + out.join("; "));
 });
 
 await test("online: rejoining a round, a seat whose player is away is still theirs, not a CPU", async () => {
@@ -1437,7 +1620,7 @@ await test("online: rejoining a round, a seat whose player is away is still thei
                   lineup: [{ seat: 0, here: true }, { seat: 1, here: false }, { seat: 2, here: true }] };
   const out = [];
   try {
-    for (const id of ["stampede", "pichu", "togepi", "golbat", "barrier", "rollout", "topsy"]) {
+    for (const id of ["stampede", "pichu", "togepi", "golbat", "barrier", "rollout", "topsy", "furret"]) {
       await solo.mg.show(id);
       solo.mg.mini.reset(round);
       out.push(`${id}: ${solo.mg.mini.game.cpus.join()}`);
@@ -1693,6 +1876,35 @@ lane(2, (f) => test("online: a Rampage Rollout race, the same on both devices, a
     await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 30000);
     assert(ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
     return `places ${f.p.join(", ")}, in at frames ${f.fin.join(", ")}`;
+  } finally {
+    stop.forEach((s) => s());
+  }
+}, { live: true }));
+
+lane(2, (f) => test("online: a Furret's Frolic round, the same on both devices, and cheating doesn't work", async () => {
+  const { ann, bob } = await f.pair("furret");
+  const stop = [];
+  try {
+    ann.mg.net().send("start");
+    await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the round", 20000);
+    stop.push(autobat(ann), autobat(bob));
+    const net = bob.mg.net(), r = ann.mg.room().round, g = bob.mg.game;
+    await until(() => g.frame > 60, "two seconds in", 20000);
+    // Bob hops Ann's Furret, says a swing of his was long ago, and sends a spot that's no spot
+    net.send("pad", { r, s: 0, f: g.frame, x: 1, a: 1 });
+    net.send("pad", { r, s: 1, f: 5, x: 2, a: 1 });
+    net.send("pad", { r, s: 1, f: g.frame + 1, x: 9, a: 0 });
+    await until(() => [ann, bob].every((w) => w.mg.game.result), "the end, on both devices", 120000);
+    const res = (w) => JSON.stringify(w.mg.game.result);
+    assert(res(ann) === res(bob), `the end: ${res(ann)} / ${res(bob)}`);
+    const f = ann.mg.game.result;
+    // each device's run of the world comes to the server's: so the server took the same pads
+    const pts = (w) => w.mg.game.world.scores.join();
+    await until(() => ann.mg.game.lastFrame >= f.f && bob.mg.game.lastFrame >= f.f, "both at the end", 20000);
+    assert(pts(ann) === f.s.join() && pts(bob) === f.s.join(), `points: Ann's ${pts(ann)}, Bob's ${pts(bob)}, the server's ${f.s}`);
+    await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 30000);
+    assert(ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
+    return `points ${f.s.join(", ")}, over at frame ${f.f}`;
   } finally {
     stop.forEach((s) => s());
   }
@@ -2057,6 +2269,20 @@ lane(1, (f) => test("a solo round starts and plays: Topsy-Turvy", async () => {
   // (at GO they jump in: 4 s on, they're in the ring, or one knocked out already)
   assert(states.every((s) => s >= 2 && s <= 4) && states.filter((s) => s === 3).length >= 2, `4 s in, their states: ${states}`);
   return "states 4 s in: " + states.join(", ");
+}, { live: true }));
+
+lane(1, (f) => test("a solo round starts and plays: Furret's Frolic", async () => {
+  const solo = await f.open("game=furret");
+  solo.document.querySelector("#play").click();
+  const stop = autobat(solo);
+  try {
+    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > 150, "Furret's Frolic's first 5 s", 30000);
+  } finally { stop(); }
+  const g = solo.mg.game, w = g.world, clips = w.p.map((p) => p.f.clip);
+  assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
+  // (at GO they pop up; 5 s on, they're up and about, and a ball's come)
+  assert(w.p.every((p) => !p.f.frozen) && w.ids >= 1 && w.left === 1800 - 1 - w.t, `5 s in: clips ${clips}, ${w.ids} balls, ${w.left} left`);
+  return `5 s in: clips ${clips.join(", ")}; ${w.balls.length} ball(s) on the field`;
 }, { live: true }));
 
 lane(1, (f) => test("a solo round starts and plays: Rampage Rollout", async () => {

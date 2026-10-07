@@ -292,9 +292,32 @@ TOPSY.update({"face%d.png" % i: _HM + "textures/face/tex%02d.png" % i for i in r
 TOPSY.update({"face%d.png" % i: _HM + "textures/face/tex%02d_ms.png" % i for i in range(8, 11)})
 UI["title_topsy.png"] = bank(400, 0)
 
+# Furret's Frolic is code module #50. Its code loads Furret (object 142, or
+# Girafarig 223 for a Game Pak's: layout 1 for the show at the end), the Poké
+# Balls (153: Poké, Great, Ultra and Master) and its field (155: the field,
+# the shadows along its edges, the boards on its ramps); the balls' shadows
+# are image bank 307's dot, the labels over each Furret bank 260 (1P-4P, COM),
+# the badges over each goal the shared 434. Its banner is image bank 405.
+_FU, _FF, _PB = "objects/142_furret/", "objects/155_furrets_frolic_field/", "objects/153_poke_ball/"
+FURRET = {
+    "furret.glb": _FU + "142_furret.glb",
+    "furret_end.glb": _FU + "142_furret_1.glb",
+    "field.glb": _FF + "155_furrets_frolic_field.glb",
+    "field_shadows.glb": _FF + "155_field_shadows.glb",
+    "boards.glb": _FF + "155_boards.glb",
+    "ball1.glb": _PB + "153_poke_ball.glb",
+    "ball2.glb": _PB + "153_great_ball.glb",
+    "ball3.glb": _PB + "153_ultra_ball.glb",
+    "ball5.glb": _PB + "153_master_ball.glb",
+    "shadow.png": bank(307, 0),
+    "button_a.png": bank(51, 0),  # (the menus' A button: the swing on a phone)
+}
+FURRET.update({"label%d.png" % i: bank(260, i) for i in range(5)})
+UI["title_furret.png"] = bank(405, 0)
+
 # folder -> {asset name: file under out/}
 FILES = {"ui": UI, "egg": EGG, "clearcut": CLEARCUT, "eevee": EEVEE, "stampede": STAMPEDE, "pichu": PICHU,
-         "togepi": TOGEPI, "golbat": GOLBAT, "barrier": BARRIER, "rollout": ROLLOUT, "topsy": TOPSY}
+         "togepi": TOGEPI, "golbat": GOLBAT, "barrier": BARRIER, "rollout": ROLLOUT, "topsy": TOPSY, "furret": FURRET}
 
 # Sound (docs/audio.md). A game asks for song n, which the game plays as
 # sequence n + 39. The effects are sounds of sequence 9, the one the game runs
@@ -507,9 +530,24 @@ SOUNDS = {
         "count": _sound(0x13, 100, 5, 0x0100, sfx=[16]),  # 0x2F00
         "go": _sound(0x14, 100, 5, 0x0100, sfx=[17]),  # 0x2F01
     }),
+    # Furret's Frolic asks for song 47 (sequence 86) at GO. Its effects are
+    # bank 11's (0xBFxx), placed by where they happen; its count and GO are
+    # Pichu's Power Plant's (0x2F00, 0x2F01)
+    "furret": ({"main": 86, "win": 94}, {
+        "swing": _sound(0x74, 100, 1, 0x0001),  # 0xBF00, a Furret swings its tail
+        "shot": _sound(0x75, 110, 1, 0x0030),  # 0xBF01, and bats a ball
+        "goal": _sound(0x76, 120, 1, 0x00C0),  # 0xBF02, a ball over a goal's line
+        "bounce": dict(_sound(0x64, 125, 1, 0x0001), pitch=2.0),  # 0xBF03, a ball lands hard
+        "cheer": _sound(0x78, 80, 1, 0x0030),  # 0xBF04, a winner's cry at the end
+        **SHARED,
+        "lastCount": SHARED["count"],
+        "lastGo": SHARED["go"],
+        "count": _sound(0x13, 100, 5, 0x0100, sfx=[16]),  # 0x2F00
+        "go": _sound(0x14, 100, 5, 0x0100, sfx=[17]),  # 0x2F01
+    }),
 }
 
-def flat_picture(glb_path, width, more=(), box=None, top=False):
+def flat_picture(glb_path, width, more=(), box=None, top=False, turn=0):
     """A model drawn front on (looking down -z, no perspective) into a picture
     width pixels wide: (w, h, RGBA). Its parts go where its bones put them,
     and the nearest wins (a depth buffer). For the title's art, where a
@@ -517,7 +555,9 @@ def flat_picture(glb_path, width, more=(), box=None, top=False):
     Pichu's Power Plant's frame, Barrier Ball's court). more: other models
     with it, (path, dx, dy) each; box: (x0, y0, x1, y1), the part of it to
     draw (else all of it); top: seen from above (looking down -y, +x right
-    and -z up), for a model that lies flat (Rampage Rollout's track)."""
+    and -z up), for a model that lies flat (Rampage Rollout's track); turn:
+    then turned this many degrees anticlockwise (Furret's Frolic's field, as
+    its camera has it)."""
     import json
     import struct
     import zlib
@@ -581,6 +621,9 @@ def flat_picture(glb_path, width, more=(), box=None, top=False):
             x, y, z = (m[i][0] * p[0] + m[i][1] * p[1] + m[i][2] * p[2] + m[i][3] for i in range(3))
             if top:
                 x, y, z = x, -z, y
+            if turn:
+                c, s = math.cos(math.radians(turn)), math.sin(math.radians(turn))
+                x, y = x * c - y * s, x * s + y * c
             return x + dx, y + dy, z
 
         parts = []
@@ -703,6 +746,13 @@ if os.path.exists(_field):
     with open(os.path.join(site, "rollout", "art.png"), "wb") as fh:
         fh.write(png.encode_rgba(*flat_picture(_field, 400, [(os.path.join(site, "rollout", "frame.glb"), 0, 0)],
                                                (-15, -12.5, 15, 12.5), top=True)))
+
+# Furret's Frolic's art for the title and the lobby: its field from above, turned as its camera has it
+_field = os.path.join(site, "furret", "field.glb")
+if os.path.exists(_field):
+    with open(os.path.join(site, "furret", "art.png"), "wb") as fh:
+        fh.write(png.encode_rgba(*flat_picture(_field, 400, [(os.path.join(site, "furret", "boards.glb"), 0, 0)],
+                                               (-14.5, -10.9, 14.5, 10.9), top=True, turn=-45)))
 
 if roms:
     rom = Rom(roms[0])

@@ -44,7 +44,7 @@ characters' models.
 | Gutsy Golbat | Golbat 053 | Jynx 110 (she stands in the meadow at the end and throws hearts) |
 | Topsy-Turvy | Hitmontop 115 (one for each player: a Game Pak's shiny one) | through a list (`0x8600D760`, loaded by `0x80071B20`): the shadow 079, the rings round a Hitmontop after its RAPID SPIN 195-198 (in 1P-4P's colours), the sparks of a bump 199 and 200; and 123, 124 (a white Hitmontop), 152 and the whirlwinds 191-194, which nothing in it draws (Hitmontop 052 *by appearance*) |
 | Clear Cut Challenge | Scyther 122, Pinsir 055, Scizor 179 | signpost 059, log slices 081 and 111, cut line 112, effects 130 and 131, dizzy stars 190 |
-| Furret's Frolic | Furret 142, Girafarig 223 | Poké Balls 153, leaf pile / shards / chips 155, bush 183 |
+| Furret's Frolic | Furret 142 (both layouts: 1 for the end), Girafarig 223 (for a Game Pak's Girafarig) | Poké Balls 153 (Poké, Great, Ultra, Master), the field 155 (layout 0 the field, 1 the shadows along its edges, 2 the boards on its ramps; named leaf pile / shards / chips by appearance before), bush 183 (the instructions' show) |
 | Barrier Ball | Mr. Mime 218 (the play), 129 (the countdown and the end) | the court 120 (7 layouts: its floor, lines and hole, and its four walls), the barrier 141 (named mesh panels by appearance before), 146 (loaded; nothing found draws it), Poké Ball 154 |
 | Pichu's Power Plant | Pichu 107, Pikachu 201 | the power plant's frame 056 (a window of four rooms by appearance before), the electrode lamps 057, dizzy stars 190 (wall pieces by appearance before) |
 | Rampage Rollout | Donphan 108 (walking; rolling, layout 1) | the track 113 (layout 0 its field: the dirt track round a grass block, in a meadow; layout 1 the wooden fence round it, named Red Frame by appearance) |
@@ -60,7 +60,8 @@ Worth knowing:
   Golbat; "Striped Shell" 082/103 is Swinub; "Green Spiky Head" 151 is
   Pineco; 145 is the egg; and 186, named Hoppip by appearance, is a shiny
   Cleffa (green ears), as 205 is a shiny Igglybuff: Streaming Stampede's code
-  loads them for a Game Pak's shiny Cleffa or Igglybuff.
+  loads them for a Game Pak's shiny Cleffa or Igglybuff. 155, named leaf
+  pile, shards and chips by appearance, is Furret's Frolic's field.
 - The appearance-based guesses before this were partly wrong. The grass/hill
   course pieces 132–140 are Tumbling Togepi's, not Furret's Frolic's. The
   "Lab Room" (189/214) isn't a minigame's. Only two of the twelve gift boxes
@@ -1441,6 +1442,153 @@ play, 4 the end, 5 and 6 the results and the menu after.
 
 The browser remake runs this world on every device and on the server, from
 everyone's pads (the CPUs think in it) ([web/README.md](../web/README.md#topsy-turvy)).
+
+## Furret's Frolic
+
+Module #50 (ROM `0x266DC0`, linked at `0x86200000`; code to `0x8030`, data
+from `0x8030`, constants and strings from `0xDFA0`) was read with `m2c` on a
+`spimdisasm` listing, checked against the instructions for the order of each
+sum, and the remake (`web/minigames/src/furret/`) plays by its rules. Like
+Gutsy Golbat and Barrier Ball it runs on module #64's framework (`0x87F00000`:
+object pools, the countdown, the results) and module #65's vector helpers
+(`0x87D005E8` divides x, y, z by their length and returns it, `0x87D0059C`
+the same for x, z); `0x87C03B60` (module #48) only works out where on the
+screen a ball or a Furret is, for its sound. The world is W (`0x8620E1A0`; a
+pointer to it at `0x8620E198`): the tuning from +0, the camera at +0x70 (+0
+the eye, +0xC where it looks, +0x18 how far, +0x1C and +0x1E its pitch and
+yaw), the state at +0xE8, the menu's data at +0xF4 (+0x2180 the mode, +0x2181
+the COM level, +0x2182 a bit per person), the balls at +0x174 (a pool of 128;
+each one's own record at +0xC788 + 0x4C·i: +0 where it was a step ago, +0xC
+the push on it, +0x18 the shove out of others, +0x24 a tail's, +0x30 its
+points, +0x34 its size, +0x3C where it was at the frame's start, +0x48 how far
+it went in the frame), the shadows at +0xED88 (1024, a frame each), the field
+at +0x71D9C (3), the Furret at +0x72264 (4; each one's record: +0 its player,
++4 its spot, +8 the spot it's hopping to, +0xC its tail's tip, +0x1A its cries
+at the end), the labels over them from +0x728C0, the clock at +0x73BAC
+(frames), the spawn counter at +0x73BB0, where the next balls drop at +0x73BB4,
+the players from +0x73BBC (0x18 each: +0 who and how it did, +4 its points,
++8 a CPU's timer, +0xC its skill, +0x10 the buttons it holds, +0x13 its state,
++0x16 its goal). The instructions (text 50.1): "Press the + Control Pad to
+move into the grass. Release it to move back to the center. Press the A
+Button to shoot the ball forward. Get the most points to win."
+
+**Its tuning** (a debug menu, the values set at `0x86202C14`, the names among
+the module's strings): GRAVITY −120, SP DEC 0.97 (0.963 at 50 Hz), F_BOUND
+0.6, PHYSICS 3 (steps a frame), SHOT_PW 660, SPD MX 2700 (the speeds over the
+TV's rate: 60 on NTSC, so −2, 11 and 45 a step), EGGS 1 (balls at once, to
+start with), EGG SIZE 0.8, SO POS 1.5, SO SC 1, OPERATION 2 (the D-pad as
+described; 0, 1 and 3 other controls), the camera (CAM LOK X/Y/Z, DIST, AG_X,
+AG_Y) and SHUFFLE 0 (off: shuffling the goals). The names (EGGS, EGG SIZE)
+and two unused models in the module's data, a beach ball and a small
+diamond of a field (geo layouts `0x8620C644` and `0x8620B564`, which nothing
+points to), suggest it began with eggs. The clock is a minute (`0x86202AC4`:
+the TV's rate / 2 × 60 frames).
+
+**The field** is drawn by object 155 (its three layouts at the middle: the
+field, a 3 × 3 grid of hollows with a checkered lane out of each side and
+ramps with boards in the corners, its shadows, its boards), and the balls
+roll on the module's own mesh (`0x8620DF60`: four pieces of 38 triangles,
+wedges round the axes, their corners whole numbers; each triangle's plane
+worked out at the start, `0x862005B4`, with the main program's
+`0x800359D0` and `0x80035AF0`). Its callback that would draw the mesh
+(`0x86200344`) is in a geo layout nothing uses. The hollows' bottoms are 46
+down, the lanes slope away from 75 to −128, the ramps are 336 high at the
+corners. Each player's goal is a lane: past the line through (0, −1200) and
+(−1200, 0) with x ≤ 0 and z < 0, goal 0 (yellow, at the top of the game's
+view); goal 1 (green, x > 0, z ≤ 0) on the right, goal 2 (red, x < 0, z ≥ 0)
+on the left, goal 3 (blue) at the bottom (`0x862017F8`, `0x86201790`). 1P's
+is goal 3, 2P's 1, 3P's 2, 4P's 0 (`0x862028F0`). The camera looks from 2708
+away at (56, 47, 56), 0x2000 round (45°) and 0x23E1 down (50.5°:
+`0x87F0C094`), with a fov of 30; the frame is cleared to `0xA579` (165, 173,
+231, a light blue); two lights, white and grey, at angles from the camera's
+(`0x86200794`, `0x862007FC`), and grey all round (0xA0).
+
+**The balls** (`0x86204A9C`, each frame): a counter goes to 11, then, with
+fewer balls than wanted and time left, one comes: its points by (a random
+number % 34) × the balls wanted, 81 and over a Master Ball (5 points), 61 an
+Ultra Ball (3), 41 a Great Ball (2), else a Poké Ball (1). The balls wanted
+start at 1 and go up by one each third of the minute (2 from 20 s in, 3 from
+40 s). A ball (`0x86201E70`) drops in at 700 above a ramp: (950, 0), (−950,
+0), (0, 950), (0, −950), in an order shuffled every four (`0x8620169C`); its
+size 1, 1.5, 2 or 2.5 by its points (its radius 0.8 × 0.75 × 100 × that),
+its top speed × 1, 0.95, 0.9 or 0.8. **A step** (`0x86203C58`, three a
+frame): the Furret's and the balls' updates; with time left, the tails
+against the balls (`0x86205A7C`); the balls against each other
+(`0x86202574`) and against the field (`0x862025E0`). A ball's update
+(`0x86201A58`): its pushes added to its speed, × 0.97, its speed cut to 45 ×
+its kind's if over, then on by what it was shoved and its speed; gravity −2
+is the push for the next step; over a goal's line (with time left, once) its
+points to that goal's player (0xBF02); below −200 it's gone; after the time's
+up it fades out. Two balls closer than their radii (`0x8620218C`) trade a
+tenth of their speed towards each other and are shoved apart, half each.
+Against the field (`0x86201300`, `0x86200C30`, each triangle of the piece
+under it): through a triangle along the way it moved (a radius further each
+end), or within its radius of it, of an edge or of a corner, it's pushed out
+and its speed into it turned: −1.2 × its speed along the normal, averaged
+over the triangles it touched (0xBF03 if it went in deeper than 0.04 of its
+radius and moved more than 55 that frame).
+
+**The Furret** (`0x86206334`) stand on five spots (`0x86208F28`): the middle
+hollow and those at (±282.84, ±282.84), each 135 behind its spot from its
+goal (`0x862055F0`: 18 × 5 × SO SC × SO POS), facing it; they start on the
+spot across the middle from their goal, popping up (clip 0) through the
+countdown, and can move once they're standing (clip 1). The D-pad (`0x862070B0`,
+`0x86206EF8`: left, then right, up, down; none the middle) picks a spot:
+D-right the hollow on the screen's right, (282.84, −282.84), and so on. To a
+new spot it hops (`0x86205C8C`: clip 5, then on its last frame it's there and
+lands, clip 6). **A**, at least 27 steps after the last swing
+(`0x86205B8C`, 0xBF00): a swing (clip 2 from frame 5), staying on its spot
+(a hop's called off); in the swing's first 6 frames the D-pad puts it on
+another spot at once, once. Its tail's tip is where it stands plus a table
+(`0x862090C0`, clip 2's frames 4-28; up to 153 high). While it swings (27
+steps), a ball within 108.5 of the tip and its radius (`0x8620581C`) is
+shoved out of its reach; the first one it touches in the swing's first 8
+steps is batted (0xBF01): 2 × 11 towards its goal and 11 × 4.25 up, and none
+of its speed left the other way (`0x8620573C`, `0x862057A8`); the rest have
+their speed into the tail taken away.
+
+**The CPUs** (`0x86206D20`, `0x86206C34`) get a skill each (`0x862026C8`: by
+the COM level the list 1, 1, 0, 0 on Easy, 2, 2, 1, 0 on Normal, 3, 3, 3, 2
+on Hard, shuffled among the CPUs, the first ones theirs). Each frame, by skill
+(0-3): a wait of 40-80, 17-34, 15-30 or 12-24 frames; a rank of 1st-3rd,
+1st-2nd, 1st or 1st; a least worth of 0, 0.7, 0.85 or 0.9; and a delay before
+the swing of 0-30, 0-12, 0-5 or 0-3 frames (all drawn anew each frame). Past
+its wait it picks a spot (`0x86206920`): for each spot, each ball its tail
+would reach there at the swing's start, how much the bat and the ball's speed
+would send it its goal's way (across the ground, a unit long) × its points,
+the best of them; the spots shuffled a little and sorted, and the one of its
+rank, if it's worth more than its least; else the middle, and it tries again
+next frame. It holds the spot, and after its delay swings.
+
+**The end** (`0x8620392C`): the most points win; all four level, nobody.
+The winners hop back to the middle and, once all of them are there, cheer
+(layout 1, clip 3; a cry, 0xBF04, at its frame 69, twice); the others sulk
+(layout 1, clip 4; `0x86205F34`, `0x86203DE8`). The camera moves over 60
+frames to 1400 away and 45° down, looking past the middle, and then goes round
+(`0x86203D50`: 0x2E a frame).
+
+**What's drawn**: the field; the Furret (scale 0.4); each ball (object 153's
+layout by its points, scale 0.6 × its size), rolling, and its shadow (image
+bank 307's dot, black at 128) on the field under it (`0x86201620`); each
+player's label (image bank 260: 1P-4P, or COM) above its Furret's tail
+(`0x86205500`); each player's badge (image bank 434) over its goal, on the
+field's attachments 1-4, tilted to the camera (`0x86207874`); at the top the
+badges and points (`0x862040AC`: digits in each player's colours), and at the
+bottom right the seconds left (rounded up). The song is 47 (sequence 86), from
+GO (`0x86204F20`); in the last 30 s it speeds up (`0x80028108(11)`: a beat a
+minute faster every 15 frames, to 30); the count is Pichu's Power Plant's
+(0x2F00, 0x2F01), and the last three seconds the shared one (0xCF00, 0xCF06 at
+0). Its name banner is image bank 405. Furret's clips (object 142): 0 popping
+up, 1 standing, 2 a swing, 3 a cheer, 4 sulking, 5 a hop and 6 landing (5 and
+6 held at their ends). The instructions' show (states 1 and 2) has a small
+Furret in a bush (183) for each player.
+
+**The states** (`0x86204FEC`): 0 and 1 the instructions, 2 the fade in (the
+Furret pop up), 3 the countdown (`0x87F006BC`: 4 s, GO at its last), 4 the
+play, 5 the end, 6 and 7 the results and the menu after.
+
+The browser remake runs this world on every device and on the server, from
+everyone's pads (the CPUs think in it) ([web/README.md](../web/README.md#furrets-frolic)).
 
 ## How this was found
 

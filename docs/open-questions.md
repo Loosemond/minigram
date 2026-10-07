@@ -45,6 +45,18 @@ What isn't known yet, roughly by how useful it would be.
   `0x86000CCC` draws the glow twice, the remake once); the HUD gauge at
   `0x86004544` (a RAPID SPIN's charge, by its look), which nothing calls; and
   the instructions' show (`0x860057D0`), which the remake leaves out.
+- **Furret's Frolic's loose ends** (its rules are read: [minigames.md](minigames.md#furrets-frolic)):
+  the countdown's length (module #64's period, 30 frames a count, is assumed:
+  where it's set wasn't traced; it puts the Furret's popping up at its frame 0
+  at GO); the size of the labels over the Furret and the badges over the goals
+  (the game scales the badges' 200-unit quad by 9, too big to be the units
+  the remake has, so it picks a size; and the labels are drawn by module #64,
+  not read); the lights' ways (worked out from the camera's angles at
+  `0x86200794` and `0x862007FC`; the remake places them by eye); the balls'
+  roll (`0x87D00354` turns each ball by how it moved: the remake turns it by
+  the same rule, not that code); Girafarig, whom the code loads for a Game
+  Pak's Girafarig (the remake has Furret for all); and the instructions' show
+  (a Furret in a bush for each player), which the remake leaves out.
 - **Audio:** the voices' codec (5, in sample banks 4–6), the reverb
   settings, the game's custom sequence function (`0x800275D8`), and the
   0x28-byte records at `0x49B780` ([audio.md](audio.md)).

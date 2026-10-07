@@ -324,6 +324,37 @@ input { -webkit-user-select: text; user-select: text; }
   background: rgba(235, 235, 245, 0.7); border: 2px solid #fff; box-sizing: border-box; }
 .tt-stick.rest { opacity: 0.55; }
 .game-hud.off .tt-pads, .game-hud.off .tt-hint { display: none; }
+/* Furret's Frolic: the clock at the top (the game's green digits), the hint;
+   on a touch screen the D-pad (where a finger went down) and A */
+.fu-time { position: absolute; display: flex; flex-direction: column; align-items: center; padding: 4px 12px 6px;
+  border-radius: 12px; background: rgba(0, 40, 0, 0.45); color: #c8ff73; line-height: 1; pointer-events: none;
+  text-shadow: 0 0 2px #004600, 1px 1px 0 #004600, -1px -1px 0 #004600, 1px -1px 0 #004600, -1px 1px 0 #004600; }
+.fu-time small { font-size: 10px; font-weight: 700; letter-spacing: 1px; opacity: 0.85; color: #fff; text-shadow: 0 1px 2px #000; }
+.fu-time b { font-size: 26px; font-weight: 900; font-variant-numeric: tabular-nums; min-width: 2ch; text-align: center; }
+.fu-time.low b { color: #ffe08a; }
+.fu-hint { position: absolute; left: 50%; bottom: calc(var(--safe-b) + 14%); transform: translateX(-50%);
+  padding: 6px 14px; border-radius: 16px; background: rgba(0, 0, 0, 0.5); color: #fff; font-weight: 700;
+  font-size: 15px; white-space: nowrap; text-shadow: 0 1px 2px #000; }
+.fu-pads { position: absolute; inset: 0; pointer-events: none; --btn: clamp(72px, 20vmin, 110px); }
+.fu-a { position: absolute; right: calc(var(--safe-r) + 18px); bottom: calc(var(--safe-b) + 18px); width: var(--btn); height: var(--btn);
+  border-radius: 50%; display: grid; place-items: center; box-sizing: border-box;
+  background: rgba(20, 20, 30, 0.35); border: 2px solid rgba(255, 255, 255, 0.6); transition: transform 0.05s; }
+.fu-a img { width: 78%; height: 78%; display: block; }
+.fu-a.on { transform: scale(1.12); border-color: #fff; }
+.fu-pads.fu-below .fu-a { bottom: calc(var(--safe-b) + max(16px, (var(--room) - var(--safe-b) - var(--btn)) / 2)); }
+.fu-dpad { position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px; }
+.fu-dpad i { position: absolute; width: 38px; height: 38px; border-radius: 8px; box-sizing: border-box;
+  background: rgba(20, 20, 30, 0.35); border: 2px solid rgba(255, 255, 255, 0.6); }
+.fu-dpad i::after { content: ""; position: absolute; left: 50%; top: 50%; border: 7px solid transparent; }
+.fu-dpad .u { left: 41px; top: 0; } .fu-dpad .d { left: 41px; bottom: 0; }
+.fu-dpad .l { left: 0; top: 41px; } .fu-dpad .r { right: 0; top: 41px; }
+.fu-dpad .u::after { border-bottom-color: #fff; transform: translate(-50%, -75%); }
+.fu-dpad .d::after { border-top-color: #fff; transform: translate(-50%, -25%); }
+.fu-dpad .l::after { border-right-color: #fff; transform: translate(-75%, -50%); }
+.fu-dpad .r::after { border-left-color: #fff; transform: translate(-25%, -50%); }
+.fu-dpad i.on { background: rgba(255, 255, 255, 0.55); border-color: #fff; }
+.fu-dpad.rest { opacity: 0.55; }
+.game-hud.off .fu-pads, .game-hud.off .fu-hint { display: none; }
 
 #banner img { height: clamp(90px, 22vh, 200px); display: inline-block; }
 #banner {
