@@ -1466,7 +1466,9 @@ def _():
         want.pads = [[[0, down, 0]], [[late, up, 0]], [], []]
         said = {k: won[k] for k in ("f", "s")}
         assert want.settle(1000, 0) == said, (won, want.done)
-        assert said["f"] == delibird_rules.TIME, said  # (the clock's run out: nothing was on its way)
+        # (the clock's run out, and a delivery under way then has finished, up to WAIT frames on: in
+        # about two rounds in three a CPU's is; nothing was on its way)
+        assert delibird_rules.TIME <= said["f"] <= delibird_rules.TIME + delibird_rules.WAIT + 2, said
         assert g.end == (said["f"] + delibird_rules.tally_frames(said["s"]) + delibird_rules.SHOW) / delibird_rules.FPS
         a.send("pad", r=r, s=0, f=won["f"] + 5, x=down, a=0)  # after the end: nothing
         a.send("done", r=r)
