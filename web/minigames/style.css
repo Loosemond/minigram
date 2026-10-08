@@ -86,6 +86,15 @@ input { -webkit-user-select: text; user-select: text; }
 
 /* each game's own HUD (src/<game>/index.js) */
 .game-hud { position: absolute; inset: 0; pointer-events: none; }
+/* the arrow over your player (src/mark.js): moved with transform on its own
+   layer, its outline and shadow drawn in (no filter), so phones leave no trail
+   behind it; it bobs away from its tip */
+.me-mark { position: absolute; left: 0; top: 0; width: 22px; height: 17px; will-change: transform; }
+.me-mark svg { display: block; width: 100%; height: 100%; animation: bob 0.9s ease-in-out infinite alternate; }
+.me-mark.below svg { animation-name: bob-down; }
+.me-mark .fill { fill: var(--c); }
+@keyframes bob { to { transform: translateY(-5px); } }
+@keyframes bob-down { to { transform: translateY(5px); } }
 /* Clear Cut Challenge: the game's 320 x 240 screen, for its sign (--k: pixels per screen pixel) */
 .cc-screen { position: absolute; overflow: hidden; --k: 1; }
 .cc-sign { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
@@ -120,12 +129,6 @@ input { -webkit-user-select: text; user-select: text; }
 .ee-pads .ee-dash { width: 108px; background: rgba(50, 90, 210, 0.5); }
 .ee-points img { height: clamp(22px, 5vh, 36px); }
 .game-hud.off .ee-pads { display: none; }
-/* the arrow over your Eevee: moved with transform on its own layer, its
-   outline and shadow drawn in (no filter), so phones leave no trail behind it */
-.ee-me { position: absolute; left: 0; top: 0; width: 22px; height: 17px; will-change: transform; }
-.ee-me svg { display: block; width: 100%; height: 100%; animation: bob 0.9s ease-in-out infinite alternate; }
-.ee-me .fill { fill: var(--c); }
-@keyframes bob { to { transform: translateY(-5px); } }
 
 /* Streaming Stampede: the question board (UI layout 133, on the game's 640 x
    480 layout grid: --u, pixels a unit), its cards' words and pictures (image

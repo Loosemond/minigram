@@ -6,6 +6,7 @@
 import * as THREE from "three";
 import { loadAssets } from "./assets.js";
 import { Game, CAMERA } from "./game.js";
+import { meMark } from "../mark.js";
 
 export const SOUNDS = {
   url: "assets/golbat/sound.bin",
@@ -34,6 +35,7 @@ const RANGE = 44, DEAD = 6, STEP = 16;
 // sides, where things only come on and go, are cut off)
 const CROP = 1.05;
 const SHOW_HINT = 90; // frames of the play the hint stays for, after the countdown
+const HEAD = 42; // the arrow over your Golbat (31 from its middle to its top)
 
 export async function create(shell, onProgress) {
   const assets = await loadAssets("assets/golbat/", onProgress);
@@ -60,6 +62,7 @@ export async function create(shell, onProgress) {
   shell.hud.append(hud);
   const hint = hud.querySelector(".gb-hint"), pads = hud.querySelector(".gb-pads");
   const stickEl = hud.querySelector(".gb-stick"), knob = hud.querySelector(".gb-knob"), flapEl = hud.querySelector(".gb-flap");
+  const mark = meMark(hud, shell.me), over = new THREE.Vector3();
 
   // ---- sounds and the like, from the game ----
   const mine = (z) => z === shell.me();
@@ -236,6 +239,9 @@ export async function create(shell, onProgress) {
     if (was && !pads.hidden) rest();
     hint.hidden = !(game.state === "ready" || (game.state === "play" && game.lastFrame < SHOW_HINT));
     hint.textContent = coarse?.matches ? "Slide on the left to fly ← → · tap the right to flap" : "← → to fly · Space to flap";
+    // which Golbat is yours (the four look the same)
+    over.copy(game.golbats[shell.me()].model.root.position).y += HEAD;
+    mark.place((game.state === "play" || game.state === "over") && view, over);
   }
 
   api.idle();

@@ -8,6 +8,7 @@ import * as THREE from "three";
 import { loadAssets } from "./assets.js";
 import { Game, CAMERA } from "./game.js";
 import * as R from "./rules.js";
+import { meMark } from "../mark.js";
 
 export const SOUNDS = {
   url: "assets/rollout/sound.bin",
@@ -30,6 +31,7 @@ const DEAD = 14; // px a finger moves before it's a direction
 // the track's outer corners and the frame's top (what the view must show)
 const TRACK = [340, 60, 285];
 const COLOUR_NAMES = ["blue", "green", "red", "yellow"];
+const HEAD = 78; // the arrow over your Donphan (55 tall; the camera's steep, so a little more)
 
 export async function create(shell, onProgress) {
   const assets = await loadAssets("assets/rollout/", onProgress);
@@ -60,6 +62,7 @@ export async function create(shell, onProgress) {
   const lapEl = hud.querySelector(".rr-lap"), lapNum = lapEl.querySelector("b"), gear = lapEl.querySelector(".rr-gear"), finalEl = lapEl.querySelector(".rr-final");
   const hint = hud.querySelector(".rr-hint"), pads = hud.querySelector(".rr-pads"), stickEl = hud.querySelector(".rr-stick"),
     knob = hud.querySelector(".rr-knob"), aEl = hud.querySelector(".rr-a");
+  const mark = meMark(hud, shell.me), over = new THREE.Vector3();
 
   // ---- sounds and the like, from the game ----
   const mine = (z) => z === shell.me();
@@ -293,6 +296,9 @@ export async function create(shell, onProgress) {
     if (lapNum.textContent !== String(left)) lapNum.textContent = left;
     hint.hidden = !(game.state === "ready" || (game.state === "play" && game.lastFrame < SHOW_HINT));
     hint.textContent = coarse?.matches ? "Slide a finger to turn · A: a dust cloud" : "Arrows to turn · Space: a dust cloud";
+    // which Donphan is yours (the four look the same); (the views' getter moves the camera to now first)
+    over.copy(game.donphan[shell.me()].root.position).y += HEAD;
+    mark.place((game.state === "play" || game.state === "over") && api.views[0], over);
   }
 
   // the field of view (degrees) that shows the whole track from the camera

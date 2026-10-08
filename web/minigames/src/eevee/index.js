@@ -8,6 +8,7 @@ import { Game } from "./game.js";
 import { Fx } from "./fx.js";
 import { buildField } from "./field.js";
 import * as R from "./rules.js";
+import { meMark } from "../mark.js";
 
 export const SOUNDS = {
   url: "assets/eevee/sound.bin",
@@ -52,11 +53,10 @@ export async function create(shell, onProgress) {
   // ---- its HUD ----
   const hud = document.createElement("div");
   hud.className = "game-hud ee";
-  hud.innerHTML = `<img class="ee-round" alt="" hidden><i class="ee-me" hidden><svg viewBox="0 0 22 17" aria-hidden="true">
-      <path d="M2 3.5h18l-9 12z" fill="rgba(0,0,0,0.45)"/><path class="fill" d="M2 2h18l-9 12z" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg></i>
+  hud.innerHTML = `<img class="ee-round" alt="" hidden>
     <div class="ee-pads"><div class="pad ee-feint" data-pad="b">Feint</div><div class="pad ee-dash" data-pad="a">Dash</div></div>`;
   shell.hud.append(hud);
-  const roundBanner = hud.querySelector(".ee-round"), meMark = hud.querySelector(".ee-me");
+  const roundBanner = hud.querySelector(".ee-round"), mark = meMark(hud, shell.me);
   const pads = { a: hud.querySelector(".ee-dash"), b: hud.querySelector(".ee-feint") };
   const prizeRows = [0, 1, 2, 3].map(() => {
     const d = hud.appendChild(document.createElement("div"));
@@ -281,14 +281,8 @@ export async function create(shell, onProgress) {
     }
     pads.a.parentElement.hidden = game.state !== "play";
     // which Eevee is yours (the remake's: the game's Eevee all look the same)
-    meMark.hidden = !playing || !view;
-    if (!meMark.hidden) {
-      const e = game.eevees[shell.me()].m.root.position;
-      tmp.set(e.x, 62, e.z).project(view.cam);
-      // (its tip, at 11, 15 of its 22 x 17, on the spot)
-      meMark.style.transform = `translate3d(${((tmp.x + 1) / 2) * view.w - 11}px, ${((1 - tmp.y) / 2) * view.h - 15}px, 0)`;
-      meMark.style.setProperty("--c", ["#2f5de0", "#23a043", "#dc3030", "#e8a412"][shell.me()]);
-    }
+    const e = game.eevees[shell.me()].m.root.position;
+    mark.place(playing && view, tmp.set(e.x, 62, e.z));
   }
 
   api.idle();

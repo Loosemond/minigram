@@ -63,7 +63,14 @@ lobby, the players' cards and the renderer. A game is a module
 (`src/<game>/index.js`, listed in `src/games.js` with its name, banner,
 instructions and colour) with its own scene, cameras, controls, bits of HUD,
 sounds (`assets/<game>/sound.bin`) and online messages; the shell gives it the
-taps and keys while a round is on, and passes on its messages.
+taps and keys while a round is on, and passes on its messages. A small arrow
+in your colour marks your player through the play (the remake's,
+`src/mark.js`: the four mostly look the same), over its head, or under its
+feet where things come at it from above (Egg Emergency, Clear Cut Challenge,
+Barrier Ball); in Furret's Frolic and Delibird's Delivery it sits over the
+game's own 1P-4P and COM label (small on a phone), and is gone with it in the
+end's show. Pichu's Power Plant has none: the top Electrode pops out just over
+each Pichu's head, and each has its own room and card.
 
 ## Egg Emergency
 
@@ -289,7 +296,7 @@ looks from the game's angle, further back, with the ring across the screen
 (from more above, the Eevee looked squashed), so the forest goes on round the
 front of the clearing and Aipom's rope goes on up out of sight (in the game it
 ends just above the screen). A small arrow in your colour marks
-your Eevee (the game's four look the same).
+your Eevee, as in the other games (the game's four look the same).
 
 **Sound**: the game's (`assets/eevee/sound.bin`, 350 KB): song 54 as Aipom
 calls each round (song 101, the same 40 beats a minute faster, for the final

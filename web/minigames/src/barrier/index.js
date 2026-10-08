@@ -8,6 +8,7 @@ import * as THREE from "three";
 import { loadAssets } from "./assets.js";
 import { Game, CAMERA } from "./game.js";
 import { SEATS } from "./rules.js";
+import { meMark } from "../mark.js";
 
 export const SOUNDS = {
   url: "assets/barrier/sound.bin",
@@ -38,6 +39,9 @@ const SHOW_HINT = 90; // frames of the play the hint stays for, after the countd
 // a finger slides Mr. Mime half as far as it goes (its whole lane is only
 // about 70 px across a phone: this makes it 140)
 const GAIN = 0.5;
+// the arrow at your Mr. Mime: from behind it (this far, towards its goal),
+// pointing up at it; over it is its barrier, where the balls come
+const BEHIND = 35;
 
 export async function create(shell, onProgress) {
   const assets = await loadAssets("assets/barrier/", onProgress);
@@ -62,6 +66,7 @@ export async function create(shell, onProgress) {
   shell.hud.append(hud);
   const timeEl = hud.querySelector(".bb-time"), timeNum = timeEl.querySelector("b");
   const hint = hud.querySelector(".bb-hint"), pads = hud.querySelector(".bb-pads"), smashEl = hud.querySelector(".bb-smash");
+  const mark = meMark(hud, shell.me, { below: true }), spot = new THREE.Vector3();
 
   // ---- sounds and the like, from the game ----
   const mine = (z) => z === shell.me();
@@ -285,6 +290,9 @@ export async function create(shell, onProgress) {
     timeEl.classList.toggle("low", game.state === "play" && s <= 10);
     hint.hidden = !(game.state === "ready" || (game.state === "play" && game.lastFrame < SHOW_HINT));
     hint.textContent = coarse?.matches ? "Slide a finger to move · A to smash" : "Mouse or ← → to move · click or Space to smash";
+    // which Mr. Mime is yours (the four look the same; yours is at the bottom)
+    const m = game.mimes[shell.me()].root.position, n = SEATS[shell.me()].n;
+    mark.place((game.state === "play" || game.state === "over") && view, spot.set(m.x - n[0] * BEHIND, m.y - n[1] * BEHIND, 0));
   }
 
   api.idle();

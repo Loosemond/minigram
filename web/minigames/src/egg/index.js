@@ -6,6 +6,7 @@ import { loadAssets } from "./assets.js";
 import { Game, zoneX, ZONE_W, VIEW_TOP, VIEW_BOTTOM, BACKDROP, PX } from "./game.js";
 import { buildStage } from "./stage.js";
 import { Effects } from "./fx.js";
+import { meMark } from "../mark.js";
 
 // Sounds (docs/audio.md): what each is in tools/web_assets.py
 export const SOUNDS = {
@@ -16,6 +17,10 @@ export const SOUNDS = {
     splash: (tone, noise) => noise(0, 0.3, { vol: 0.25, freq: 500 }),
   },
 };
+
+// the arrow at your Chansey: under its feet, pointing up (over its head is
+// where the eggs come down, and where it holds up the one it's caught)
+const FEET = -0.03;
 
 // Landscape: one camera on all four players, like the game. Portrait: your
 // Chansey fills the screen (with whatever of your neighbours is in the
@@ -41,6 +46,7 @@ export async function create(shell, onProgress) {
     <div id="pads"><div class="pad" id="padL">L</div><div class="pad" id="padR">R</div></div>`;
   shell.hud.append(hud);
   const left = hud.querySelector("#left"), padL = hud.querySelector("#padL"), padR = hud.querySelector("#padR");
+  const mark = meMark(hud, shell.me, { below: true }), under = new THREE.Vector3();
 
   const mine = (p) => p.i === shell.me() && !shell.catchingUp();
   game.on("catch", (p) => { shell.flash(p.i, "bump"); if (mine(p)) { shell.sound("catch", p.i); shell.haptic("light"); } });
@@ -135,6 +141,9 @@ export async function create(shell, onProgress) {
       const l = lean();
       padL.classList.toggle("on", playing && l < 0);
       padR.classList.toggle("on", playing && l > 0);
+      // which Chansey is yours (the four look the same): in the big view
+      const on = game.state === "play" || game.state === "over";
+      mark.place(on && views[0], under.copy(game.players[shell.me()].ch.root.position).setY(FEET));
     },
     remote(t, m) {
       if (t === "lean") game.remoteLean(m.s, m.g, m.l);

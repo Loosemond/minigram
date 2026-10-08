@@ -11,6 +11,7 @@ import * as THREE from "three";
 import { loadAssets } from "./assets.js";
 import { Game, CAMERA } from "./game.js";
 import * as R from "./rules.js";
+import { meMark } from "../mark.js";
 
 export const SOUNDS = {
   url: "assets/furret/sound.bin",
@@ -31,6 +32,9 @@ for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) FIT.push([x * 700, 0,
 for (const [x, z] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) FIT.push([x * 950, 760, z * 950]);
 // the D-pad's ways on the screen, and the spots they hop to with the game's view (right, down, up, left)
 const WAYS = { r: [1, 0], d: [0, 1], u: [0, -1], l: [-1, 0] };
+// the arrow over your Furret: over the game's label (48 tall, 180 over its
+// tail's tip; small on a phone), clear of it, and gone with it in the end's show
+const OVER_LABEL = 40;
 
 export async function create(shell, onProgress) {
   const assets = await loadAssets("assets/furret/", onProgress);
@@ -60,6 +64,7 @@ export async function create(shell, onProgress) {
   const timeEl = hud.querySelector(".fu-time"), timeNum = timeEl.querySelector("b");
   const hint = hud.querySelector(".fu-hint"), pads = hud.querySelector(".fu-pads"), dpad = hud.querySelector(".fu-dpad"),
     aEl = hud.querySelector(".fu-a");
+  const mark = meMark(hud, shell.me), over = new THREE.Vector3();
 
   // ---- sounds and the like, from the game ----
   const mine = (z) => z === shell.me();
@@ -276,6 +281,10 @@ export async function create(shell, onProgress) {
     timeEl.classList.toggle("low", game.state === "play" && s <= 10);
     hint.hidden = !(game.state === "ready" || (game.state === "play" && game.lastFrame < SHOW_HINT));
     hint.textContent = coarse?.matches ? "Slide to hop into the grass · A: swing your tail" : "Arrows: hop into the grass · Space: swing your tail";
+    // which Furret is yours (the four look the same)
+    const label = game.furret[shell.me()].label;
+    over.copy(label.position).y += OVER_LABEL;
+    mark.place((game.state === "play" || game.state === "over") && label.visible && view, over);
   }
 
   // the points the view must show (the same a quarter turn round)

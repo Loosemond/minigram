@@ -8,6 +8,7 @@ import * as THREE from "three";
 import { loadAssets } from "./assets.js";
 import { Game, CAMERA } from "./game.js";
 import * as R from "./rules.js";
+import { meMark } from "../mark.js";
 
 export const SOUNDS = {
   url: "assets/topsy/sound.bin",
@@ -30,6 +31,9 @@ const DEAD = 8; // px a finger moves before it pushes
 const FULL = 56; // and how far for a full push
 // what the view must show: the ring's rim (and the Hitmontop on it), all round
 const RIM = R.RIM + 150;
+// the arrow over your Hitmontop: from its middle (255 up it, as it leans) this
+// far straight up (its feet, spinning on its head, are 510 up it)
+const MIDDLE = 255, HEAD = 285;
 
 export async function create(shell, onProgress) {
   const assets = await loadAssets("assets/topsy/", onProgress);
@@ -58,6 +62,7 @@ export async function create(shell, onProgress) {
   const points = [...hud.querySelectorAll(".tt-points")];
   const hint = hud.querySelector(".tt-hint"), pads = hud.querySelector(".tt-pads"), stickEl = hud.querySelector(".tt-stick"),
     knob = hud.querySelector(".tt-knob"), aEl = hud.querySelector(".tt-a");
+  const mark = meMark(hud, shell.me), over = new THREE.Vector3();
 
   // ---- sounds and the like, from the game ----
   const mine = (z) => z === shell.me();
@@ -285,6 +290,10 @@ export async function create(shell, onProgress) {
     }
     hint.hidden = !(game.state === "ready" || (game.state === "play" && game.lastFrame < SHOW_HINT));
     hint.textContent = coarse?.matches ? "Slide a finger to push · A: RAPID SPIN" : "Arrows to push · Space: RAPID SPIN";
+    // which Hitmontop is yours (the four look the same), knocked out onto the floor too
+    const top = game.tops[shell.me()];
+    over.set(0, MIDDLE, 0).applyQuaternion(top.posture).add(top.model.root.position).y += HEAD;
+    mark.place(showing && view, over);
   }
 
   // the rim, all round (and as high as a Hitmontop on it)

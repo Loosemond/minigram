@@ -8,6 +8,7 @@ import * as THREE from "three";
 import { loadAssets } from "./assets.js";
 import { Game, CAMERA, COLOURS } from "./game.js";
 import * as R from "./rules.js";
+import { meMark } from "../mark.js";
 
 export const SOUNDS = {
   url: "assets/delibird/sound.bin",
@@ -40,6 +41,11 @@ for (const x of [-195, 195]) {
 const FLASH = ["#508cc8", "#64aa00", "#dc50a0", "#f0aa00"];
 const POP = [0.58, 0.626666, 0.673333, 0.72, 0.696666, 0.673333, 0.65, 0.626666, 0.603333]; // (its pulse: 0x86A0F344)
 const GROW = [0.283333, 0.566666, 0.85]; // (and the x2's: 0x86A0F390)
+// the arrow over your Delibird: from the middle of the game's label (18 tall,
+// small on a phone), over it and over the FULL that shows above it when the
+// sack's full (to 26.5 over the label's middle); riding with the label as it
+// hops, and gone with it in the end's show
+const OVER_LABEL = 30;
 
 export async function create(shell, onProgress) {
   const assets = await loadAssets("assets/delibird/", onProgress);
@@ -71,6 +77,7 @@ export async function create(shell, onProgress) {
   const combos = [...hud.querySelectorAll(".dd-combo")], tallyEl = hud.querySelector(".dd-tally");
   const rows = [...hud.querySelectorAll(".dd-row")], hint = hud.querySelector(".dd-hint"), pads = hud.querySelector(".dd-pads");
   const stickEl = hud.querySelector(".dd-stick"), knob = hud.querySelector(".dd-knob");
+  const mark = meMark(hud, shell.me), over = new THREE.Vector3();
 
   // ---- sounds and the like, from the game ----
   const mine = (z) => z === shell.me();
@@ -305,6 +312,10 @@ export async function create(shell, onProgress) {
         r.style.setProperty("--c", "#" + COLOURS[z].toString(16).padStart(6, "0"));
       });
     } else shownTally.fill(-1);
+    // which Delibird is yours (the four look the same)
+    const label = game.birds[shell.me()].label;
+    over.copy(label.position).y += OVER_LABEL;
+    mark.place((game.state === "play" || game.state === "over") && label.visible && view, over);
   }
 
   // the field of view (degrees) that shows the FIT points from the camera

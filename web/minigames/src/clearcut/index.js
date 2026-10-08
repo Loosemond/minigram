@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { loadAssets } from "./assets.js";
 import { Game, LANE, onLayer } from "./game.js";
 import * as R from "./rules.js";
+import { meMark } from "../mark.js";
 
 export const SOUNDS = {
   url: "assets/clearcut/sound.bin",
@@ -22,6 +23,9 @@ export const SOUNDS = {
 const CAM = { fov: 45, y: 110, z: 760, aspect: 4 / 3 };
 const BACK_Z = -80; // the picture, as a plane just behind the logs (its fence row is the ground)
 const T45 = Math.tan(THREE.MathUtils.degToRad(CAM.fov / 2));
+// the arrow at your Scyther: under its feet, pointing up (over it is where
+// its log comes down, and is cut)
+const FEET = -4;
 
 export async function create(shell, onProgress) {
   const assets = await loadAssets("assets/clearcut/", onProgress);
@@ -43,6 +47,7 @@ export async function create(shell, onProgress) {
   const screen = hud.querySelector(".cc-screen"), sign = hud.querySelector(".cc-sign");
   const popups = [0, 1, 2, 3].map(() => { const d = document.createElement("div"); d.className = "cc-points"; d.hidden = true; hud.append(d); return d; });
   const flashes = [0, 1, 2, 3].map(() => { const d = document.createElement("img"); d.className = "cc-flash"; d.src = "assets/clearcut/flash.png"; d.hidden = true; hud.append(d); return d; });
+  const mark = meMark(hud, shell.me, { below: true }), under = new THREE.Vector3();
 
   // ---- sounds and the like, from the round ----
   // The crowd's sounds go on until they're stopped (their scripts repeat one
@@ -153,7 +158,13 @@ export async function create(shell, onProgress) {
     score(i) { return game.players[i].shown; },
     setScores(scores) { scores.forEach((e, i) => { game.players[i].total = game.players[i].shown = e; }); },
     celebrate() { return game.celebrate(); },
-    hud() { drawSign(); drawPoints(); },
+    hud() {
+      drawSign();
+      drawPoints();
+      // which Scyther is yours (the four look the same): in the big view
+      const on = game.state === "play" || game.state === "over";
+      mark.place(on && views[0], under.copy(game.lanes[shell.me()].scyther.root.position).setY(FEET));
+    },
     remote(t, m) { if (t === "cut") game.told(m.s, m.n, { f: m.f, p: m.p, e: m.e, a: !!m.a }); },
 
     // A: a tap anywhere, or Space

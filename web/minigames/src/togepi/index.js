@@ -7,6 +7,7 @@ import * as THREE from "three";
 import { loadAssets } from "./assets.js";
 import { Game, LANE_X, BELT, eyeOf } from "./game.js";
 import * as R from "./rules.js";
+import { meMark } from "../mark.js";
 
 export const SOUNDS = {
   url: "assets/togepi/sound.bin",
@@ -33,6 +34,7 @@ const CARD = { y: 80, z: 600 };
 const STEER = { k: 3, step: 15, dead: 5 };
 const UI = "assets/ui/";
 const COLOUR_NAMES = ["blue", "green", "red", "yellow"];
+const HEAD = 125; // the arrow over your Togepi (113 tall)
 
 export async function create(shell, onProgress) {
   const assets = await loadAssets("assets/togepi/", onProgress);
@@ -53,6 +55,7 @@ export async function create(shell, onProgress) {
   hud.innerHTML = `<div class="tg-hint" hidden>Hold to run · steer with your finger</div>`;
   shell.hud.append(hud);
   const hint = hud.querySelector(".tg-hint");
+  const mark = meMark(hud, shell.me), over = new THREE.Vector3();
 
   // ---- sounds and the like, from the game ----
   const mine = (z) => z === shell.me();
@@ -270,6 +273,9 @@ export async function create(shell, onProgress) {
   function drawHud(on) {
     hud.classList.toggle("off", !on);
     if (mode === "full" && views[0]) aimFull(fullCam, views[0], game.camera());
+    // which Togepi is yours (the four look the same): in the game's view, or on your belt
+    over.copy(game.lanesView[shell.me()].togepi.root.position).y += HEAD;
+    mark.place((game.state === "play" || game.state === "over") && views[0], over);
     if (touch) stick(); // (the Togepi moves: the stick from the finger again)
     hint.hidden = !(game.state === "ready" || (game.state === "play" && game.lastFrame < 90));
     hint.textContent = mode === "full" && !coarse?.matches ? "Hold ↓ to run · ← → to steer (or hold the mouse)" : "Hold to run · steer with your finger";

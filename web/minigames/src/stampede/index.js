@@ -6,6 +6,7 @@ import * as THREE from "three";
 import { loadAssets } from "./assets.js";
 import { Game, BOOTH_X } from "./game.js";
 import * as R from "./rules.js";
+import { meMark } from "../mark.js";
 
 export const SOUNDS = {
   url: "assets/stampede/sound.bin",
@@ -45,6 +46,7 @@ const BOXES = { 1: [134], 2: [95, 173], 3: [56, 134, 212] };
 // the answer's panel (made for the remake, lower and smaller than the question's,
 // so the counts on the booths stay in sight): its top, and its words' and digits' rows
 const TELL = { words: 16, answer: 60 }; // (its rows, down from its top)
+const HEAD = 62; // the arrow over your Cleffa or Igglybuff (about 55 tall), in its booth
 
 export async function create(shell, onProgress) {
   const assets = await loadAssets("assets/stampede/", onProgress);
@@ -104,6 +106,7 @@ export async function create(shell, onProgress) {
   const screen = hud.querySelector(".ss-screen"), board = hud.querySelector(".ss-board");
   const ask = board.querySelector(".ask"), tell = board.querySelector(".tell");
   const lets = hud.querySelector(".ss-lets"), stop = hud.querySelector(".ss-stop"), pad = hud.querySelector(".ss-count");
+  const mark = meMark(hud, shell.me), over = new THREE.Vector3();
   const countBoxes = [0, 1, 2, 3].map(() => {
     const d = hud.querySelector(".ss-counts").appendChild(document.createElement("div"));
     d.hidden = true;
@@ -279,6 +282,9 @@ export async function create(shell, onProgress) {
     hud.classList.toggle("off", !on);
     const playing = game.state === "play" || game.state === "over";
     if (view) { aim(view, game.camK); }
+    // which booth is yours (Cleffa and Igglybuff, two each): over its player, rising with it
+    game.booths[shell.me()].holder.getWorldPosition(over).y += HEAD;
+    mark.place(playing && view, over);
     if (!playing) {
       board.hidden = lets.hidden = stop.hidden = true;
       for (const d of countBoxes) d.hidden = true;
