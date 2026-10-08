@@ -203,7 +203,26 @@ alpha alike: dark is clear. Battle effects and arenas are decoded that way
 (`intensity_alpha`), but an object's glTF still decodes them opaque, so an
 effect whose alpha comes from an I texture bakes into a box: white or dark,
 or a flat colour at its prim's alpha. Among the minigames' objects: the
-sparks and flashes (199, 200), the RAPID SPIN rings (195-198), the halo under
-the dizzy stars (190, `cb00`) and Mr. Mime's barrier (141). The web remake
-draws Topsy-Turvy's from their recipes (`tools/web_assets.py` writes them
-with `arena.combiner_spec`; [minigames.md](minigames.md#topsy-turvy)).
+sparks and flashes (199, 200), the RAPID SPIN rings (195-198), the halos of
+the dizzy stars (190) and Mr. Mime's barrier (141).
+
+**Which callback a draw takes.** A callback only sets the RDP's state, for
+the draws after it in its own render layer. Each is queued right after an
+empty draw in its layer (geo `22 0L 00000000`, then `08`), and the layers are
+drawn one after another, so a draw takes its layer's callback. The glTF
+instead gives an untextured draw with no callback of its own the last
+callback in the extractor's order. Where layers interleave that's another
+layer's: the dizzy stars' second and third halos (layer 6) get the stars'
+callback (layer 8), with its picture and its tile's texture coordinates.
+
+**In the web remake**, `tools/web_assets.py` (`fx_recipes`) writes each
+effect's recipes with `arena.combiner_spec` to its game's `fx.json`. It also
+writes the recipe each glTF primitive takes (by its layer), and what to scale
+its texture coordinates by when the glTF has them by another callback's tile.
+`web/minigames/src/n64fx.js` draws them through the combiner as a shader:
+Topsy-Turvy's sparks and rings, Mr. Mime's barrier and the dizzy stars
+(Clear Cut Challenge, Pichu's Power Plant). It also draws the glows Topsy-Turvy
+and Barrier Ball draw from bank 151 through combiners of their own
+([minigames.md](minigames.md#topsy-turvy)). The shade is the vertex colour,
+or white on a lit draw (its lighting isn't modelled), as `ps2tool/combiner.py`
+takes it.

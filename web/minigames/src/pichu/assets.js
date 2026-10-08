@@ -1,14 +1,16 @@
 // Loads Pichu's Power Plant's files (tools/web_assets.py puts them in
 // assets/pichu/): the power plant's frame (object 56: the four rooms and the
 // B/A sign), the Electrode lamps (57), Pichu (107) with its faces, the dizzy
-// stars (190), and the sparks' and the lightning's pictures (image banks 224
-// and 225, a strip each). The gauges' pictures are loaded by the page.
+// stars (190, drawn through the game's colour combiner: fx.json, src/n64fx.js),
+// and the sparks' and the lightning's pictures (image banks 224 and 225, a
+// strip each). The gauges' pictures are loaded by the page.
 // Lighting is done on the textures' display values, as the N64 does (see
 // src/egg/assets.js, docs/colours.md).
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { retry, attemptURL, fetchRetry } from "../retry.js";
+import { loadFx, tagPrims } from "../n64fx.js";
 
 const FPS = 30; // the game's animation rate
 const GLB = 100; // the exported models are in hundredths of the game's units
@@ -65,14 +67,16 @@ export async function loadAssets(base, onProgress = () => {}) {
   let done = 0;
   const job = (p) => { jobs.push(p); return p.then((x) => { onProgress(++done / jobs.length); return x; }); };
   const names = Object.keys(MODELS);
-  const [models, info, strips] = await Promise.all([
+  const [models, info, strips, fx] = await Promise.all([
     Promise.all(names.map((m) => job(gltf(base + m + ".glb")))),
     job(fetchRetry(base + "pichu.json").then((r) => r.json())),
     Promise.all(["spark", "bolt"].map((s) => job(texture(base + s + ".png")))),
+    loadFx(base, job),
   ]);
-  const out = { spark: strips[0], bolt: strips[1] };
+  const out = { spark: strips[0], bolt: strips[1], fx };
   await Promise.all(names.map(async (name, i) => {
     const g = models[i];
+    tagPrims(g);
     prepare(g.scene);
     let like = null;
     g.scene.traverse((o) => { if (o.isMesh && o.material.userData.ps2_face) like = o.material.map; });

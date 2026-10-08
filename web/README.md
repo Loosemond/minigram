@@ -175,7 +175,9 @@ Chansey's clip map, `src/egg/assets.js` loads the models and pictures,
 controls and its HUD. Shared: `src/audio.js` the sounds (`src/n64audio.js` the
 engine that plays them), `src/telegram.js` the Telegram glue, `src/net.js` the
 connection to the rooms server, `src/retry.js` tries failed loads again,
-`src/config.js` the online settings.
+`src/config.js` the online settings, `src/n64fx.js` the game's colour combiner
+for effects the glTF can't hold (each game's `fx.json`, from the ROM: the
+sparks, rings, glows, Mr. Mime's barrier and the dizzy stars).
 
 ## Clear Cut Challenge
 
@@ -240,7 +242,7 @@ What comes from the ROM and what is made up:
 | From the game | Made for the remake |
 |---|---|
 | the rules, the timings, the scoring, the deal and the CPUs (module #53's code) | the timeline between logs, fixed (the game's varies a little, e.g. it waits for every Scyther to be ready before a drop) so every device agrees |
-| Scyther (object 122), its clips and what follows each, the signpost (59), the log (the module's own), Spinarak (image bank 397) and its thread, the stars over the losers (190) | the streak of light at the cut (the game shows objects 130 and 131, whose colours its code sets as it draws them), a perfect cut's flash (bank 398) |
+| Scyther (object 122), its clips and what follows each, the signpost (59), the log (the module's own), Spinarak (image bank 397) and its thread, the stars over the losers (190) and how they're coloured and blended (their combiners) | the streak of light at the cut (the game shows objects 130 and 131, whose colours its code sets as it draws them), a perfect cut's flash (bank 398) |
 | the camera, background picture 15, the lanes, the heights, the sign (bank 399), the cards and digits (434, 404, 429) | how the cut pieces tumble (close to the game's), the portrait layout |
 | songs 18 and 19, the fanfare, the effects (bank 1 of the effect table) | the crowd while a log hangs is started once and stopped 50 frames after the drop (the game asks for it every frame until then), and the crowd stops at the finish (the game's carries on until it leaves the minigame) |
 
@@ -445,7 +447,7 @@ What comes from the ROM and what is made up:
 | From the game | Made for the remake |
 |---|---|
 | the Electrodes' pattern, the presses, hits, misses and shocks, the CPUs, the finish (module #54's code) | the pattern and the CPUs draw from random numbers of their own (in the game the sparks' flicker takes from the same ones), so every device and the server have the same; the round ends 50 frames after the finish |
-| the frame (object 56) and its B/A sign, the Electrode lamps (57) and their faces, Pichu (107) and its clips and faces, the dizzy stars (190), the sparks and the lightning (banks 224, 225, coloured as the game draws them), the gauges (banks 409, 410), the camera and its glide | Pichu in every seat (the game's Pikachu comes from a Game Pak), the sparks shown a few frames after each hit, the lightning drawn brighter (it's thin and faint at its size), the stars' place, the portrait screen, the title's art (the frame drawn flat), the badges' intro (not played), the D-pad and the buttons |
+| the frame (object 56) and its B/A sign, the Electrode lamps (57) and their faces, Pichu (107) and its clips and faces, the dizzy stars (190) and how they're coloured and blended (their combiners), the sparks and the lightning (banks 224, 225, coloured as the game draws them), the gauges (banks 409, 410), the camera and its glide | Pichu in every seat (the game's Pikachu comes from a Game Pak), the sparks shown a few frames after each hit, the lightning drawn brighter (it's thin and faint at its size), the stars' place, the portrait screen, the title's art (the frame drawn flat), the badges' intro (not played), the D-pad and the buttons |
 | song 21, the effects of bank 2 | |
 
 Code: `src/pichu/rules.js` has the rules (and `tools/pichu_rules.py`, the
@@ -617,8 +619,8 @@ What comes from the ROM and what is made up:
 
 | From the game | Made for the remake |
 |---|---|
-| the court, the balls (their coming, spin and serve, curl, bounces and speed), the barriers and smashes, the scoring, the clock, the CPUs, the tune's hurry (module #51's code) | the view turned to your corner, the countdown's 2.65 s (miming, then the barrier going up), how a glow and its trail look (their size and fade, by eye), the winners' dance's length |
-| Mr. Mime (218, 129) and their clips, the barrier (141), the court (120), the Poké Ball (154), the glow (151), the badges (434), the camera | the touch slide and A button (the menus' A, bank 51), the mouse, the title's art (the court, flat) |
+| the court, the balls (their coming, spin and serve, curl, bounces and speed), the barriers and smashes, the scoring, the clock, the CPUs, the tune's hurry (module #51's code) | the view turned to your corner, the countdown's 2.65 s (miming, then the barrier going up), the trail's copies (where and how often: by eye), the barrier's colour track and scroll run at 30 frames a second, the winners' dance's length |
+| Mr. Mime (218, 129) and their clips, the barrier (141), the court (120), the Poké Ball (154), the glow (151) and its size, how the barrier, the glow and its trail are coloured and blended (their combiners, colours and fade), the badges (434), the camera | the touch slide and A button (the menus' A, bank 51), the mouse, the title's art (the court, flat) |
 | song 35, bank 6's effects, the count | |
 
 Code: `src/barrier/rules.js` has the world (and `tools/barrier_rules.py`, the

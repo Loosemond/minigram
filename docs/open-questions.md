@@ -22,10 +22,11 @@ What isn't known yet, roughly by how useful it would be.
   object 146 (loaded by module #51, but nothing found draws it); two geo
   layouts in the module that nothing points to (`0x86307088`: a 120 × 60
   quad that flashes red with a smash; `0x86307158`: a big triangle with image
-  bank 147's star); how big a ball's glow and trail are drawn (bank 151 on
-  `0x87F08E3C`'s quad, which is the image's size in units, centred: what
-  scale the module gives it isn't read); and the countdown's length
-  (`0x87F00688`).
+  bank 147's star); the trail's colour (its combiner takes K5, the convert
+  constant, which nothing seems to set: the remake takes it as 0, so env's
+  colour); the barrier panel's shade (its recipe takes the lit vertex's
+  colour, which the remake takes as white: the battle lighting below); and
+  the countdown's length (`0x87F00688`).
 - **Rampage Rollout's loose ends** (its rules are read: [minigames.md](minigames.md#rampage-rollout)):
   image bank 343 (Gutsy Golbat's glow: loaded by module #52, but nothing
   found draws it); the Donphan that run in from by the camera before the
@@ -87,8 +88,10 @@ What isn't known yet, roughly by how useful it would be.
   the game's frame rate (30 a second is assumed: the scheduler's retrace
   count wasn't traced), how objects 130 and 131 (the cut's effects) are
   coloured as they're drawn, exactly how the cut pieces tumble and the show's
-  timings between logs (the remake fixes them), and what the object at `0x8650E6E0`
-  (scale 0.095, at height 55) is.
+  timings between logs (the remake fixes them), what the object at `0x8650E6E0`
+  (scale 0.095, at height 55) is, and how the dizzy stars' fade-in (5/255 a
+  frame) reaches their material callbacks (mode 4 of `0x810024E0` is passed a
+  byte of the model's: `0x810034C0`): the remake fades them whole.
 - **Battle lighting:** the ambient and directional lights (directions,
   colours) the battle scene loads for lit models. With them, Blender could
   match the game's shading, not just its texture colours

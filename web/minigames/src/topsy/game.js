@@ -14,7 +14,8 @@
 // in (the Hitmontop eased to where they really are). The server runs the same
 // world and says how it ended (told("won")).
 import * as THREE from "three";
-import { makeModel, combiner, dress } from "./assets.js";
+import { makeModel } from "./assets.js";
+import { combiner, dress } from "../n64fx.js";
 import * as R from "./rules.js";
 import { leadFor } from "../lag.js";
 
@@ -90,10 +91,10 @@ export class Game {
       v.shadow.model.traverse((o) => {
         if (o.isMesh) o.material = new THREE.MeshBasicMaterial({ color: 0, alphaMap: o.material.map, transparent: true, depthWrite: false });
       });
-      v.ringMats = dress(assets, v.ring, assets.fx[`ring${z}`]);
+      v.ringMats = dress(assets.fx, v.ring.model, `ring${z}`);
       v.trail = [];
       const glow = (size, order) => {
-        const s = new THREE.Sprite(combiner(assets, GLOW_SPEC, { sprite: true, flipY: true }));
+        const s = new THREE.Sprite(combiner(assets.fx, GLOW_SPEC, { sprite: true, flipY: true }));
         s.scale.set(size, size, 1);
         s.renderOrder = order;
         s.visible = false;
@@ -110,8 +111,8 @@ export class Game {
     // where they bumped, and 200 with a RAPID SPIN, a flash; facing the camera (their joints' flag 2)
     this.sparks = PAIRS.map(() => {
       const s = { spark: makeModel(assets.spark, SPARK_SCALE), flash: makeModel(assets.flash, SPARK_SCALE), t: 0, flashT: 0, at: new THREE.Vector3() };
-      s.sparkMats = dress(assets, s.spark, assets.fx.spark);
-      s.flashMats = dress(assets, s.flash, assets.fx.flash);
+      s.sparkMats = dress(assets.fx, s.spark.model, "spark");
+      s.flashMats = dress(assets.fx, s.flash.model, "flash");
       for (const m of [s.spark, s.flash]) { m.root.renderOrder = 4; m.root.visible = false; add(m.root); }
       return s;
     });

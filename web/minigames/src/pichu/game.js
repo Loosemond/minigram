@@ -13,6 +13,7 @@
 // (told("won")): until then the finish here is the one the presses so far make.
 import * as THREE from "three";
 import { makeModel, makeStrip } from "./assets.js";
+import { dress } from "../n64fx.js";
 import * as R from "./rules.js";
 
 // the Pichus (0x86606DD4), 0.7x, facing the camera
@@ -94,6 +95,7 @@ export class Game {
       const stars = makeModel(assets.stars, STARS.scale);
       stars.root.position.set(x, y + STARS.y, PICHU_Z);
       stars.root.visible = false;
+      dress(assets.fx, stars.root, "stars"); // (its halos and stars, each its layer's recipe: 190's callbacks)
       scene.add(model.root, spark, bolt, stars.root);
       return { i, model, spark, bolt, stars };
     });

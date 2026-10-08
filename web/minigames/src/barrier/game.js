@@ -14,6 +14,7 @@
 // server runs the same world and says how it ended (told("won")).
 import * as THREE from "three";
 import { makeModel, piece, COURT_PIECES } from "./assets.js";
+import { combiner, dress } from "../n64fx.js";
 import * as R from "./rules.js";
 import { leadFor } from "../lag.js";
 
@@ -35,13 +36,28 @@ const LOSE_RATE = 0x28 / 0x40;
 const SMASH_POSE = 25; // steps of a smash in its clip (then back to standing: 0x863013C8)
 // the countdown's frames (main.js's 2.65 s): miming, then the barrier going up as GO comes
 const INTRO = 80, UP_LEN = 39;
-// a ball's glow, in its last hitter's colour (grey for nobody: 0x86306FB8),
-// and its trail (8 steps: 0x8630421C); a smashed ball flashes white, then in
-// its hitter's colour, fading over 60 steps (0x863063C0)
+// a ball's glow, in its last hitter's colours (grey for nobody: 0x86306FB8, 8
+// bytes each, prim then env), and its trail (8 steps: 0x8630421C); a smashed
+// ball flashes white, then in its hitter's colour, fading over 60 steps (0x863063C0)
 const GLOW_COLOURS = [0xc8c8c8, 0x6987ff, 0x55eb55, 0xff6969, 0xfff555];
+const GLOW_PRIM = GLOW_COLOURS.map((c) => new THREE.Color(c));
+const GLOW_ENV = [0xc8c8c8, 0x5569cd, 0x4bc34b, 0xcd5555, 0xcdc34b].map((c) => new THREE.Color(c));
+// how they're drawn: image bank 151 (I8) on a quad (0x87F08E3C) in render
+// layer 9 (geo 0x86306F50, 0x86306F84: ZB_CLD_SURF, blended by its alpha),
+// through G_SETCOMBINE FC309BFF 5FFEFE38 for the glow (0x86303F50: colour env
+// + (prim - env) x its picture, alpha its picture x env's, the glow's own
+// alpha, 0xFF: 0x86304544) and FC371BFF 5FFEFE38 for the trail (0x863040C4:
+// the same with K5 for the picture, which nothing sets: env's colour; alpha
+// 200 x (1 - its age in steps / 7))
+const glowSpec = (mux) => ({ mux, prim: [255, 255, 255, 255], env: [255, 255, 255, 255],
+  textures: [{ file: "glow.png", size: [32, 32], sf: [1, 1], wrap: [2, 2], fmt: 4 }] });
+const GLOW_SPEC = glowSpec([3, 5, 1, 5, 1, 7, 5, 7, 15, 15, 31, 0, 7, 7, 7, 0]);
+const TRAIL_SPEC = glowSpec([3, 5, 14, 5, 1, 7, 5, 7, 15, 15, 31, 0, 7, 7, 7, 0]);
 const FLASH = [0xaaaaff, 0xaaffaa, 0xffaaaa, 0xffffaa].map((c) => new THREE.Color(c));
 const WHITE = new THREE.Color(0xffffff);
-const GLOW = 76; // a glow's size round a full-size ball (bank 151's, 2.6 x the ball: by eye)
+// a glow's size: bank 151's quad, its picture's 32 units (0x87F08E3C), at 2.6 x the ball's scale
+// (0x863043E4: 58 round a full-size ball, 0.7); its trail's 0.8 x that (0x86304318)
+const GLOW = 32 * 2.6;
 const TRAIL_FOR = 8 / (R.STEPS * R.FPS);
 const SNAP = 6; // frames between the world's saved states (for running it again)
 const KEEP = 20 * R.FPS; // and how far back they go
@@ -65,12 +81,12 @@ export class Game {
       const root = add(new THREE.Group());
       const v = { root, play: makeModel(assets.mime, MIME), show: makeModel(assets.mime_show, MIME), bar: makeModel(assets.barrier, MIME) };
       for (const k of ["play", "show", "bar"]) { v[k].model.rotation.x = Math.PI / 2; root.add(v[k].root); }
+      v.barMats = dress(assets.fx, v.bar.model, "barrier"); // (its two layers' recipes: 141's callbacks)
       root.rotation.z = (s.angle * Math.PI) / 180;
       v.phase = Math.random() * 70; // (each mimes on its own beat)
       return v;
     });
     // the balls, their glows and trails, by the world's ids
-    this.glowTex = assets.glow;
     this.balls = new Map();
     this.freeBalls = [];
     this.trails = [];
@@ -366,6 +382,7 @@ export class Game {
       }
       v.show.root.visible = show;
       v.play.root.visible = !show;
+      for (const mat of v.barMats) mat.n64.frame(this.clockS * R.FPS, true); // (its pictures scroll, its glow pulses)
     });
     // the balls
     const seen = new Set();
@@ -383,9 +400,10 @@ export class Game {
         v.model.tint(b.timer < 3 ? WHITE : FLASH[b.owner], 0.7 * k, alpha);
       } else v.model.tint(WHITE, 0, alpha);
       v.glow.position.set(x, y, BALL_Z - 30);
-      v.glow.material.color.set(GLOW_COLOURS[b.owner + 1]);
-      v.glow.material.opacity = 0.7 * alpha;
-      const s = (GLOW * b.scale) / 0.7;
+      const c = GLOW_PRIM[b.owner + 1], e = GLOW_ENV[b.owner + 1];
+      v.glow.material.n64.prim.set(c.r, c.g, c.b, 1);
+      v.glow.material.n64.env.set(e.r, e.g, e.b, 1);
+      const s = GLOW * b.scale;
       v.glow.scale.set(s, s, 1);
       // its trail: where it's been drawn lately
       v.path.push([this.clockS, x, y]);
@@ -395,8 +413,7 @@ export class Game {
           const [at, px, py] = v.path[i], age = (this.clockS - at) / TRAIL_FOR;
           const p = this.trailSprite();
           p.sprite.position.set(px, py, BALL_Z - 31);
-          p.sprite.material.color.set(GLOW_COLOURS[b.owner + 1]);
-          p.sprite.material.opacity = 0.6 * (1 - age) * alpha;
+          p.sprite.material.n64.env.set(e.r, e.g, e.b, (200 / 255) * Math.max(0, 1 - (age * 8) / 7));
           p.sprite.scale.set(s * 0.8, s * 0.8, 1);
         }
       }
@@ -412,7 +429,7 @@ export class Game {
     if (!v) {
       const model = makeModel(this.assets.ball, 1);
       this.scene.add(model.root);
-      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const glow = new THREE.Sprite(combiner(this.assets.fx, GLOW_SPEC, { sprite: true, flipY: true }));
       glow.renderOrder = 1;
       this.scene.add(glow);
       v = { model, glow };
@@ -429,7 +446,7 @@ export class Game {
   trailSprite() {
     let p = this.trails.find((q) => q.used !== this.trailN);
     if (!p) {
-      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const sprite = new THREE.Sprite(combiner(this.assets.fx, TRAIL_SPEC, { sprite: true, flipY: true }));
       sprite.renderOrder = 1;
       this.scene.add(sprite);
       p = { sprite };

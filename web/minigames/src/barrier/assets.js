@@ -2,12 +2,15 @@
 // assets/barrier/): Mr. Mime (object 218 in the play, 129 for the countdown
 // and the end), its barrier (141), the Poké Ball (154), the court's pieces
 // (object 120: the floor, its lines, the hole and the four walls) and the
-// glow round a ball (image bank 151). Lighting is done on the textures'
-// display values, as the N64 does (see src/egg/assets.js, docs/colours.md).
+// glow round a ball (image bank 151); the barrier and the glow are drawn
+// through the game's colour combiner (fx.json: src/n64fx.js). Lighting is
+// done on the textures' display values, as the N64 does (see
+// src/egg/assets.js, docs/colours.md).
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { retry, attemptURL } from "../retry.js";
+import { loadFx, tagPrims } from "../n64fx.js";
 
 const FPS = 30; // the game's animation rate
 const GLB = 100; // the exported models are in hundredths of the game's units
@@ -50,18 +53,22 @@ export async function loadAssets(base, onProgress = () => {}) {
   const jobs = [];
   let done = 0;
   const job = (p) => { jobs.push(p); return p.then((x) => { onProgress(++done / jobs.length); return x; }); };
-  const [models, pics] = await Promise.all([
+  const [models, pics, fx] = await Promise.all([
     Promise.all(MODELS.map((m) => job(gltf(base + m + ".glb")))),
     Promise.all(PICTURES.map((p) => job(texture(base + p + ".png")))),
+    loadFx(base, job),
   ]);
   const out = {};
   MODELS.forEach((name, i) => {
     const g = models[i];
+    tagPrims(g);
     prepare(g.scene);
     const clips = g.animations.filter((a) => a.name.startsWith("clip")).sort((a, b) => a.name.localeCompare(b.name));
     out[name] = { scene: g.scene, clips };
   });
   PICTURES.forEach((name, i) => { out[name] = pics[i]; });
+  out.fx = fx;
+  fx.pics["glow.png"] = out.glow; // (drawn through the combiners 0x86303F50 and 0x863040C4 set: game.js)
   return out;
 }
 

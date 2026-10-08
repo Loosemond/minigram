@@ -13,6 +13,7 @@
 // plays emit "cut" with the frame they pressed on, for sending on.
 import * as THREE from "three";
 import { makeModel, makeLogPiece, makeLine, makeSpinarak, makeSlash } from "./assets.js";
+import { dress } from "../n64fx.js";
 import * as R from "./rules.js";
 
 export const LANE = [0, 1, 2, 3].map((i) => (i * 120 - 180) * 1.6); // the game's x of each Scyther (0x865020D8)
@@ -92,7 +93,7 @@ export class Game {
     stars.root.position.set(x, STARS.y, Z.scyther);
     stars.root.rotation.x = STARS.tilt;
     stars.root.visible = false;
-    stars.root.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.transparent = true; } });
+    dress(a.fx, stars.root, "stars"); // (its halos and stars, each its layer's recipe: 190's callbacks)
     this.scene.add(scyther.root, log, spinarak, sign.root, slash, stars.root);
     const lane = { i, x, scyther, log, spinarak, sign, slash, stars, pieces: null, whole: null, line: null, clip: -1, cf: 0, end: 0 };
     this.setClip(lane, CLIP.wait);

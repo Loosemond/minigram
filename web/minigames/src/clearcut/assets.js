@@ -2,12 +2,15 @@
 // assets/clearcut/) and makes its things: Scyther with its clips, the log (the
 // game draws it from its own code module: a hexagonal prism with three
 // textures, rebuilt here from the module's numbers), Spinarak on its thread,
-// the signpost and the cut's effects. Lighting is done on the textures'
-// display values, as the N64 does (see src/egg/assets.js, docs/colours.md).
+// the signpost and the cut's effects; the dizzy stars (190) are drawn through
+// the game's colour combiner (fx.json: src/n64fx.js). Lighting is done on the
+// textures' display values, as the N64 does (see src/egg/assets.js,
+// docs/colours.md).
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { retry, attemptURL } from "../retry.js";
+import { loadFx, tagPrims } from "../n64fx.js";
 
 const FPS = 30; // the game's animation rate
 const GLB = 100; // the exported models are in hundredths of the game's units
@@ -45,7 +48,8 @@ export async function loadAssets(base, onProgress = () => {}) {
   const jobs = [];
   let done = 0;
   const job = (p) => { jobs.push(p); return p.then((x) => { onProgress(++done / jobs.length); return x; }); };
-  const [scyther, signpost, stars, backdrop, bark, end, line, flash, ...spinarak] = await Promise.all([
+  const [fx, scyther, signpost, stars, backdrop, bark, end, line, flash, ...spinarak] = await Promise.all([
+    loadFx(base, job),
     job(gltf(base + "scyther.glb")),
     job(gltf(base + "signpost.glb")),
     job(gltf(base + "stars.glb")),
@@ -56,6 +60,7 @@ export async function loadAssets(base, onProgress = () => {}) {
     job(texture(base + "flash.png")),
     ...[0, 1, 2].map((i) => job(texture(base + "spinarak" + i + ".png"))),
   ]);
+  tagPrims(stars);
   for (const g of [scyther, signpost, stars]) prepare(g.scene);
   // the tiles the module's display lists set: the bark wraps (its tile is
   // 64 x 128 texels over a 32 x 64 texture), the ends and the line clamp / wrap
@@ -67,6 +72,7 @@ export async function loadAssets(base, onProgress = () => {}) {
     scyther: { scene: scyther.scene, clips: sortClips(scyther) },
     signpost: signpost.scene,
     stars: { scene: stars.scene, clips: sortClips(stars) },
+    fx,
     slash: slashTexture(),
     backdrop,
     log: { bark, end, line },

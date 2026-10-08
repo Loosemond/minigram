@@ -235,6 +235,17 @@ four-way tie has no winner); from frame 60 of clip 6, stars (object 190,
 0.15×, tilted `0x600`) go round 108 above each fallen Scyther, fading in by
 5/255 a frame (`0x86509318`).
 
+**The dizzy stars** (object 190) are three stars, each with a halo trailing
+it, textured by two material callbacks (`0x81000178`).
+- The halos, in render layer 6: two I pictures (I8, and I4 across), colour
+  env + (prim − env) × I₀ (cyan to white), alpha I₁ × I₀ × prim's (205).
+- The stars, in layer 8: their RGBA picture × prim.
+- A draw takes the callback of its own layer. The glTF bakes the halo opaque
+  (a pale ribbon), and it gives the two halos after the first star the stars'
+  callback: its picture smeared yellow, by that tile's texture coordinates
+  (×¼ across, ×½ along). The remake draws them from their recipes (`fx.json`,
+  [fragments.md](fragments.md#render-callbacks-geo-0x08)).
+
 **Scene** (`0x86505EA8`, `0x865020D8`, the camera callback `0x86505858`): the
 camera looks straight ahead from (0, 110, 760), 45° up and down, over
 background picture 15. Scyther (object 122, 0.25×, z −35, not turned) stands
@@ -756,7 +767,8 @@ play clip 5 (and a Pichu cries, `0x2F11`), and the menu follows.
   (∓510, 550) and (∓510, 70), turned `0x1C00` (1P, 3P) or `0x6C00` (2P, 4P),
   drawn after the HUD. Both are grey (I8) pictures: the colour is prim + (1 −
   prim) × the grey, the alpha the grey. The dizzy stars (object 190) come out
-  in the results (`0x86604FB4`).
+  in the results (`0x86604FB4`), drawn as in Clear Cut Challenge
+  ([above](#clear-cut-challenge)).
 - The HUD (`0x86603604`): each player's badge (bank 434) big over its Pichu,
   shrinking to its room's corner as the glide ends (1P (41, 39), 2P (255, 39),
   3P (41, 143), 4P (255, 143)), and a gauge on the bar over each room
@@ -1099,6 +1111,26 @@ a grey (155) ambient one.
 - **A ball** (object 154's Poké Ball) flies 100 above the court, with a glow
   (image bank 151 at 2.6 × the ball) in its last hitter's colour (grey for
   nobody: `0x86306FB8`) and a trail of 8 fading copies.
+- **How the glow and trail are drawn.** Each is an object of its own
+  (`0x86304544`, `0x86304318`) on a quad (`0x87F08E3C`), queued in render
+  layer 9 (geo layouts `0x86306F50`, `0x86306F84`: `ZB_CLD_SURF`, blended by
+  its alpha, never added on), its callback setting the combiner.
+  - The colours: `0x86306FB8` holds 8 bytes a colour, prim then env (grey;
+    then 1P-4P, as Topsy-Turvy's).
+  - The glow (`0x86303F50`, `G_SETCOMBINE FC309BFF 5FFEFE38`): colour env +
+    (prim − env) × I, alpha I × env's, which is the object's own, 0xFF.
+  - The trail (`0x863040C4`, `FC371BFF 5FFEFE38`): the same, but with K5 for
+    the picture, which nothing sets (so env's colour). Its alpha is 200 ×
+    (1 − its age / 7), 8 steps. A copy is 0.8 × the glow.
+- **The barrier** (object 141) is two material callbacks, both on I8
+  pictures:
+  - In layer 8, two quads that pulse: alpha (the vertex's − I × env's) ×
+    prim's, prim's alpha going 255, 35, 255 over 60 frames.
+  - In layer 6, the panel: colour (I₀ − prim) × shade + env; alpha (I₁ × env's
+    + I₀) × prim's + env's, half to nine-tenths opaque. Both scroll.
+  - The glTF's baked still reads its I texels opaque: flat colours, no
+    shimmer. The remake draws it from its recipes (`fx.json`,
+    [fragments.md](fragments.md#render-callbacks-geo-0x08)).
 
 **The play runs three steps a frame** (`0x86302404`): the Mr. Mime, then the
 balls, then the balls off each barrier. Each frame (`0x8630352C`): with time
@@ -1471,7 +1503,9 @@ alpha too: dark is clear ([fragments.md](fragments.md#render-callbacks-geo-0x08)
 The glTF stills read these I texels opaque (the flash a white square, the
 spark a flat yellow box, the rings and the glow solid), so
 `tools/web_assets.py` writes the sparks' and rings' recipes from the ROM
-(`fx.json`) and the remake draws them through the same combiner.
+(`fx.json`) and the remake draws them through the same combiner
+(`web/minigames/src/n64fx.js`, shared with Barrier Ball, Clear Cut
+Challenge and Pichu's Power Plant).
 
 **The states** (`0x86006D64`): 0 and 1 the instructions (a show of four
 Hitmontop rolling on a tilted floor, `0x860057D0`), 2 the countdown, 3 the

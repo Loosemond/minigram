@@ -18,7 +18,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ps2tool import audio, images, minigames, names, png, upscale  # noqa: E402
-from ps2tool.arena import combiner_spec  # noqa: E402
+from ps2tool.arena import _shift_factor, combiner_spec  # noqa: E402
 from ps2tool.fragment import Fragment, Model  # noqa: E402
 from ps2tool.objects import OBJECT_TABLE  # noqa: E402
 from ps2tool.rom import Rom  # noqa: E402
@@ -362,6 +362,76 @@ UI["title_delibird.png"] = bank(375, 0)
 FILES = {"ui": UI, "egg": EGG, "clearcut": CLEARCUT, "eevee": EEVEE, "stampede": STAMPEDE, "pichu": PICHU,
          "togepi": TOGEPI, "golbat": GOLBAT, "barrier": BARRIER, "rollout": ROLLOUT, "topsy": TOPSY, "furret": FURRET,
          "delibird": DELIBIRD}
+
+# Effects whose look the glTF can't hold, by the name each game's code knows
+# them by: models textured by material callbacks, I pictures through the
+# colour combiner with prim and env colours, a colour track and scrolling
+# tiles. The glTF's baked still reads an I texel opaque, where the RDP makes
+# its grey its alpha too (white, dark and flat boxes), so the remake draws
+# them from their recipes (src/n64fx.js; docs/fragments.md): Topsy-Turvy's
+# sparks (199, 200) and RAPID SPIN rings (195-198), Mr. Mime's barrier (141)
+# and the dizzy stars (190).
+FX = {
+    "topsy": {"spark": 199, "flash": 200, "ring0": 197, "ring1": 198, "ring2": 195, "ring3": 196},
+    "barrier": {"barrier": 141},
+    "clearcut": {"stars": 190},
+    "pichu": {"stars": 190},
+}
+
+
+class _Layered(Model):
+    """A model that notes each draw's render layer, and each callback's: the
+    layer of the empty draw just before it (geo 0x22 then 0x08)."""
+
+    def __init__(self, frag):
+        super().__init__(frag)
+        model = self
+
+        class Noting(list):
+            def append(self, cb):
+                cb["layer"] = getattr(model, "cur_layer", 1)
+                super().append(cb)
+        self.callbacks = Noting()
+
+    def _prim(self):
+        p = super()._prim()
+        p.layers = getattr(p, "layers", set()) | {getattr(self, "cur_layer", 1)}
+        return p
+
+
+def fx_recipes(rom, rec, name, pics):
+    """Object rec's recipes (one a material callback, arena.combiner_spec's)
+    and which each of its glTF's primitives is drawn by. A callback sets the
+    RDP's state for the draws after it in its own render layer, so a draw takes
+    its layer's callback: not the glTF's (the last in the extractor's order,
+    which gives the dizzy stars' other halos the stars' own, and their texture
+    coordinates by its tile: uv, what to scale them by for the right one).
+    Pictures go in pics (bytes -> file name), each once."""
+    m = _Layered(Fragment(rom.archive(OBJECT_TABLE).get(rec), "object %d" % rec)).build()
+    files = {}
+    recipes = [combiner_spec(m, SimpleNamespace(tlut=-1, mat=None, layer=cb["layer"]), ("cb", k), None, (1.0, 1.0),
+                             files, name) for k, cb in enumerate(m.callbacks)]
+    for spec in recipes:
+        for t in spec["textures"]:
+            if t:
+                t["file"] = pics.setdefault(files[t["file"]], t["file"])
+
+    def texel(cb, p, axis):  # a texture coordinate's texels per glTF unit, by callback cb's tile (gltf.py's)
+        tex, smp, scale = m.callback_texture(cb)
+        mode = smp["cms" if axis == 0 else "cmt"]
+        return (scale or p.tex_scale)[axis] * _shift_factor(smp["shifts" if axis == 0 else "shiftt"]) / \
+            (tex["w"] if axis == 0 else tex["h"]) * (0.5 if mode == 3 else 1.0)
+    prims, uv, inherited = [], [], None
+    for p in m.prims:  # (the glTF's primitives: the draws with triangles, in order, untextured ones
+        if not p.tris:  # taking their callback or the last one's: ps2tool/gltf.py)
+            continue
+        layer, = p.layers
+        k = max(k for k, cb in enumerate(m.callbacks) if cb["layer"] == layer)
+        glb = inherited = p.callback if p.callback is not None else inherited
+        prims.append(k)
+        uv.append([round(texel(k, p, a) / texel(glb, p, a), 6) for a in (0, 1)])
+    return {"recipes": recipes, "prims": prims, "uv": uv}
+
 
 # Sound (docs/audio.md). A game asks for song n, which the game plays as
 # sequence n + 39. The effects are sounds of sequence 9, the one the game runs
@@ -961,27 +1031,18 @@ if roms:
             px[o:o + 3] = b"\xff\xff\xff"
         with open(os.path.join(site, "topsy", "swirl%d.png" % k), "wb") as fh:
             fh.write(png.encode_rgba(sw, sh, bytes(px)))
-    # and its effects' recipes: the sparks of a bump (199, 200) and the rings round a Hitmontop
-    # (195-198) are textured by material callbacks, I8 pictures through the colour combiner with
-    # prim and env colours, a colour track and scrolling tiles. The glTF's baked still can't show
-    # them (it reads an I texel opaque, where the RDP makes its grey its alpha too: white and dark
-    # boxes), so the remake draws them from these (src/topsy/assets.js; docs/minigames.md)
-    fx, pics = {}, {}
-    for name, rec in (("spark", 199), ("flash", 200), ("ring0", 197), ("ring1", 198), ("ring2", 195), ("ring3", 196)):
-        m = Model(Fragment(rom.archive(OBJECT_TABLE).get(rec), "object %d" % rec)).build()
-        files = {}
-        fx[name] = [combiner_spec(m, SimpleNamespace(tlut=-1, mat=None, layer=6), ("cb", cb), None, (1.0, 1.0), files, name)
-                    for cb in range(len(m.callbacks))]
-        for spec in fx[name]:
-            for t in spec["textures"]:
-                if t:
-                    t["file"] = pics.setdefault(files[t["file"]], t["file"])  # (each picture once)
-    for data, rel in pics.items():
-        with open(os.path.join(site, "topsy", rel), "wb") as fh:
-            fh.write(data)
-    with open(os.path.join(site, "topsy", "fx.json"), "w") as fh:
-        json.dump(fx, fh, separators=(",", ":"))
-    print("topsy: the brick floor, the clock's swirl and the effects' recipes (image banks 223, 402; objects 195-200)")
+    print("topsy: the brick floor and the clock's swirl (image banks 223, 402)")
+    # the effects' recipes (FX, above): each game's fx.json and the pictures it names
+    for game, objects in FX.items():
+        fx, pics = {}, {}
+        for name, rec in objects.items():
+            fx[name] = fx_recipes(rom, rec, name, pics)
+        for data, rel in pics.items():
+            with open(os.path.join(site, game, rel), "wb") as fh:
+                fh.write(data)
+        with open(os.path.join(site, game, "fx.json"), "w") as fh:
+            json.dump(fx, fh, separators=(",", ":"))
+        print("%s: the effects' recipes (objects %s)" % (game, ", ".join(str(r) for r in objects.values())))
     sound = audio.Audio(rom.data)
     for game, (songs, sounds) in SOUNDS.items():
         dst = os.path.join(site, game, "sound.bin")
