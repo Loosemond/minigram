@@ -1598,6 +1598,45 @@ await test("Furret's Frolic: a finger is the D-pad, the way it slides; the view 
   assert(got.join() === want.join(), "still, right, down, up, left, let go; 2P's down: " + got.join());
 });
 
+await test("Furret's Frolic: Play again has the first round's camera (the end's show moves it, and doesn't stay)", async () => {
+  await solo.mg.show("furret");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners;
+  // the shell's Play again: it lays out, then resets the round
+  const play = (W, H, seed) => {
+    api.layout(W, H, { top: 0, left: 0, right: W, bottom: H }, 0, []);
+    api.reset({ online: false, level: "normal", seed, me: 0, control: ["local", "cpu", "cpu", "cpu"] });
+    api.step(0);
+  };
+  // the camera: where it is (the shell puts it at the view's base each frame), its turn, its field of view and the picture's shift
+  const camera = () => {
+    const v = api.views[0], c = v.cam, f = (a) => a.map((x) => x.toFixed(2)).join();
+    return { at: f(v.base.toArray()), all: f([...v.base.toArray(), ...c.quaternion.toArray(), c.fov, c.view?.enabled ? c.view.offsetY : 0]), fov: c.fov };
+  };
+  const out = [];
+  solo.mg.paused = true;
+  g.listeners = {};
+  try {
+    for (const [W, H] of [[1400, 900], [390, 844]]) { // (landscape, and a phone: the picture moved up)
+      play(W, H, 1);
+      const first = camera();
+      g.start();
+      for (let k = 0; g.state === "play" && k < 3000; k++) api.step(1 / 30); // (to the end, and its show)
+      const end = camera();
+      play(W, H, 2);
+      const second = camera();
+      assert(end.at !== first.at, `${W} x ${H}: the end's camera stayed where the play's was`);
+      assert(second.all === first.all, `${W} x ${H}: round 1's camera ${first.all}, round 2's ${second.all}`);
+      out.push(`${W} x ${H}: fov ${first.fov.toFixed(1)}`);
+    }
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  return out.join("; ");
+});
+
 await test("Delibird's Delivery: the world and the CPUs are the same as the server's copy of them", async () => {
   const R = await moduleOf(solo, "./src/delibird/rules.js");
   for (const [seed, want] of Object.entries(DELIBIRD)) {

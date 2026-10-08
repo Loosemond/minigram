@@ -150,7 +150,7 @@ export async function create(shell, onProgress) {
       view = { cam, x: 0, y: 0, w: W, h: H };
       cam.aspect = W / H;
       cam.clearViewOffset();
-      game.camera(cam);
+      game.camera(cam, true); // (the play's, not the end's: the shell lays out before it resets the round)
       cam.updateMatrixWorld();
       cam.fov = fitFov(cam);
       cam.updateProjectionMatrix();
@@ -209,7 +209,13 @@ export async function create(shell, onProgress) {
     setControl(z, c) { game.setControl(z, c); },
     get state() { return game.state; },
     get time() { return game.time; },
-    step(dt) { game.update(dt); if (view) game.camera(view.cam); },
+    // (the camera moves at the end, and the shell puts it at view.base each frame: the base goes with it)
+    step(dt) {
+      game.update(dt);
+      if (!view) return;
+      game.camera(view.cam);
+      view.base.copy(view.cam.position);
+    },
     animate() {},
     score(i) { return game.points()[i]; },
     setScores(scores) { game.scores = scores.map((x) => (Number.isInteger(x) && x >= 0 ? x : 0)); },

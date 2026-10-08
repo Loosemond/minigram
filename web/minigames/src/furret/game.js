@@ -398,11 +398,13 @@ export class Game {
     this.yaw = yaw;
     for (const m of this.badges) m.rotation.y = ANG(yaw); // (their tops away from the camera)
   }
-  // the camera's place now: the game's in the play (turned); at the end, closer and going round (0x86203D50)
-  camera(cam) {
+  // the camera's place now: the game's in the play (turned); at the end, closer and going round (0x86203D50).
+  // play: the play's place whatever the round's at (the view's framed by it, and a layout can come
+  // while the last round's end is still on)
+  camera(cam, play = false) {
     const r = Math.hypot(AT[0], AT[2]), a = ANG(this.yaw);
     let at = [Math.sin(a) * r, AT[1], Math.cos(a) * r], eye = eyeFrom(at, DIST, PITCH, this.yaw);
-    if (this.endAt !== null) {
+    if (this.endAt !== null && !play) {
       const f = (this.time - this.endAt) * R.FPS, k = Math.min(1, f / SHOW_MOVE), e = k * k * (3 - 2 * k);
       const yaw = this.yaw + Math.max(0, f - SHOW_MOVE) * SHOW_TURN;
       const at2 = [Math.sin(ANG(yaw)) * -400, 0, Math.cos(ANG(yaw)) * -400];
