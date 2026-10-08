@@ -9,13 +9,18 @@ assets/<game>/ each game's own files (a player only downloads the games they
 play).
 """
 import glob
+import json
 import math
 import os
 import shutil
 import sys
+from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ps2tool import audio, images, minigames, names, png, upscale  # noqa: E402
+from ps2tool.arena import combiner_spec  # noqa: E402
+from ps2tool.fragment import Fragment, Model  # noqa: E402
+from ps2tool.objects import OBJECT_TABLE  # noqa: E402
 from ps2tool.rom import Rom  # noqa: E402
 
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -279,11 +284,10 @@ TOPSY = {
     "ring1.glb": "objects/198_ring_green/198_ring_green.glb",
     "ring2.glb": "objects/195_ring_red/195_ring_red.glb",
     "ring3.glb": "objects/196_ring_yellow/196_ring_yellow.glb",
-    # (the sparks' own pictures: their models' texture coordinates come out wrong, so the remake draws them itself)
-    "spark.png": "objects/199_spark/textures/tex03.png",
-    "flash.png": "objects/200_flash/textures/tex01.png",
+    "spark.glb": "objects/199_spark/199_spark.glb",
+    "flash.glb": "objects/200_flash/200_flash.glb",
     "ring.png": bank(223, 0),
-    "glow.png": bank(151, 0),  # (Barrier Ball's glow: the trail behind a Hitmontop sent reeling, in its hitter's colour)
+    "glow.png": bank(151, 0),  # (Barrier Ball's glow, I8: the trail behind a Hitmontop sent reeling, in its hitter's colour)
     "balloon.png": bank(401, 5),
     "button_a.png": bank(51, 0),  # (the menus' A button: the RAPID SPIN button on a phone)
 }
@@ -957,7 +961,27 @@ if roms:
             px[o:o + 3] = b"\xff\xff\xff"
         with open(os.path.join(site, "topsy", "swirl%d.png" % k), "wb") as fh:
             fh.write(png.encode_rgba(sw, sh, bytes(px)))
-    print("topsy: the brick floor and the clock's swirl (image banks 223, 402)")
+    # and its effects' recipes: the sparks of a bump (199, 200) and the rings round a Hitmontop
+    # (195-198) are textured by material callbacks, I8 pictures through the colour combiner with
+    # prim and env colours, a colour track and scrolling tiles. The glTF's baked still can't show
+    # them (it reads an I texel opaque, where the RDP makes its grey its alpha too: white and dark
+    # boxes), so the remake draws them from these (src/topsy/assets.js; docs/minigames.md)
+    fx, pics = {}, {}
+    for name, rec in (("spark", 199), ("flash", 200), ("ring0", 197), ("ring1", 198), ("ring2", 195), ("ring3", 196)):
+        m = Model(Fragment(rom.archive(OBJECT_TABLE).get(rec), "object %d" % rec)).build()
+        files = {}
+        fx[name] = [combiner_spec(m, SimpleNamespace(tlut=-1, mat=None, layer=6), ("cb", cb), None, (1.0, 1.0), files, name)
+                    for cb in range(len(m.callbacks))]
+        for spec in fx[name]:
+            for t in spec["textures"]:
+                if t:
+                    t["file"] = pics.setdefault(files[t["file"]], t["file"])  # (each picture once)
+    for data, rel in pics.items():
+        with open(os.path.join(site, "topsy", rel), "wb") as fh:
+            fh.write(data)
+    with open(os.path.join(site, "topsy", "fx.json"), "w") as fh:
+        json.dump(fx, fh, separators=(",", ":"))
+    print("topsy: the brick floor, the clock's swirl and the effects' recipes (image banks 223, 402; objects 195-200)")
     sound = audio.Audio(rom.data)
     for game, (songs, sounds) in SOUNDS.items():
         dst = os.path.join(site, game, "sound.bin")

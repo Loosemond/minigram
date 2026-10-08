@@ -1437,6 +1437,42 @@ clips (`0x8600D540`, played in sequences, `0x8600D5DC`-`0x8600D61C`): 0
 spinning, 1 a RAPID SPIN, 7 hit, 6 hopping into a spin, 8 landing on its
 feet, 3 standing sadly, 4 and 5 standing, 9 a cheer, 11 and 12 falling over.
 
+**Its effects** are all I8 pictures, whose grey the RDP takes for their
+alpha too: dark is clear ([fragments.md](fragments.md#render-callbacks-geo-0x08)).
+- **The glow** (`0x86000CCC`): bank 151 as texture rectangles, 36 of the
+  screen's 320 pixels across, at each place's depth (`G_SETPRIMDEPTH`), in
+  `G_RM_AA_ZB_XLU_SURF` (`E200001C 005049D8`) through `G_SETCOMBINE FC30D261
+  55A6FF7F`: colour env + (prim − env) × I, alpha env's × I. First the ten
+  places in the hitter's colours, then the ten again 12 pixels across in
+  white (prim and env) at 0x80. The colours (`0x8600D1A0`, 8 bytes each: a
+  grey for nobody, then 1P-4P) are prim, then env at 0x50. The n-th newest
+  place is fainter by 1 − n/10, and by the hit's glow (+0x17F0).
+- **The sparks** (199: six streaks; 200, with a RAPID SPIN: two quads, the
+  dots tex02 and the starburst tex01) and **the rings** (195-198) are
+  textured by material callbacks (`0x81000178`) and drawn in render layers 6
+  (and 8, the flash's starburst): translucent, depth-tested
+  ([fragments.md](fragments.md#geo-layout)). The spark's colour is env +
+  (prim − env) × I, alpha I × prim's; the flash's is the same, squared by a
+  second cycle. Each has a 16-frame colour track: the spark pale yellow
+  edged in magenta, then orange at 155 by frame 5, red and clear by frame 9;
+  the flash white to orange and red, clear by frame 12 (dots) and 7
+  (starburst). A ring is two tiles of one gradient, the second twice as fine
+  along t, scrolling 3.75 and (−5, 4.5) texels a frame. With C = (I₁ − I₀) ×
+  I₁ + I₀, its colour is env + (prim − env) × C and its alpha C × the
+  vertex's (clear at the cone's foot), its colours pulsing on a 16-frame
+  track.
+- **The sparks' size.** The module sets only their place (+0x24 of the
+  instances at W + 0x81D0, and W + 0x9850 for the flash: `0x86005B3C`). Their
+  scale (+0x30, where Hitmontop's instance at player + 0x120 has it) stays as
+  `0x8003F11C` made it: 1 (`0x80094A44`). They play their clip from the bump,
+  16 frames over 16/30 s (`0x860049B8`).
+- **The shadow** (079): colour I × prim (55), alpha I.
+
+The glTF stills read these I texels opaque (the flash a white square, the
+spark a flat yellow box, the rings and the glow solid), so
+`tools/web_assets.py` writes the sparks' and rings' recipes from the ROM
+(`fx.json`) and the remake draws them through the same combiner.
+
 **The states** (`0x86006D64`): 0 and 1 the instructions (a show of four
 Hitmontop rolling on a tilted floor, `0x860057D0`), 2 the countdown, 3 the
 play, 4 the end, 5 and 6 the results and the menu after.

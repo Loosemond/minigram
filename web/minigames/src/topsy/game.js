@@ -14,7 +14,7 @@
 // in (the Hitmontop eased to where they really are). The server runs the same
 // world and says how it ended (told("won")).
 import * as THREE from "three";
-import { makeModel } from "./assets.js";
+import { makeModel, combiner, dress } from "./assets.js";
 import * as R from "./rules.js";
 import { leadFor } from "../lag.js";
 
@@ -40,11 +40,19 @@ const REELING_RED = new THREE.Color(1, 127 / 255, 127 / 255); // (0x86002780: en
 // and growing again its last 0.4 s
 const SPIN_SIZE = 6, CHARGE_SIZE = 6, CHARGE_SIZE_MIN = 1.5, CHARGE_SIZE_LAST = 5.5, MIN_TIME = 0.4, AFTER_IMPACT = 1.5;
 const SPARK_TIME = 16 / 30; // a spark's life (16 frames of its clip)
-const STREAKS = 8, STREAK = [48, 140], SPARK_OUT = 260, FLASH = 420; // (the sparks' look: made for the remake, after their clips)
+// the sparks' size: their own (the module sets only their place, +0x24; their scale, +0x30, stays as
+// 0x8003F11C made it, 1: 0x80094A44)
+const SPARK_SCALE = 1;
 const TRAIL = 10; // the glow behind a Hitmontop sent reeling: its last 10 places (0x86000C6C)
-const GLOW = 270; // (36 of the game's 320 columns across: about a Hitmontop)
-// each player's colours (0x8600D1A0): the glow's
+const GLOW = 270; // (36 of the game's 320 columns across: about a Hitmontop; its white middle 12)
+// each player's colours (0x8600D1A0, after a grey for nobody): the glow's prim, and its env (at 0x50)
 export const COLOURS = [0x6987ff, 0x55eb55, 0xff6969, 0xfff555];
+const GLOW_ENV = [0x5569cd, 0x4bc34b, 0xcd5555, 0xcdc34b].map((c) => new THREE.Color(c)), GLOW_PRIM = COLOURS.map((c) => new THREE.Color(c));
+// the glow's recipe (0x86000CCC: image bank 151, I8, through G_SETCOMBINE FC30D261 55A6FF7F: colour
+// env + (prim - env) x its picture, alpha env's x its picture; in G_RM_AA_ZB_XLU_SURF), drawn ten times
+// in its hitter's colours, each place fainter, then ten times white (prim and env) at 0x80, a third the size
+const GLOW_SPEC = { mux: [3, 5, 1, 5, 5, 7, 1, 7, 3, 5, 1, 5, 5, 7, 1, 7], prim: [255, 255, 255, 255], env: [255, 255, 255, 128],
+  textures: [{ file: "glow.png", size: [32, 32], sf: [1, 1], wrap: [2, 2], fmt: 4 }] };
 const PAIRS = [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]];
 
 export class Game {
@@ -82,34 +90,30 @@ export class Game {
       v.shadow.model.traverse((o) => {
         if (o.isMesh) o.material = new THREE.MeshBasicMaterial({ color: 0, alphaMap: o.material.map, transparent: true, depthWrite: false });
       });
-      for (const m of v.ring.mats) { m.depthWrite = false; m.transparent = true; m.blending = THREE.AdditiveBlending; } // (a glow: its picture's black adds nothing)
+      v.ringMats = dress(assets, v.ring, assets.fx[`ring${z}`]);
       v.trail = [];
-      v.glows = [...Array(TRAIL)].map(() => {
-        const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: assets.glow, transparent: true, depthWrite: false }));
-        s.scale.set(GLOW, GLOW, 1);
-        s.renderOrder = 2;
+      const glow = (size, order) => {
+        const s = new THREE.Sprite(combiner(assets, GLOW_SPEC, { sprite: true, flipY: true }));
+        s.scale.set(size, size, 1);
+        s.renderOrder = order;
         s.visible = false;
         return add(s);
-      });
+      };
+      v.glows = [...Array(TRAIL)].map(() => glow(GLOW, 2));
+      v.middles = [...Array(TRAIL)].map(() => glow(GLOW / 3, 3));
       v.posture = new THREE.Quaternion();
       v.seq = null;
       v.blink = -1;
       return v;
     });
-    // the sparks, one of each kind for each pair (0x86005B3C: objects 199 and 200, drawn here from their
-    // pictures): streaks flying out of where they bumped, and a flash with a RAPID SPIN, facing the camera
-    const glowMat = (map, color) => new THREE.MeshBasicMaterial({ map, color, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
+    // the sparks, one of each kind for each pair (0x86005B3C): object 199, six streaks flying out of
+    // where they bumped, and 200 with a RAPID SPIN, a flash; facing the camera (their joints' flag 2)
     this.sparks = PAIRS.map(() => {
-      const spark = new THREE.Group(), flash = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), glowMat(assets.flash, 0xffffff));
-      const streaks = [...Array(STREAKS)].map((_, k) => {
-        const arm = new THREE.Group(), m = new THREE.Mesh(new THREE.PlaneGeometry(STREAK[0], STREAK[1]), glowMat(assets.spark, 0xfff5a0));
-        arm.rotation.z = (k / STREAKS) * Math.PI * 2 + (k % 2) * 0.3;
-        arm.add(m);
-        spark.add(arm);
-        return m;
-      });
-      for (const o of [spark, flash]) { o.renderOrder = 3; o.visible = false; add(o); }
-      return { spark, flash, streaks, t: 0, flashT: 0, at: new THREE.Vector3() };
+      const s = { spark: makeModel(assets.spark, SPARK_SCALE), flash: makeModel(assets.flash, SPARK_SCALE), t: 0, flashT: 0, at: new THREE.Vector3() };
+      s.sparkMats = dress(assets, s.spark, assets.fx.spark);
+      s.flashMats = dress(assets, s.flash, assets.fx.flash);
+      for (const m of [s.spark, s.flash]) { m.root.renderOrder = 4; m.root.visible = false; add(m.root); }
+      return s;
     });
     this.camQ = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(new THREE.Vector3(...CAMERA.eye), new THREE.Vector3(...CAMERA.at), new THREE.Vector3(0, 1, 0)));
     this.reset("normal");
@@ -401,36 +405,31 @@ export class Game {
         v.ring.root.position.set(x + up.x * p.r, y + up.y * p.r, zz + up.z * p.r);
         v.ring.root.quaternion.copy(v.posture);
         v.ring.root.scale.setScalar(SCALE * size);
+        for (const m of v.ringMats) m.n64.frame(this.clockS * 30, true); // (its tiles scroll, its colours pulse)
       }
-      // the glow behind it, sent reeling
+      // the glow behind it, sent reeling (0x86000CCC)
       v.glows.forEach((s, k) => {
-        const g = v.trail[k];
-        s.visible = !!g;
+        const g = v.trail[k], w = v.middles[k];
+        s.visible = w.visible = !!g;
         if (!g) return;
         s.position.set(g.at[0], g.at[1], g.at[2]);
-        s.material.color.setHex(COLOURS[g.c]);
-        s.material.opacity = 0.6 * (1 - k / TRAIL) * g.k;
+        w.position.copy(s.position);
+        const fade = (1 - k / TRAIL) * g.k, c = GLOW_PRIM[g.c], e = GLOW_ENV[g.c];
+        s.material.n64.prim.set(c.r, c.g, c.b, 1);
+        s.material.n64.env.set(e.r, e.g, e.b, (0x50 / 255) * fade);
+        w.material.n64.env.w = (0x80 / 255) * fade;
       });
     });
-    // the sparks: flying out and fading as their clips do (0x860049B8), facing the camera
+    // the sparks: their clips and colour tracks from the bump (0x860049B8: 16 frames), facing the camera
     for (const s of this.sparks) {
-      const k = 1 - Math.max(0, s.t) / SPARK_TIME, kf = 1 - Math.max(0, s.flashT) / SPARK_TIME;
-      s.spark.visible = s.t > 0;
-      if (s.t > 0) {
-        s.spark.position.copy(s.at);
-        s.spark.quaternion.copy(this.camQ);
-        s.streaks.forEach((m) => {
-          m.position.y = 40 + SPARK_OUT * Math.sqrt(k);
-          m.scale.set(1, 0.6 + k, 1);
-          m.material.opacity = Math.min(1, 2 * (1 - k));
-        });
-      }
-      s.flash.visible = s.flashT > 0;
-      if (s.flashT > 0) {
-        s.flash.position.copy(s.at);
-        s.flash.quaternion.copy(this.camQ);
-        s.flash.scale.setScalar(FLASH * (0.3 + 0.7 * Math.sqrt(kf)));
-        s.flash.material.opacity = Math.min(1, 2 * (1 - kf));
+      for (const [m, t, mats] of [[s.spark, s.t, s.sparkMats], [s.flash, s.flashT, s.flashMats]]) {
+        m.root.visible = t > 0;
+        if (t <= 0) continue;
+        const f = 16 - (t * 16) / SPARK_TIME;
+        m.root.position.copy(s.at);
+        m.root.quaternion.copy(this.camQ);
+        m.pose(0, f, true);
+        for (const mat of mats) mat.n64.frame(f);
       }
       s.t -= dt;
       s.flashT -= dt;

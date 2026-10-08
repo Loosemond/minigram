@@ -61,7 +61,7 @@ A byte-coded scene graph. Each command has a fixed size by its first byte:
 | 0x1F | 0x18 | arena static transform: s16 rotation in degrees ×3 +4, s16 translation ×3 +0xA, s16 scale in percent ×3 +0x10 |
 | 0x20 | 0x14 | draw display list (pointer +0x10) |
 | 0x21 | 0x10 | draw display list (pointer +0xC) |
-| 0x22 | 8 | draw display list (pointer +4) in render layer u8 +1 (arenas: 1 opaque, 4 alpha-tested, 5+ translucent) |
+| 0x22 | 8 | draw display list (pointer +4) in render layer u8 +1 (1 opaque, 4 alpha-tested, 5+ translucent: below) |
 | 0x23 | 0x10 | material state: s16 texture-animation channel +2 (−1 none), pointer material display list +4, s16 texture index +8, s16 TLUT index +0xA, RGBA colour +0xC |
 | 0x24 | 4 | attachment point, s16 label +2 |
 
@@ -76,6 +76,21 @@ the fruit (208-213, 215, 216), the dizzy stars (190), sparks and flashes
 (199, 200), the panels (217, 219), and parts of others: Swinub (82, 103),
 Poké Balls (153, 154), Pineco (151), the Electrode lamp (57) and
 24, 33, 49, 115, 130, 131, 185, 203, 204, 207.
+
+**Render layers.** Command 0x22 queues its list with its layer (`0x80038BD4`:
+a node of type 0x19, the layer at +3). When it's drawn, the layer picks the
+render mode's second cycle from the table at `0x80094B04`, 11 words a
+variant: entry 44 × variant + 4 × layer (`0x8003CD4C`, `0x8003D140`; the
+first cycle is OR'd on, `G_RM_FOG_PRIM_A` at `0x8003D140`). By layer: 1
+`OPA_SURF`, 2 `OPA_DECAL`, 3 `OPA_INTER`, 4 `TEX_EDGE`, 5 `XLU_SURF` with
+the depth written, 6 `XLU_SURF`, 7 `XLU_DECAL`, 8 `XLU_INTER`, 9 `CLD_SURF`,
+10 `OVL_SURF`. Variants 0-3 are without and with anti-aliasing and the
+Z-buffer (0 neither, 1 Z, 2 AA, 3 both: layer 6 is `G_RM_AA_ZB_XLU_SURF2`,
+`0x001049D8`); 4 and 5 are 2 and 3 without reading memory on the opaque
+layers. The variant is the view's +2 & 7 (`0x8003AA70`, kept at
+`0x80126300`). So a translucent layer blends its colour by its alpha over
+what's there (in × α + memory × (1 − α)), tested against the depth but not
+writing it: never added on.
 
 Known sizes of the rest (skipped by the walker): 0x07 8, 0x09 4, 0x0A 8,
 0x0B 0x18, 0x0C–0x16 4 each except 0x13 8, 0x14 0xC, 0x15 0xC, 0x19 8,
@@ -182,3 +197,13 @@ a, b, c, d, then alpha cycle 1, then colour cycle 2, then alpha cycle 2. The
 result is `(a − b) × c + d`. A second cycle whose equations are all zero
 means one cycle. `ps2tool/combiner.py` evaluates it on the CPU to bake
 textures, and `arena.py` records it for the Blender add-on to rebuild live.
+
+**I textures.** The RDP reads an I (intensity) texel as grey in colour and
+alpha alike: dark is clear. Battle effects and arenas are decoded that way
+(`intensity_alpha`), but an object's glTF still decodes them opaque, so an
+effect whose alpha comes from an I texture bakes into a box: white or dark,
+or a flat colour at its prim's alpha. Among the minigames' objects: the
+sparks and flashes (199, 200), the RAPID SPIN rings (195-198), the halo under
+the dizzy stars (190, `cb00`) and Mr. Mime's barrier (141). The web remake
+draws Topsy-Turvy's from their recipes (`tools/web_assets.py` writes them
+with `arena.combiner_spec`; [minigames.md](minigames.md#topsy-turvy)).
