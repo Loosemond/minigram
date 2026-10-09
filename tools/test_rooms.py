@@ -921,6 +921,13 @@ def _():
         still.step(t, 0, 0)
         runner.step(t, 0, -60)
     assert still.progress < 1 and still.tile == 1 and runner.finish is not None, (still.progress, runner.finish)
+    # let go of the stick, a Togepi turns back to about straight on (0x86705F40), as the browser's does
+    lane = togepi_rules.Lane(5, 0, togepi_rules.course(5))
+    for t in range(8):
+        lane.step(t, 60, 0)
+    steered = lane.side
+    lane.step(8, 0, 0)
+    assert steered == 1 and lane.side == 1 / math.sqrt(2026), (steered, lane.side)
 
 
 @check("Tumbling Togepi: the server runs the lanes from the sticks, says how it ended and stops cheats", together="Togepi")
@@ -957,14 +964,16 @@ def _():
         # the same race, here: who got in when
         want = togepi_rules.Round(rooms.rooms[code].seed, "normal", cpus=[False, False, True, True])
         want.sticks = [[[0, 0, -60]], [[late, 0, -60]], [], []]
-        said = {k: won[k] for k in ("f", "fin", "p")}
+        said = {k: won[k] for k in ("f", "fin", "p", "prior")}
         assert want.settle(100, 0) == said and said["fin"][0] is not None and said["fin"][1] > said["fin"][0], (won, want.done)
         assert g.end == (won["f"] + togepi_rules.END_AFTER) / togepi_rules.FPS
         a.send("stick", r=r, s=0, f=won["f"] + 5, x=60, y=0)  # after the end: nothing
         a.send("done", r=r)
         b.send("done", r=r)
         res = a.wait("results", timeout=10)
-        assert res["scores"] == [-1 if f is None else round(f * 100 / 30) for f in won["fin"]], res
+        # (the game's sum: whole seconds, the frames past x 100 / 30 cut, and 0-2 hundredths more)
+        assert res["scores"] == [-1 if f is None else togepi_rules.time_of(f, want.seed, s) for s, f in enumerate(won["fin"])], res
+        assert all(sc == -1 or 0 <= sc - f * 100 // 30 <= 2 for sc, f in zip(res["scores"], won["fin"])), res
         b.close()
         a.close()
     finally:

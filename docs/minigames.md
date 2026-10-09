@@ -165,7 +165,7 @@ audits of each module; `0x87F0A098`'s callers):
 | Egg Emergency | 31 frames after the last drop is gone (`0x868058C0`, `0x86804C5C`; `0xCF06` at 5) | plays on |
 | Eager Eevee | after the tally (`0x86B09148`) | not faded (its fades are the instructions', its set-up's and the basket's) |
 | Clear Cut Challenge | after the last show (`0x86502B88`) | plays on |
-| Tumbling Togepi | `0x86706664` (*not traced*) | plays on (module #55 never fades it) |
+| Tumbling Togepi | when the last one's goal clip ends (`0x86706664`), its end show (state 14, `0x86709AD0`) starting with it | plays on (module #55 never fades it; song 55 takes its place) |
 | Topsy-Turvy | on the end show's first frame, the frame after the play's last: nobody's left in the play, so the losers drop out of it and `0x8600688C` starts the results (`0x86006B74`-`0x86006BC8`); the show goes on under them | plays on (song 55 takes its place) |
 
 The remake's shell does the countdown and the results this way
@@ -1028,8 +1028,10 @@ then waits (state 11).
 
 - **Knocked** (states 3 and 4, clip 2 at speed 2): for its frames below 5 it's
   thrown on 75 × (0.32 + boost) a frame (the belt scrolls on: the obstacle
-  is gone), then 7 till frame 24, and aside by its facing (the sine of its
-  turn × that); then running again at the clip's end.
+  is gone), then 7 till frame 24, and aside by its facing: x −= trunc(sin
+  of its turn × −75 or −7) × (0.2 + side boost) (`0x86706240`,
+  `0x86706474`), on the way it was going; then running again at the clip's
+  end.
 - **Tripped** (state 2, clip 3 at speed 2): thrown on 180 a frame for frames
   below 3, 18 till 13, running again at frame 40.
 - **A dash** (an arrow, `0x74`, `0x38`): the boost goes up 0.09 and the side
@@ -1039,10 +1041,28 @@ then waits (state 11).
   while dashing adds 0.09 more (if the speed's under 0.75; past it the boost
   goes back to 0.3) and starts the 5.6 again. When it ends, the boost runs
   down 0.01 a frame (from −0.01: so the speed fades out) unless the stick's
-  held down. The aura (object 188, 0.55x, longer with the boost) fades in
-  over it (alpha 255 down to 70) and out at the end.
-- The Togepi faces the way it runs (`0x86703D98`: a quarter turn from the
-  stick's angle, the stick's up taken as level).
+  held down. The aura (object 188: 0.55x, its z 0.55 + boost, pitched 0x2C0,
+  `0x867043AC`) comes on with the dash at alpha 255 and fades (`0x8670427C`):
+  10 a frame down to 70, out (to below 21, then gone) when the dash ends,
+  and never over 200 (`0x86704378`), so 255 shows for one frame only. Its
+  callback (`0x81000138`, mode 0 of `0x810024E0`) puts the object's alpha in
+  place of its recipe's prim alpha when it's under 255 (`0x81002678`); the
+  recipe (layer 6, its back faces culled): colour env (0, 135, 255) + (prim
+  (125, 255, 255) − env) × I₀ × I₁, alpha I₀ × the vertex's × that (95 on
+  the first frame). I₀ is a gradient scrolling 7 texels a frame, I₁ a 64 ×
+  64 noise scrolling 2: a translucent cyan-blue glow.
+- **A bounce** (`0x68`, `0x86704A50`): 10 frames, the Togepi at 80 + 60 ×
+  sin(n × 0xCCC) and its shadow 1.5 − 1.5 sin(n × 0xCCC); its last step (n =
+  11) leaves it at 61.5, below where it started, and only a dash running into
+  something (`0x86703BC8`) or the end of its goal clip (`0x86706568`) puts it
+  back at 80.
+- The Togepi faces the way it runs (`0x86703D98`): the stick's angle, its up
+  taken as level (`0x8000B390`, atan2), plus `0xFFFF4000`, which as an s16 is
+  a quarter turn on: straight down the belt is 0, the same as the dash's,
+  the trip's, the goal's and the waiting one's (all to the camera). With the
+  stick let go (not dashing) it's (1, −45): about straight on
+  (`0x86705F40`). Gliding to the middle in its goal's first 8 frames, it
+  faces the glide (`0x867048B8`: (glide × 5, −45)).
 
 **The CPUs** (`0x86702434` sets them up, `0x86701C6C` steers): by level (1
 Hard - 4; the COM level's 4 − level) a look-ahead (250-299 units on Hard,
@@ -1071,34 +1091,90 @@ scenery's taken off (139 and 140, the ground round the platform, stay). At the
 end (`0x86709AD0`) it comes down over 40 frames to the winner (el 18.9°, D
 3380, looking at the winner from y 200), then turns round it (0x80 a frame).
 
-**The HUD** (sprites in the scene): each player's badge at both ends of its
-belt (bank 434, 4.2x, z 570 and −580), a rank coin over each Togepi (bank
-387, `0x86706A30`), and on each belt the other three's badges where they are
-along the track (`0x86706B88`, `0x86706D3C`: pool sprites, bank 434's 36 × 28
-on the shared quad at 3.2x, 115 × 90, pitched −0x3000; drawn through DL
-`0x86700418`, alpha the prim's 0x64, the object's own 0x8C; hidden past ±600
-units). The
-others: a shadow under each Togepi (Eager Eevee's bank 307 picture 1, a 60 ×
-60 quad at 1.5x, in the environment colour 0x0C1602), the dust when one's
-knocked.
+**The HUD** (sprites in the scene, drawn in layer 9, `ZB_CLD_SURF`, only in
+the race: state 1): each player's badge at both ends of its belt (bank 434,
+4.2x, z 570 and −580), a rank coin over each Togepi (bank 387's 20 × 16 on
+the shared quad at 7x, 140 × 112, lying flat: +0x1E −0x4000, at the
+Togepi's y + 120 and z − 50; `0x86706AC8`, `0x86706A30`; the picture as it
+is, `FCFFFFFF FFFCF238`), and on each belt the other three's badges where
+they are along the track (`0x86706B88`, `0x86706D3C`: pool sprites, bank
+434's 36 × 28 on the shared quad at 3.2x, 115 × 90, pitched −0x3000; drawn
+through DL `0x86700418`, alpha the prim's 0x64, the object's own 0x8C;
+hidden past ±600 units, whoever's in). The others: a shadow under each
+Togepi (Eager Eevee's bank 307 picture 1, a 60 × 60 quad at 1.5x: its colour
+the environment's 0x0C1602 × the picture's grey, its alpha the picture's,
+`FC50FFFF FFFFF238`; smaller as the Togepi goes up: in a bounce, above; in
+the goal's first 12 frames 1.5 − 1.5 sin((frame + 1) × 0xAAA); for a
+winner's cheer 1.5 cos((frame + 1) × 0x51E); back to 1.5 when it runs again,
+`0x86706024`). The dust (`0x86703E9C`) is only started in state
+5, a Voltorb's hit, which no course has.
 
-**The play's end**: the race is over when the last one's goal clip ends;
-the winners are the first in (a tie: everyone in on that frame). The time
-shown is frames / 30 with random hundredths (`0x86703F9C`). The song is
-46 (sequence 85), from GO (state 5 → 1, with the count's 0x5F07 and GO's
-0x5F08); the effects are bank 9's ([audio.md](audio.md)). As each one gets
-in: 0x5F08 again, and for the first the crowd (0x1C07).
+**The dash arrow** (object 202: its quad 60 square, pitched 0x2C00 at y 90)
+is two material callbacks on I8 and IA8 pictures: in layer 6, its panel,
+colour env (0, 100, 255) + (prim (0, 205, 255) − env) × a gradient
+scrolling 4.25 texels a frame (mirrored), alpha the chevron's I8, so it's
+clear outside it; in layer 8, the chevron's outline, white, alpha the IA's.
+The belt is in layer 4 (`0x8670B988`), which writes the depth: the arrow's
+lower part, below y 80, is under it.
+
+**The obstacles go** from a Togepi's belt as it gets in: its goal's state
+takes off all 60 of its lane's objects every frame (`0x867049F0`), and the
+end show everyone's (`0x86709AD0`).
+
+**The play's end**: the race is over when the last (fourth) one's goal clip
+ends (G+0x4C, `0x86705AFC`; `0x86706664`), and the results' banner (module
+#64's `0x87F0A098`) and the end show (state 14, `0x86709AD0`) start
+together. The winners are the ones ranked first then: `0x867097D8` ranks by
+progress every frame (level ones share a rank), and each one's progress is
+set to 120 − 3 × its rank of the frame before as it gets in (`0x86705960`),
+so of two in on the same frame the one ahead the frame before wins (both,
+if they were level); and no one wins if the last one in ranks first too
+(all four level). Only the first one's time is worked out (`0x86703F9C`):
+minutes, seconds and hundredths, (frames % 30) × 100 / 30 cut, plus
+`rand_lcg` % 3. The song is 46 (sequence 85), from GO (state 5 → 1, with
+the count's 0x5F07 and GO's 0x5F08); the effects are bank 9's
+([audio.md](audio.md)), each panned to its player (`0x80027A18`) but the
+winner's cheer. As each one gets in: 0x5F08 again, and for the first the
+crowd (0x1C07, held 68 frames: `0x80027764(0x1C07, 0x44)`), both in the
+middle (`0x800279B4`).
+
+**The end show** (`0x86709AD0`, from its first frame): the winners cheer
+(state 9, clip 6, the cry 0x9F02 unpanned at its frame 20: `0x867044B0`),
+the others lose (state 7, clip 4, then state 8, clip 5); at a clip's last
+frame the callback's switch sets each to wait (clip 0), so the winners cheer
+once. The camera, a frame at a time from the play's view: its elevation
+down 74 a frame ((0x1900 − 0xD6D) / 40, integer) while it stays at 0xD6D or
+over (42 frames, to 0xDAF, 19.2°), its distance down (7570 − 3380) / 40 a
+frame to 3380 and what it looks at up 4 a frame to y 200 (40 frames each),
+back along z 5 a frame while the last winner's z is that far behind, and
+across a 40th of the way a frame to the winner's x (two or more: the first
+and the last winner's middle, 3 if that's 0); each till it's there. The
+frame nothing moves, it starts to turn round (0x80 a frame); the scenery
+(132-138) is back on.
 
 **The states** (switch `0x8670C68C`): 0 and 4 the instructions, 10 the
-Togepi running in from far off during them, 12 and 13/5 the countdown with
-the camera coming round, 1 the race, 14 the results, 8 the menu after, 9 a
-debug menu nothing reaches (the course's patterns and mirrors, by hand).
+Togepi running in from far off as they're left, 12 and 13/5 the countdown
+with the camera coming round, 1 the race, 14 the results, 8 the menu after,
+9 a debug menu nothing reaches (the course's patterns and mirrors, by hand).
+Leaving the instructions (`0x86708EDC`) plays the whistle (0xCF0B), fades
+the song over 40 frames and starts a fade of the screen (`0x80007B14(0x14)`);
+state 10 lasts till that's done (`0x86708B18`). In it four small Togepi
+(0.3x, `0x86708944`) run towards the camera from a row at y 60: z = 0.1n²
+(n counting each one's frame in turn), y = 60 − 0.13z, x = (2000 − z) /
+trunc(2000 / [−165, −108, −51, 5][p]) (`0x8670C070`), footsteps (0x9F03) at
+the run's frames 14 and 32, each tripping (clip 3, 0x9F01) past a z of its
+own, `rand_lcg` % 751.
 
 The browser remake follows this, with a few changes for online play: each
 lane has random numbers of its own (the game's are shared), the Togepi stay
 put on their belts (the game moves each up or down by its rank, −300 to 100,
-3 a frame), the CPUs rank among themselves, and the race is called 30 s after
-the first one's in ([web/README.md](../web/README.md#tumbling-togepi)).
+3 a frame), the CPUs rank among themselves (so the ones in on the same frame
+are placed by their own progress the frame before), every one in gets a
+time (the game's sum, its random hundredths from the round's seed), and the
+race is called 30 s after the first one's in
+([web/README.md](../web/README.md#tumbling-togepi)). It leaves out the
+instructions' run-in, as the other games' instructions shows: the shell's
+title is the instructions.
 
 ## Gutsy Golbat
 

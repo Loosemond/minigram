@@ -108,6 +108,21 @@ def trunc(v):
     return int(v)  # (toward 0, as the game's trunc.w.s and Math.trunc)
 
 
+def facing(x, y):
+    """The sine of the way a Togepi faces for a stick x, y (rules.js facing():
+    0x86703D98, a quarter turn on from the stick's angle)."""
+    y = min(y, 0)
+    r = math.sqrt(x * x + y * y)
+    return x / r if r else 0
+
+
+def time_of(f, seed, seat):
+    """A finish's time in hundredths of a second (rules.js timeOf(): 0x86703F9C,
+    with its 0-2 random hundredths from the round's seed and the seat)."""
+    r = ((((seed ^ 0x68E31DA4 ^ ((seat + 1) * 0x9E3779B1)) & 0xFFFFFFFF) * 1664525) + 1013904223) & 0xFFFFFFFF
+    return f // FPS * 100 + (f % FPS) * 100 // FPS + r % 3
+
+
 class Slot:
     __slots__ = ("type", "x", "z", "col", "n", "shown")
 
@@ -150,6 +165,7 @@ class Lane:
         self.cycle = 0
         self.corridor = 0
         self.finish = None
+        self.prior = None  # its progress the frame before it got in
         self.slots = [Slot() for _ in range(60)]
         self.cpu = self.cpu_setup() if level else None
         self.rank = seat + 1
@@ -351,12 +367,14 @@ class Lane:
                 for o in self.slots:
                     o.z += d
                 self.roll_track()
+                was = self.progress
                 self.measure()
                 for o in self.slots:
                     if o.z < GONE:
                         o.type, o.z, o.shown = -1, 3000, False
                 if self.finish is None and self.tile > END_TILE and self.px >= END_PX and self.z >= GOAL_Z:
                     self.finish = t
+                    self.prior = was
                     if self.cpu:
                         self.progress = 120 - 3 * self.rank
                     self.side = 0
@@ -371,10 +389,8 @@ class Lane:
         if self.jumpT == 0:
             self.restart = 1
         self.animSpeed = 1 if self.state == JUMP else max(1, trunc(max(abs(CC), abs(D0)) / 9))
-        if self.jumpT == 0 and (CC < -5 or D0 > 5 or D0 < -5):
-            x, y = trunc(D0), min(trunc(CC), 0)
-            r = math.sqrt(x * x + y * y)
-            self.side = x / r if r else 0
+        if self.jumpT == 0:  # (or, the stick let go, about straight on: 0x86705F40)
+            self.side = facing(trunc(D0), trunc(CC)) if CC < -5 or D0 > 5 or D0 < -5 else facing(1, -45)
 
     def roll_track(self):
         while self.px >= 32:
@@ -652,9 +668,11 @@ def rank_cpus(lanes):
         l.finishers = done
 
 
-def places(fin, prog):
+def places(fin, prior, prog):
+    """rules.js placesOf(): by the finish frame, the same frame's by the progress the
+    frame before, then by how far each got; ties share a place."""
     def key(z):
-        return (0, fin[z]) if fin[z] is not None else (1, -prog[z])
+        return (0, fin[z], -(prior[z] or 0)) if fin[z] is not None else (1, -prog[z], 0)
     return [1 + sum(1 for y in range(SEATS) if key(y) < key(z)) for z in range(SEATS)]
 
 
@@ -663,6 +681,7 @@ class Round:
 
     def __init__(self, seed, level="normal", cpus=(False, True, True, True)):
         self.cpus = list(cpus)
+        self.seed = seed
         self.course = course(seed)
         lv = level_code(level)
         self.lanes = [Lane(seed, z, self.course, lv if self.cpus[z] else 0) for z in range(SEATS)]
@@ -723,10 +742,11 @@ class Round:
             fin = [l.finish for l in self.lanes]
         else:
             fin = self.done["fin"]
-        return [-1 if f is None else round(f * 100 / FPS) for f in fin]
+        return [-1 if f is None else time_of(f, self.seed, s) for s, f in enumerate(fin)]
 
     def settle(self, now, allow):
-        """How the race ended, once no stick change still on its way could alter it: dict(f, fin, p) or None."""
+        """How the race ended, once no stick change still on its way could alter it: dict(f, fin, p,
+        prior: each one in's progress the frame before, the places' tie-break) or None."""
         if self.done:
             return None
         safe = int(now * FPS) - int(allow * FPS) - 1
@@ -741,7 +761,8 @@ class Round:
             called = f >= LONGEST or (first is not None and f >= first + CALL)
             if all(x is not None for x in fin) and f >= max(fin) + END_AFTER or called:
                 end = f if called else max(fin) + END_AFTER
-                self.done = dict(f=end, fin=fin, p=[round(l.progress * 10) for l in self.lanes])
+                self.done = dict(f=end, fin=fin, p=[round(l.progress * 10) for l in self.lanes],
+                                 prior=[l.prior if l.finish is not None else None for l in self.lanes])
                 self.end = (end + END_AFTER) / FPS
                 return self.done
         return None

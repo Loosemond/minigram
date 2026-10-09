@@ -388,6 +388,9 @@ FX = {
     "clearcut": {"stars": 190},
     "pichu": {"stars": 190},
     "delibird": {"field": 148, "walls": 147},
+    # Tumbling Togepi's dash arrow (202: a scrolling blue panel, clear outside
+    # its chevron, and the chevron's white outline) and the dash's aura (188)
+    "togepi": {"arrow": 202, "aura": 188},
 }
 
 

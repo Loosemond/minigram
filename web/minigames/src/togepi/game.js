@@ -2,7 +2,9 @@
 // clock, and the scene they drive. Four treadmills side by side on their
 // platform (object 60), each belt scrolling the track (image bank 226) and
 // carrying the course towards its Togepi; the camera in front, high up, the
-// Togepi facing it. In the game's units (y up).
+// Togepi facing it. In the game's units (y up). The rules run 30 frames a
+// second; what moves is drawn between a lane's last two frames, so it's
+// smooth at any display rate.
 //
 // Who plays each seat: "local" (this device's player), "cpu" or "remote"
 // (someone on another device, online). A CPU's lane runs from the round's
@@ -14,6 +16,12 @@ import * as THREE from "three";
 import { makeModel } from "./assets.js";
 import * as R from "./rules.js";
 import { makeBadge, PICTURE } from "../badge.js";
+import { dress } from "../n64fx.js";
+
+const angle = (a) => (a / 0x10000) * 2 * Math.PI;
+const lerp = (a, b, k) => a + (b - a) * k;
+const TAU = 2 * Math.PI;
+const turnLerp = (a, b, k) => a + ((((b - a) % TAU) + TAU * 1.5) % TAU - Math.PI) * k; // (the short way round)
 
 // each lane's left edge (0x86710C08) and its belt's shift from the middle (0x8670C084)
 export const LANE_X = [0, 1, 2, 3].map((p) => (p * 120 - 240) * 2.3);
@@ -29,34 +37,85 @@ const OBSTACLE = {
   [R.LOG_S]: ["log_s", 0.6], [R.LOG_M]: ["log_m", 0.6], [R.LOG_L]: ["log_l", 0.6], [R.ARROW]: ["arrow", 0.12],
 };
 const OBSTACLE_Y = 90;
-const ARROW_TILT = (0x2c00 / 0x10000) * 2 * Math.PI; // (the arrows' 0x1E)
+const ARROW_TILT = angle(0x2c00); // (the arrows' 0x1E)
 const DIGLETT = 36 * 3.5; // its 36 x 36 pictures, 3.5x
-// round each Togepi: its shadow (bank 307's 24 x 24 on a 60 x 60 quad, 1.5x, in
-// the environment colour: 0x86700020), the dash's aura (object 188, 0.55x
-// and longer with the speed: 0x86710668) and the rank coin over it (bank 387,
-// 7x: 0x86706A30)
-const SHADOW = { size: 90, y: 10, color: 0x0c1602 };
-const AURA = 0.55;
-const COIN = { w: 20 * 3.5, h: 16 * 3.5, y: 150, z: -50 }; // (half the game's size here: its quads may be smaller than the pictures)
+// The render layer of the module's sprites (geo 0x22 09: ZB_CLD_SURF, blended
+// over what's drawn, after the translucent layers 6 and 8 that the aura and the
+// arrows are in): the shadows, the Diglett, the rank coins and the badges (the
+// geo nodes of callbacks 0x86700020, 0x8670018C, 0x86700588 and 0x86700418). A
+// translucent draw's renderOrder is its layer.
+const SPRITES = 9;
+// round each Togepi: its shadow (bank 307's 24 x 24 on a 60 x 60 quad, 1.5x and
+// less as it goes up (rules.js, and the end's cheer below); its colour the
+// environment's 0C1602 x the picture's grey, its alpha the picture's: 0x86700020,
+// DL 0x8670BA40), the dash's aura (object 188: 0.55x and longer with the speed,
+// pitched 0x2C0, 0x867043AC) and the rank coin over it (bank 387's 20 x 16 on
+// the shared quad at 7x, lying flat (+0x1E -0x4000) at the Togepi's y + 120 and
+// z - 50: 0x86706AC8, 0x86706A30)
+const SHADOW = { size: 60, y: 90, color: 0x0c1602 };
+const AURA = { scale: 0.55, pitch: angle(0x2c0), y: 50 };
+const COIN = { w: 20 * 7, h: 16 * 7, y: 120, z: -50, pitch: angle(-0x4000) };
 // the others' badges on each belt, where they are along the track (0x86706B88, 0x86706D3C: pool
 // sprites, bank 434's 36 x 28 at 3.2x, pitched -0x3000; drawn by DL 0x86700418, alpha its prim's 0x64)
-const GHOST = { scale: 3.2, pitch: (-0x3000 / 0x10000) * 2 * Math.PI, y: 120, far: 600, alpha: 0x64 / 255 };
+const GHOST = { scale: 3.2, pitch: angle(-0x3000), y: 120, far: 600, alpha: 0x64 / 255 };
 // The camera: eye D away at an azimuth and elevation (binary angles), looking at
 // `at`, fov up and down (0x8670675C). The play's view, and the opening glide
 // to it during the count (0x8670A07C: from the side, low and near, round to
 // the front over 76 frames, the scenery round it showing)
 const VIEW = { az: 0x4004, el: 0x19d3, d: 7570, at: [0, 40, 0], fov: 7.6 };
 const GLIDE = { el: 0xad5, d: 1610, atY: 160, fov: 13.6, frames: 76 };
-// the end (0x86709AD0): over 40 frames down to the winner(s), then round them
-const END = { frames: 40, el: 0xd6d, d: 3380, atY: 200, spin: 0x80, after: 30 };
+// The end (0x86709AD0), a frame at a time from the first (the play's view): the
+// elevation down (0x1900 - 0xD6D) / 40 = 74 a frame while it stays 0xD6D or over
+// (42 frames, to 0xDAF), the distance down to 3380 and what it looks at up to y
+// 200 (40 frames each), back along z 5 a frame to the last winner's z, across a
+// 40th a frame to the winner's x (two or more: the first and the last one's
+// middle); each till it's there. From the frame none moves, round (0x80 a frame).
+const END = { el: 0xd6d, elStep: Math.trunc((0x1900 - 0xd6d) / 40), d: 3380, dStep: (7570 - 3380) / 40, atY: 200, yStep: (200 - 40) / 40, zStep: 5, xSteps: 40, spin: 0x80 };
+// The end's clips (0x86709AD0 sets them; at a clip's last frame 0x867043AC's
+// switch sets the waiting one, clip 0): a winner cheers once (clip 6, its cry at
+// frame 20: 0x867044B0), with its shadow 1.5 cos((frame + 1) x 0x51E); the
+// others lose (clip 4, then clip 5); then they stand.
+const CHEER = R.CLIP_LEN[R.CLIP.win] - 1, LOSE = R.CLIP_LEN[R.CLIP.lose] - 1, SAD = R.CLIP_LEN[R.CLIP.sad] - 1;
+// a goal's run (clip 8): the race ends once the last one's is over (0x86705F54, case 12)
+const RUN_IN = 30;
 // how long after the first one's in a race is called (made for the remake:
 // the game waits for all four)
 export const CALL = 30 * R.FPS;
 
-const angle = (a) => (a / 0x10000) * 2 * Math.PI;
 export function eyeOf(az, el, d) {
   const t = d * Math.cos(angle(el));
   return [Math.cos(angle(az)) * t + 1, Math.sin(angle(el)) * d, Math.sin(angle(az)) * t];
+}
+
+// what's drawn of lane l, kept before it runs a frame (it's drawn between that
+// and the frame after): into p
+function capture(l, p) {
+  p ||= { sx: new Float64Array(60), sz: new Float64Array(60), sk: new Int8Array(60) };
+  Object.assign(p, { x: l.x, y: l.y, z: l.z, row: l.tile * 32 + l.px, turn: l.turn, aura: l.auraA, boost: l.boost, shadow: l.shadow });
+  l.slots.forEach((o, i) => { p.sx[i] = o.x; p.sz[i] = o.z; p.sk[i] = o.shown ? o.type : -1; });
+  return p;
+}
+// the aura's alpha as drawn: its object's alpha (+0x1D) takes the place of its
+// recipe's prim alpha, unless it's 255 (the dash's first frame: the recipe's 95;
+// 0x810024E0, mode 0)
+const auraAlpha = (a) => (a >= 255 ? 95 : a);
+
+// the end's camera, frame by frame from the first: { path: [{ el, d, at }], still: the frame none moves }
+function endPath(xT, zT) {
+  const s = { el: VIEW.el, d: VIEW.d, at: [...VIEW.at] }, path = [{ el: s.el, d: s.d, at: [...s.at] }];
+  const dx = xT / END.xSteps;
+  for (let n = 1; n < 600; n++) {
+    let moved = 0, v;
+    if (zT <= (v = s.at[2] - END.zStep)) { s.at[2] = v; moved++; }
+    if ((v = s.el - END.elStep) >= END.el) { s.el = v; moved++; }
+    if ((v = s.d - END.dStep) >= END.d) { s.d = v; moved++; }
+    if ((v = s.at[1] + END.yStep) <= END.atY) { s.at[1] = v; moved++; }
+    v = s.at[0] + dx;
+    if (dx > 0 ? v <= xT : xT <= v) { s.at[0] = v; moved++; }
+    path.push({ el: s.el, d: s.d, at: [...s.at] });
+    if (!moved) return { path, still: n };
+  }
+  return { path, still: Infinity }; // (no winner: nothing to look across to, and it never stops)
 }
 
 export class Game {
@@ -64,6 +123,7 @@ export class Game {
     this.scene = scene;
     this.assets = assets;
     this.listeners = {};
+    this.clock = 0; // s, always running (the arrows' shimmer)
     const add = (o) => { scene.add(o); return o; };
     this.platform = add(makeModel(assets.platform, PLATFORM).root);
     // the scenery: the hills, plants, cacti and grass rings shown while the camera comes in and at the end
@@ -88,22 +148,24 @@ export class Game {
       return mesh;
     });
     // each lane's Togepi and what goes with it
-    const shadowMat = new THREE.MeshBasicMaterial({ color: SHADOW.color, alphaMap: assets.shadow, transparent: true, depthWrite: false });
+    const shadowMat = new THREE.MeshBasicMaterial({ color: SHADOW.color, map: assets.shadow, transparent: true, depthWrite: false });
     const shadowGeo = new THREE.PlaneGeometry(SHADOW.size, SHADOW.size).rotateX(-Math.PI / 2);
-    const digTex = assets.diglett;
+    const coinGeo = new THREE.PlaneGeometry(COIN.w, COIN.h);
+    this.fxMats = []; // the arrows' (their scroll)
     this.lanesView = LANE_X.map((x0, p) => {
       const togepi = makeModel(assets.togepi, TOGEPI);
       add(togepi.root);
       const shadow = add(new THREE.Mesh(shadowGeo, shadowMat));
-      shadow.renderOrder = 1;
-      const aura = makeModel(assets.aura, AURA);
-      aura.fade(1);
-      aura.root.traverse((o) => { if (o.isMesh) o.material.blending = THREE.AdditiveBlending; }); // (a glow)
+      shadow.renderOrder = SPRITES;
+      const aura = makeModel(assets.aura, AURA.scale);
+      const auraMats = this.dressed(aura.model, "aura");
+      for (const m of auraMats) m.side = THREE.FrontSide; // (its back faces culled, as the glTF has it: G_CULL_BACK)
+      aura.root.rotation.x = AURA.pitch;
       aura.root.visible = false;
       add(aura.root);
-      const coin = add(new THREE.Sprite(new THREE.SpriteMaterial({ map: assets.rank1, depthTest: false })));
-      coin.scale.set(COIN.w, COIN.h, 1);
-      coin.renderOrder = 5;
+      const coin = add(new THREE.Mesh(coinGeo, new THREE.MeshBasicMaterial({ map: assets.rank1, transparent: true, depthWrite: false })));
+      coin.rotation.x = COIN.pitch;
+      coin.renderOrder = SPRITES;
       const ghosts = [0, 1, 2, 3].filter((q) => q !== p).map((q) => {
         const s = add(makeBadge({}, { size: PICTURE, scale: GHOST.scale, opacity: GHOST.alpha, depthTest: false, flat: true, renderOrder: 4 }));
         s.rotation.x = GHOST.pitch;
@@ -112,14 +174,25 @@ export class Game {
       });
       const slots = [...Array(60)].map(() => ({ type: -1, obj: null }));
       const digs = [];
-      return { x0, togepi, shadow, aura, coin, ghosts, slots, digs, pools: {}, off: 0 };
+      return { x0, togepi, shadow, aura, auraMats, coin, ghosts, slots, digs, pools: {}, off: 0, prev: null };
     });
-    this.digTex = digTex;
+    this.digTex = assets.diglett;
     this.reset("normal");
     this.state = "idle";
   }
   on(name, fn) { (this.listeners[name] ||= []).push(fn); }
   emit(name, ...args) { for (const fn of this.listeners[name] || []) fn(...args); }
+
+  // root's meshes in their recipes (fx.json's name: src/n64fx.js), each drawn in its render layer's turn
+  dressed(root, name) {
+    const fx = this.assets.fx, { recipes, prims } = fx.recipes[name];
+    const mats = dress(fx, root, name);
+    root.traverse((o) => {
+      const r = o.isMesh && prims[o.userData.n64prim];
+      if (r !== false && r !== null && r !== undefined) o.renderOrder = recipes[r]?.layer ?? 6;
+    });
+    return mats;
+  }
 
   // the badges the others' markers show (the shell's: 1P-4P, COM in the seat's colour)
   setBadges(textures) {
@@ -144,7 +217,7 @@ export class Game {
     this.simT = [-1, -1, -1, -1]; // the last frame each lane has run
     this.shownT = [-1, -1, -1, -1]; // and whose sounds have gone
     this.stick = [0, 0]; // this device's player's stick (the keys, the touch)
-    this.result = null; // the server's word on the end: { f, fin, p }
+    this.result = null; // the server's word on the end: { f, fin, p, prior }
     this.scores = null;
     this.time = 0;
     this.state = "ready";
@@ -152,19 +225,21 @@ export class Game {
     this.intro = 0; // frames since the countdown started (the camera's glide)
     this.after = -1; // frames since the end began
     this.ended = null; // the frame the end began
-    for (const v of this.lanesView) {
+    this.endPath = null;
+    this.lanesView.forEach((v, z) => {
       v.off = 0;
+      v.prev = capture(this.lanes[z], v.prev);
       v.togepi.pose(R.CLIP.idle, Math.random() * 24); // (rand2 % 25)
       v.idleAt = Math.random() * 24;
-      for (const s of v.slots) { if (s.obj) s.obj.visible = false; s.type = -1; s.obj = null; }
+      for (const s of v.slots) { if (s.obj) { s.obj.visible = false; s.obj.userData.free = true; } s.type = -1; s.obj = null; }
       for (const d of v.digs) d.visible = false;
       v.end = null;
-    }
+    });
     for (const s of this.scenery) s.visible = true;
     const told = setup.told;
     if (told?.sticks) told.sticks.forEach((list, z) => { if (list && !this.cpus[z]) this.inputs[z] = list.map((e) => [...e]); });
     if (told?.done) this.told("won", told.done);
-    this.drawLanes(0);
+    this.drawLanes(1);
   }
   start() {
     this.state = "play";
@@ -195,7 +270,8 @@ export class Game {
 
   // the server's word: someone's stick ("stick": { s, f, x, y }; to this
   // device's own, o: the frame it said), or the end ("won": { f (the frame
-  // it's called), fin (each one's finish frame, or null), p (how far each got, x10) })
+  // it's called), fin (each one's finish frame, or null), p (how far each got,
+  // x10), prior (a finisher's progress the frame before it got in) })
   told(type, m) {
     if (type === "stick") {
       const z = m.s;
@@ -219,7 +295,10 @@ export class Game {
     }
     if (type === "won") {
       if (!Number.isInteger(m.f) || !Array.isArray(m.fin)) return;
-      this.result = { f: m.f, fin: m.fin.map((x) => (Number.isInteger(x) ? x : null)), p: Array.isArray(m.p) ? m.p.map((x) => +x || 0) : null };
+      this.result = {
+        f: m.f, fin: m.fin.map((x) => (Number.isInteger(x) ? x : null)), p: Array.isArray(m.p) ? m.p.map((x) => +x || 0) : null,
+        prior: Array.isArray(m.prior) ? m.prior.map((x) => (typeof x === "number" ? x : null)) : null,
+      };
     }
   }
   // lane z again from before frame f (a stick change it ran without)
@@ -232,6 +311,8 @@ export class Game {
     this.lanes[z].events = [];
     this.simT[z] = at - 1;
   }
+  // lane z's drawn state kept, to draw it between this frame and its next
+  keep(z) { const v = this.lanesView[z]; v.prev = capture(this.lanes[z], v.prev); }
   // run lane z up to frame t (a person's: by their stick changes)
   runTo(z, t) {
     const l = this.lanes[z];
@@ -239,6 +320,7 @@ export class Game {
       const f = this.simT[z] + 1;
       if (f % 15 === 0 && f > this.snaps[z][this.snaps[z].length - 1][0]) this.snaps[z].push([f, l.save()]);
       const [x, y] = this.stickAt(z, f);
+      this.keep(z);
       l.step(f, x, y, true);
       this.simT[z] = f;
       this.sounds(z, f);
@@ -256,15 +338,18 @@ export class Game {
 
   // ---- the game, frame by frame ----
   update(dt) {
+    this.clock += dt;
     if (this.state === "ready") this.intro += dt * R.FPS;
     if (this.state === "play") {
       this.time += dt;
       for (let t = this.lastFrame + 1; t <= this.frame; t++) { this.step(t); this.lastFrame = t; }
-      if (this.over()) { this.state = "over"; this.emit("finish"); }
     } else if (this.state === "over") this.time += dt;
     if (this.ended !== null) {
-      const k = this.time * R.FPS - this.ended;
+      const k = this.time * R.FPS + 1e-6 - this.ended; // (as frame does)
       for (let n = this.after + 1; n <= Math.floor(k); n++) { this.ending(n); this.after = n; }
+      // the play hands over to the results (module #64's banner, 0x87F0A098) as
+      // the end begins, as the game does (0x86705F54, case 12: state 14)
+      if (this.state === "play") { this.state = "over"; this.emit("finish"); }
     }
     this.animate(dt);
   }
@@ -283,6 +368,7 @@ export class Game {
     // the CPUs, together (they rank among themselves)
     const cpus = this.lanes.filter((l, z) => this.cpus[z]);
     if (cpus.length) {
+      this.lanes.forEach((l, z) => { if (this.cpus[z]) this.keep(z); });
       for (const l of cpus) l.step(t, 0, 0, true);
       R.rankCpus(this.lanes);
       this.lanes.forEach((l, z) => { if (this.cpus[z]) { this.simT[z] = t; this.sounds(z, t); } });
@@ -292,7 +378,7 @@ export class Game {
     // the end: once all four are in (their goal runs over), or the race is called
     const fin = this.finishes();
     if (this.ended === null) {
-      const all = fin.every((f) => f !== null) && this.lanes.every((l, z) => l.state === R.DONE || t - fin[z] > END.after);
+      const all = fin.every((f) => f !== null) && this.lanes.every((l, z) => l.state === R.DONE || t - fin[z] > RUN_IN);
       const first = Math.min(...fin.map((f) => (f === null ? Infinity : f)));
       if (this.result ? t >= this.result.f : all || t >= first + CALL) this.ended = t;
     }
@@ -302,109 +388,126 @@ export class Game {
     if (this.result) return this.result.fin;
     return this.lanes.map((l) => l.finish);
   }
-  over() { return this.ended !== null && this.after >= END.after; }
 
-  // n frames after the end began: the camera comes down to the winner(s), who
-  // cheer (clip 6, and a cry 20 frames in); the others lose (clips 4, then 5)
+  // n frames after the end began (0x86709AD0): the camera comes down to the
+  // winner(s), who cheer; the others lose. The game's winners are the ones it
+  // ranks first, unless the last one in is first too (all four together): then
+  // no one (0x86705F54, case 12)
   ending(n) {
     if (n !== 0) return;
-    const places = this.places();
-    const winners = places.map((p) => p === 1);
+    const won = this.places().map((p) => p === 1);
+    const winners = won.every(Boolean) ? won.map(() => false) : won;
     this.emit("end", winners);
     this.lanesView.forEach((v, z) => { v.end = { win: winners[z], at: this.time }; });
     for (const s of this.scenery) s.visible = true;
-    const at = this.lanesView.map((v, z) => [LANE_X[z] + this.lanes[z].x, this.lanes[z].z + v.off]).filter((x, z) => winners[z]);
-    const mean = (k) => (at.length ? at.reduce((a, b) => a + b[k], 0) / at.length : 0);
-    this.endAt = { x: mean(0), z: mean(1) };
+    // where it looks: the last winner's z (the second player's if none); across,
+    // the winner's x, or the first and last winners' middle (3 if that's 0)
+    const zs = [0, 1, 2, 3].filter((z) => winners[z]), last = zs.length ? zs[zs.length - 1] : 1;
+    const xOf = (z) => LANE_X[z] + this.lanes[z].x;
+    const x = !zs.length ? 0 : zs.length === 1 ? xOf(last) : (xOf(zs[0]) + xOf(last)) / 2 || 3;
+    this.endPath = endPath(x, this.lanes[last].z + this.lanesView[last].off);
   }
 
-  // the places: by the frame each finished, then by how far each got
+  // each seat's progress the frame before it got in (the server's word once it's in)
+  priors() { return this.result?.prior || this.lanes.map((l) => l.prior); }
+  // the places: by the frame each finished (the same frame's by how far each
+  // had got the frame before), then by how far each got (rules.js placesOf)
   places() {
-    const fin = this.finishes(), prog = this.result?.p ? this.result.p.map((x) => x / 10) : this.lanes.map((l) => l.progress);
-    const key = (z) => (fin[z] !== null ? [0, fin[z]] : [1, -prog[z]]);
-    return [0, 1, 2, 3].map((z) => {
-      const [a, b] = key(z);
-      return 1 + [0, 1, 2, 3].filter((y) => { const [c, d] = key(y); return c < a || (c === a && d < b); }).length;
-    });
+    const prog = this.result?.p ? this.result.p.map((x) => x / 10) : this.lanes.map((l) => l.progress);
+    return R.placesOf(this.finishes(), this.priors(), prog);
   }
-  // seat z's time, in hundredths of a second (null if it didn't get there)
+  // seat z's time, in hundredths of a second (null if it didn't get there): the game's sum (rules.js timeOf)
   timeOf(z) {
     const f = this.finishes()[z];
-    return f === null || f === undefined ? null : Math.round((f * 100) / R.FPS);
+    return f === null || f === undefined ? null : R.timeOf(f, this.seed, z);
   }
   // how far seat z has got, % (the cards)
   progressOf(z) { return Math.max(0, Math.min(100, Math.floor(this.lanes[z].progress))); }
 
   // ---- every rendered frame ----
   animate(dt) {
-    const between = this.state === "play" ? Math.max(0, Math.min(1, this.time * R.FPS - this.lastFrame)) : 0;
-    this.drawLanes(between);
+    const k = this.state === "play" || this.state === "over" ? Math.max(0, Math.min(1, this.time * R.FPS - this.lastFrame)) : 1;
+    this.drawLanes(k);
+    const f = this.clock * R.FPS;
+    for (const m of this.fxMats) m.n64.frame(f);
   }
 
-  drawLanes(between) {
-    const ranks = this.ranks();
+  // the lanes, k of the way from each one's last frame but one to its last
+  drawLanes(k) {
+    const ranks = this.ranks(), ended = this.ended !== null, f = this.clock * R.FPS;
+    // each Togepi and its belt's track, between frames
+    const at = this.lanes.map((l, z) => {
+      const p = this.lanesView[z].prev, row = l.tile * 32 + l.px;
+      return { x: lerp(p.x, l.x, k), y: lerp(p.y, l.y, k), z: lerp(p.z, l.z, k) + this.lanesView[z].off, row: Math.abs(row - p.row) < 64 ? lerp(p.row, row, k) : row };
+    });
     this.lanesView.forEach((v, z) => {
-      const l = this.lanes[z];
-      const off = v.off; // (0: the game moves a Togepi up or down its belt by its rank; not here, rules.js)
+      const l = this.lanes[z], p = v.prev, d = at[z], x = v.x0 + d.x;
       // the belt's track
-      const row = l.tile * 32 + l.px + 3;
       const uv = this.belts[z].geometry.attributes.uv;
-      const v0 = row / 2048, v1 = (row + BELT.rows) / 2048;
+      const v0 = (d.row + 3) / 2048, v1 = (d.row + 3 + BELT.rows) / 2048;
       uv.setXY(0, 0, v0); uv.setXY(1, 1, v0); uv.setXY(2, 0, v1); uv.setXY(3, 1, v1);
       uv.needsUpdate = true;
       // the Togepi
-      const x = v.x0 + l.x, y = l.y, zz = l.z + off;
       const t = v.togepi;
-      t.root.position.set(x, y, zz);
-      t.root.rotation.y = l.turn || 0;
-      let clip = l.clip, f = l.frame + (this.state === "play" ? l.speed * between : 0);
+      t.root.position.set(x, d.y, d.z);
+      t.root.rotation.y = turnLerp(p.turn, l.turn, k);
+      let clip = l.clip, cf = l.frame + (this.state === "play" ? l.speed * k : 0), shadow = lerp(p.shadow, l.shadow, k);
       if (v.end) { // the end's clips
-        const k = (this.time - v.end.at) * R.FPS;
-        if (v.end.win) { clip = R.CLIP.win; f = k % R.CLIP_LEN[clip]; if (k >= 20 && !v.end.cried) { v.end.cried = true; this.emit("cheer", z); } }
-        else if (k < R.CLIP_LEN[R.CLIP.lose]) { clip = R.CLIP.lose; f = k; }
-        else { clip = R.CLIP.sad; f = (k - R.CLIP_LEN[R.CLIP.lose]) % R.CLIP_LEN[R.CLIP.sad]; }
+        const e = (this.time - v.end.at) * R.FPS;
+        if (v.end.win) {
+          shadow = 1.5 * Math.cos(angle((Math.min(e, CHEER) + 1) * 0x51e)); // (then as its last frame left it)
+          if (e >= 20 && !v.end.cried) { v.end.cried = true; this.emit("cheer", z); }
+          [clip, cf] = e < CHEER ? [R.CLIP.win, e] : [R.CLIP.idle, e - CHEER];
+        } else [clip, cf] = e < LOSE ? [R.CLIP.lose, e] : e < LOSE + SAD ? [R.CLIP.sad, e - LOSE] : [R.CLIP.idle, e - LOSE - SAD];
         t.root.rotation.y = 0;
-      } else if (this.state !== "play" && l.finish === null) { clip = R.CLIP.idle; f = (v.idleAt + this.time * R.FPS) % R.CLIP_LEN[clip]; }
-      t.pose(clip, f);
-      v.shadow.position.set(x, R.RUNNER_Z === l.z ? 80 + SHADOW.y : 80 + SHADOW.y, zz);
+      } else if (this.state !== "play" && l.finish === null) { clip = R.CLIP.idle; cf = (v.idleAt + this.time * R.FPS) % R.CLIP_LEN[clip]; }
+      t.pose(clip, cf);
+      v.shadow.position.set(x, SHADOW.y, d.z);
+      v.shadow.scale.set(shadow, 1, shadow);
       // the dash's aura
-      v.aura.root.visible = l.auraA > 0 && !v.end;
+      const a = lerp(auraAlpha(p.aura), auraAlpha(l.auraA), k);
+      v.aura.root.visible = a > 0 && !v.end;
       if (v.aura.root.visible) {
-        v.aura.root.position.set(x, y + 50, zz);
-        v.aura.root.scale.set(1, 1, Math.max(0.01, (l.boost + AURA) / AURA));
-        v.aura.fade(l.auraA / 255);
+        v.aura.root.position.set(x, d.y + AURA.y, d.z);
+        v.aura.root.scale.set(1, 1, Math.max(0.01, (lerp(p.boost, l.boost, k) + AURA.scale) / AURA.scale));
+        for (const m of v.auraMats) { m.n64.frame(f); m.n64.prim.w = a / 255; }
       }
       // the rank coin
       v.coin.material.map = this.assets["rank" + ranks[z]];
-      v.coin.position.set(x, y + COIN.y, zz + COIN.z);
+      v.coin.position.set(x, d.y + COIN.y, d.z + COIN.z);
       v.coin.visible = this.state === "play" && !v.end;
-      // what's on the belt
+      // what's on the belt: gone from the goal on (the goal's state clears its 60 every
+      // frame: 0x867049F0; the end, everyone's: 0x86709AD0)
+      const gone = ended || l.state === R.GOAL || l.state === R.DONE;
+      const was = (i, o) => p.sk[i] === (o.shown ? o.type : -1) && Math.abs(p.sz[i] - o.z) < 500; // (the same one as the frame before)
       l.slots.forEach((o, i) => {
         const s = v.slots[i];
-        const type = o.type >= 0 && o.shown && o.type !== R.DIGLETT ? o.type : -1;
+        const type = !gone && o.type >= 0 && o.shown && o.type !== R.DIGLETT ? o.type : -1;
         if (s.type !== type) {
           if (s.obj) { s.obj.visible = false; s.obj.userData.free = true; }
           s.obj = type >= 0 ? this.take(v, type) : null;
           s.type = type;
         }
-        if (s.obj) s.obj.position.set(v.x0 + o.x, OBSTACLE_Y, o.z + off);
+        if (s.obj) s.obj.position.set(v.x0 + (was(i, o) ? lerp(p.sx[i], o.x, k) : o.x), OBSTACLE_Y, (was(i, o) ? lerp(p.sz[i], o.z, k) : o.z) + v.off);
       });
       // the Diglett, as sprites
-      let d = 0;
-      for (const o of l.slots) {
-        if (o.type !== R.DIGLETT || !o.shown) continue;
-        const sp = v.digs[d] || (v.digs[d] = this.diglett());
-        sp.visible = true;
-        sp.position.set(v.x0 + o.x, OBSTACLE_Y + DIGLETT * 0.35, o.z + off);
-        sp.material.map.offset.x = R.Lane.digFrame(o.n) / 6;
-        d++;
+      let n = 0;
+      if (!gone) {
+        l.slots.forEach((o, i) => {
+          if (o.type !== R.DIGLETT || !o.shown) return;
+          const sp = v.digs[n] || (v.digs[n] = this.diglett());
+          sp.visible = true;
+          sp.position.set(v.x0 + o.x, OBSTACLE_Y + DIGLETT * 0.35, (was(i, o) ? lerp(p.sz[i], o.z, k) : o.z) + v.off);
+          sp.material.map.offset.x = R.Lane.digFrame(o.n) / 6;
+          n++;
+        });
       }
-      for (; d < v.digs.length; d++) v.digs[d].visible = false;
-      // the others' markers on this belt
+      for (; n < v.digs.length; n++) v.digs[n].visible = false;
+      // the others' markers on this belt (shown whoever's in: hidden only past 600 either way, 0x86706B88)
       for (const g of v.ghosts) {
-        const o = this.lanes[g.q], dz = ((o.tile * 32 + o.px) - (l.tile * 32 + l.px)) / R.SCROLL + (o.z + this.lanesView[g.q].off) - (l.z + off);
-        g.s.visible = this.state === "play" && !v.end && l.finish === null && o.finish === null && Math.abs(dz) <= GHOST.far && !!g.s.material.map;
-        g.s.position.set(v.x0 + o.x, GHOST.y, zz + dz);
+        const o = at[g.q], dz = (o.row - d.row) / R.SCROLL + o.z - d.z;
+        g.s.visible = this.state === "play" && !v.end && Math.abs(dz) <= GHOST.far && !!g.s.material.map;
+        g.s.position.set(v.x0 + o.x, GHOST.y, d.z + dz);
       }
     });
   }
@@ -415,14 +518,9 @@ export class Game {
     if (!o) {
       const [name, s] = OBSTACLE[type];
       o = makeModel(this.assets[name], s).root;
-      if (type === R.ARROW) { // its chevron (cb00) over its gradient (cb01), on the same quad
+      if (type === R.ARROW) { // its panel (cb01, layer 6) and the chevron's outline (cb00, layer 8): fx.json
         o.children[0].rotation.x = ARROW_TILT;
-        o.traverse((m) => {
-          if (!m.isMesh || !/cb00/.test(m.material.name)) return;
-          m.material = m.material.clone();
-          Object.assign(m.material, { polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 });
-          m.renderOrder = 1;
-        });
+        this.fxMats.push(...this.dressed(o, "arrow"));
       }
       this.scene.add(o);
       pool.push(o);
@@ -438,26 +536,20 @@ export class Game {
     tex.needsUpdate = true;
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
     sp.scale.set(DIGLETT, DIGLETT, 1);
+    sp.renderOrder = SPRITES;
     this.scene.add(sp);
     return sp;
   }
-  // each lane's rank now: finishers by when, the rest by how far
-  ranks() {
-    const fin = this.lanes.map((l) => l.finish);
-    const key = (z) => (fin[z] !== null ? [0, fin[z]] : [1, -this.lanes[z].progress]);
-    return [0, 1, 2, 3].map((z) => {
-      const [a, b] = key(z);
-      return 1 + [0, 1, 2, 3].filter((y) => { const [c, d] = key(y); return c < a || (c === a && d < b); }).length;
-    });
-  }
+  // each lane's rank now (the coins): as the places go
+  ranks() { return R.placesOf(this.lanes.map((l) => l.finish), this.lanes.map((l) => l.prior), this.lanes.map((l) => l.progress)); }
 
   // the camera now: { eye, at, fov }
   camera() {
-    if (this.ended !== null && this.endAt) { // down to the winner(s), then round them
-      const k = Math.min(1, Math.max(0, (this.time * R.FPS - this.ended) / END.frames));
-      const spin = Math.max(0, this.time * R.FPS - this.ended - END.frames) * END.spin;
-      const el = VIEW.el + (END.el - VIEW.el) * k, d = VIEW.d + (END.d - VIEW.d) * k;
-      return { eye: eyeOf(VIEW.az - spin, el, d), at: [this.endAt.x * k, VIEW.at[1] + (END.atY - VIEW.at[1]) * k, this.endAt.z * k], fov: VIEW.fov };
+    if (this.ended !== null && this.endPath) { // down to the winner(s), then round them (between frames)
+      const { path, still } = this.endPath, n = Math.max(0, this.time * R.FPS - this.ended);
+      const i = Math.floor(n), k = n - i, a = path[Math.min(i, path.length - 1)], b = path[Math.min(i + 1, path.length - 1)];
+      const spin = Math.max(0, n - still) * END.spin;
+      return { eye: eyeOf(VIEW.az - spin, lerp(a.el, b.el, k), lerp(a.d, b.d, k)), at: a.at.map((c, j) => lerp(c, b.at[j], k)), fov: VIEW.fov };
     }
     if (this.state !== "ready") return { eye: eyeOf(VIEW.az, VIEW.el, VIEW.d), at: VIEW.at, fov: VIEW.fov };
     // the count: round from the side (0x8670A07C)

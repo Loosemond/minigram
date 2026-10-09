@@ -68,12 +68,13 @@ export async function create(shell, onProgress) {
   game.on("flowerStep", (z) => shell.sound("flowerStep", z)); // (0x9F04)
   game.on("hit", (z) => { if (mine(z)) { shell.haptic("medium"); shell.flash(z, "hurt"); } });
   game.on("arrow", (z) => { if (mine(z)) shell.haptic("light"); });
+  // (the ones panned to their player are 0x80027A18's; these the middle's, 0x800279B4 and 0x80027764)
   game.on("goal", (z) => {
-    shell.sound("go", z); // (0x5F08, again)
-    if (!firstIn) { firstIn = true; shell.sound("crowd"); } // (0x1C07, for the first)
+    shell.sound("go"); // (0x5F08, again: 0x86705998)
+    if (!firstIn) { firstIn = true; shell.sound("crowd", undefined, { frames: 0x44 }); } // (0x1C07 for the first, held 68 frames)
     if (mine(z)) shell.haptic("success");
   });
-  game.on("cheer", (z) => shell.sound("cheer", z)); // (0x9F02, 20 frames into a winner's clip 6)
+  game.on("cheer", () => shell.sound("cheer")); // (0x9F02, 20 frames into a winner's clip 6: 0x867044DC)
 
   // ---- the views ----
   const coarse = window.matchMedia?.("(pointer: coarse)");
@@ -218,7 +219,7 @@ export async function create(shell, onProgress) {
       shell.stopSound();
     },
     go() { game.start(); shell.music("main"); }, // song 46, from GO
-    finish() { shell.music(null, 40); },
+    finish() {}, // (song 46 plays on till the results' own: module #55 never fades it there)
     stop() { game.stop(); },
     setControl(z, c) { game.setControl(z, c); },
     get state() { return game.state; },

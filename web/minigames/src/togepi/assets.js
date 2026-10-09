@@ -3,12 +3,14 @@
 // comes along the belts (flowers 62, rocks 63-64, logs 65-67, the dash arrow
 // 202), the dash's aura (188), the scenery round it all (132-140), and the
 // pictures: the track (image bank 226), the Diglett strip (205), the rank
-// coins (387) and the shadows (307). Lighting is done on the textures' display values, as the N64
-// does (see src/egg/assets.js, docs/colours.md).
+// coins (387) and the shadows (307). The arrow and the aura are drawn through the
+// game's colour combiner (fx.json: src/n64fx.js). Lighting is done on the textures'
+// display values, as the N64 does (see src/egg/assets.js, docs/colours.md).
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { retry, attemptURL } from "../retry.js";
+import { loadFx, tagPrims } from "../n64fx.js";
 
 const FPS = 30; // the game's animation rate
 const GLB = 100; // the exported models are in hundredths of the game's units
@@ -51,13 +53,15 @@ export async function loadAssets(base, onProgress = () => {}) {
   const jobs = [];
   let done = 0;
   const job = (p) => { jobs.push(p); return p.then((x) => { onProgress(++done / jobs.length); return x; }); };
-  const [models, pics] = await Promise.all([
+  const [models, pics, fx] = await Promise.all([
     Promise.all(MODELS.map((m) => job(gltf(base + m + ".glb")))),
     Promise.all(PICTURES.map((p) => job(texture(base + p + ".png")))),
+    loadFx(base, job),
   ]);
-  const out = {};
+  const out = { fx };
   MODELS.forEach((name, i) => {
     const g = models[i];
+    tagPrims(g);
     prepare(g.scene);
     const clips = g.animations.filter((a) => a.name.startsWith("clip")).sort((a, b) => a.name.localeCompare(b.name));
     out[name] = { scene: g.scene, clips };
@@ -96,13 +100,6 @@ export function makeModel(a, s = 1) {
       }
       action.time = Math.max(0, f) / FPS;
       mixer.update(0);
-    },
-    // every material see-through by k (the aura)
-    fade(k) {
-      model.traverse((o) => {
-        if (!o.isMesh) return;
-        for (const m of [o.material].flat()) { m.transparent = true; m.opacity = k; m.depthWrite = false; }
-      });
     },
   };
   return api;

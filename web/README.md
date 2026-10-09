@@ -520,28 +520,38 @@ as fits; hold ↓ to run and ← → to steer (or hold the mouse button on your
 belt: as a finger). On a phone your belt has the big view (under the other
 three in portrait, beside them in landscape): hold anywhere on it to run, and
 your Togepi heads for your finger. The cards sit below each belt's near end,
-with how far each has got; a rank coin floats over each Togepi, and on each
+with how far each has got; a rank coin lies over each Togepi, and on each
 belt the others' badges show where they are along the track, as in the game.
-The end: the camera comes down to the winner, who cheers, and goes round.
+Your stick let go, your Togepi turns back to face down its belt. The end: as
+the last one's in, the winners' banner drops and the camera comes down to the
+winner, who cheers once, and goes round (the game's steps, a frame at a time);
+everyone's obstacles are gone. The arrows and the dash's glow are drawn
+through the game's own colour combiner (a scrolling blue chevron with a white
+outline; a translucent cyan-blue glow, never more than 200/255 opaque). The
+rules run at the game's 30 frames a second; what moves is drawn between
+frames, smooth at any display rate.
 
-**Sound**: the game's (`assets/togepi/sound.bin`, 520 KB): song 46 from GO,
-bank 9's effects (footsteps, in the flowers too, a knock, a bounce, the dash,
-the winner's cry), bank 5's count and GO (again as each one reaches the goal)
-and Clear Cut Challenge's crowd for the first in.
+**Sound**: the game's (`assets/togepi/sound.bin`, 520 KB): song 46 from GO
+(on till the results' song takes over), bank 9's effects (footsteps, in the
+flowers too, a knock, a bounce, the dash: each panned to its player; the
+winner's cry, in the middle), bank 5's count and GO (again, in the middle, as
+each one reaches the goal) and Clear Cut Challenge's crowd for the first in
+(68 frames).
 
 What comes from the ROM and what is made up:
 
 | From the game | Made for the remake |
 |---|---|
-| the course (its 20 patterns, how they're picked and mirrored), the running, the obstacles and what each does, the dashes, the Diglett's timing, the CPUs, the finish, the progress (module #55's code) | each lane draws from random numbers of its own, the CPUs rank among themselves, and a Togepi stays where it is on its belt (in the game it moves up or down by its rank, and the CPUs look at the ranks): so a lane depends on nothing but its own player, and every device and the server can run it; the race is called 30 s after the first one's in (the game waits for all four) |
-| Togepi (109) and its clips, the platform (60), the flowers, rocks, logs and arrows (62-67, 202), the dash's aura (188), the scenery (132-140), the track (bank 226), the Diglett (205), the rank coins (387), the shadows (307), the badges (434), the camera, its glide in and its end | Togepi in every seat (the game's Omanyte comes from a Game Pak), the aura drawn as a glow, the rank coins half the size, the touch steering, a view a belt on phones, the title's art (the track, side by side) |
+| the course (its 20 patterns, how they're picked and mirrored), the running, the obstacles and what each does, the dashes, the knocks, the Diglett's timing, the CPUs, the finish, the progress, the winners (the first ranked; the ones in on the same frame by how far each was the frame before) and the time's sum (module #55's code) | each lane draws from random numbers of its own, the CPUs rank among themselves, and a Togepi stays where it is on its belt (in the game it moves up or down by its rank, and the CPUs look at the ranks): so a lane depends on nothing but its own player, and every device and the server can run it; the race is called 30 s after the first one's in (the game waits for all four); every one in gets a time (the game works out the first one's), its random hundredths from the round's seed |
+| Togepi (109) and its clips (the end's: a cheer once, or a loss, then waiting), the way it faces, the platform (60), the flowers, rocks, logs and arrows (62-67, 202, the arrows through their recipes), the dash's aura (188, its recipe and alpha), the scenery (132-140), the track (bank 226), the Diglett (205), the rank coins (387, flat at 7x), the shadows (307, smaller as a Togepi goes up), the badges (434), the camera, its glide in and its end | Togepi in every seat (the game's Omanyte comes from a Game Pak), the aura's place (50 over the Togepi: the game's isn't traced), the Diglett turned to the camera, the touch steering, a view a belt on phones, the title's art (the track, side by side); left out: the instructions' run-in |
 | song 46, the effects of banks 9, 5 and 1 | |
 
 Code: `src/togepi/rules.js` has the rules (and `tools/togepi_rules.py`, the
 server's copy: the course, the lanes, the CPUs and the end),
 `src/togepi/game.js` the game and its scene, `src/togepi/assets.js` the
-models and pictures and `src/togepi/index.js` the cameras, the controls, its
-HUD and its online messages.
+models and pictures (and the arrow's and the aura's recipes, `fx.json`:
+`src/n64fx.js`) and `src/togepi/index.js` the cameras, the controls, its HUD
+and its online messages.
 
 ## Gutsy Golbat
 
@@ -1221,8 +1231,9 @@ to its own device with `o`, the frame it said, if it counts on another one
 Power Plant's finish: its frame, the winners (1 or 0 by seat) and each seat's
 charge then; `stick` as above, passed on to the others, and to its own
 device with `o`, the frame it said, if it counts from another one; `won`
-(`r`, `f`, `fin`, `p`), Tumbling Togepi's end: the frame it ended on, each
-seat's finish frame (null: not in) and how far each got (‰); `pad` as above,
+(`r`, `f`, `fin`, `p`, `prior`), Tumbling Togepi's end: the frame it ended on, each
+seat's finish frame (null: not in), how far each got (‰) and, for each one
+in, how far it had got the frame before (the game's tie-break); `pad` as above,
 passed on to the others, and to its own device with `o`, the frame it said, if
 it counts on another one; `won` (`r`, `f`, `h`), Gutsy Golbat's end: the
 frame the play ended on and each seat's hearts; `won` (`r`, `f`, `p`),

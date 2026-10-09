@@ -122,6 +122,17 @@ export function course(seed) {
 
 // (s32) of a float, as the game's trunc.w.s
 const trunc = (v) => Math.trunc(v);
+// the sine of a binary angle (65536 a turn; for what's drawn)
+const sine = (a) => Math.sin(((a & 0xffff) / 65536) * 2 * Math.PI);
+// The way a Togepi faces for a stick x, y (0x86703D98): the stick's angle, its up
+// taken as level (0x8000B390: atan2), a quarter turn on (+0xFFFF4000 as an s16 is
+// +0x4000), so 0 is straight down the belt, to the camera. [the sine of that turn
+// (the knocks' push aside: x / r), the turn]
+export function facing(x, y) {
+  y = Math.min(y, 0);
+  const r = Math.sqrt(x * x + y * y);
+  return [r ? x / r : 0, Math.atan2(y, x) + Math.PI / 2];
+}
 
 // One lane: a Togepi on its belt, from its player's stick frame by frame
 // (step()), or a CPU's (level 1 hard - 4; seat: which belt, for a quirk of the
@@ -152,7 +163,7 @@ export class Lane {
     this.spin = 0; // a somersault after a dash into the flowers (0x08)
     this.spinning = 0; // (0x48)
     this.side = 0; // the way the Togepi faces: sin of its turn (0 straight on, to the camera)
-    this.turn = 0; // (and the turn, drawn)
+    this.turn = 0; // (and the turn, drawn: the game's +0x20, 0 the way it runs, down the belt)
     this.restart = 0; // the clip to set for the state (0x30)
     this.aura = 0; // the dash's glow fading in (1) or out (-1) (0x94)
     this.clip = CLIP.idle;
@@ -164,7 +175,9 @@ export class Lane {
     this.cycle = 0; // the Diglett' start times (0xA0)
     this.corridor = 0; // the CPU's way through patterns 7 and 8 (0xA4)
     this.finish = null; // the frame it reached the goal
+    this.prior = null; // and its progress the frame before (the game ranks the ones in on the same frame by it)
     this.y = 80; // (drawn: the bounce)
+    this.shadow = 1.5; // (drawn: its shadow's scale, smaller as it goes up)
     this.slots = [...Array(60)].map(() => ({ type: -1, x: 0, z: 3000, col: 0, n: 0, shown: false }));
     this.events = []; // [frame, what] for the scene and the sounds
     this.steps = 0; // (the footsteps' sounds this time round the clip)
@@ -202,12 +215,21 @@ export class Lane {
   // A frame (t, from GO; playing: the race is on). sx, sy: the stick, -60-60 each
   // (right and up), a person's; a CPU steers itself.
   step(t, sx = 0, sy = 0, playing = true) {
+    // the aura's alpha (0x8670427C): down 10 a frame to 70, or out; never over 200
     if (this.aura === 1 && (this.auraA -= 10) < 71) { this.auraA = 70; this.aura = 0; }
     else if (this.aura === -1 && (this.auraA -= 10) < 21) { this.auraA = 0; this.aura = 0; }
+    if (this.auraA > 200) this.auraA = 200;
+    if (this.auraA < 5) this.auraA = 0;
     if (this.cpu) this.think(playing);
     if (this.state === GOAL) { // running on off the belt (drawn)
+      const f = Math.floor(this.frame + 1e-9);
+      // gliding to the middle, turned the way it goes (0x867048B8: 0x86703D98(glide x 5, -45))
+      this.turn = this.frame < 8 && this.glide ? facing(trunc(this.glide * 5), -45)[1] : 0;
       if (this.frame < 8 && this.glide) this.x += this.glide;
-      if (this.frame < 12) this.z += 30 * (SPEED + 1.6 * this.boost);
+      if (this.frame < 12) {
+        this.z += 30 * (SPEED + 1.6 * this.boost);
+        this.shadow = 1.5 - 1.5 * sine((f + 1) * 0xaaa); // (its goal's jump: 0x86704948)
+      }
     }
     let v = this.dashT;
     if (v > 0) {
@@ -215,17 +237,24 @@ export class Lane {
       v = ++this.dashT;
     }
     if (v >= 11) this.dashT = 0;
+    // a bounce (0x86704A50): up and down, its shadow smaller; its last frame (11) sets it a
+    // little lower than it started, and it stays there till a dash runs into something
     v = this.hop;
-    if (v > 0) v = ++this.hop;
+    if (v > 0) {
+      v = ++this.hop;
+      this.y = sine(v * 0xccc) * 60 + 80;
+      this.shadow = 1.5 - 1.5 * sine(v * 0xccc);
+    }
     if (v >= 11) v = this.hop = 0;
     if (v === 5) { this.boost = 0.05; this.boostSide = 0.01; }
-    this.y = this.hop ? Math.sin((((this.hop * 0xccc) & 0xffff) / 65536) * 2 * Math.PI) * 60 + 80 : this.state === GOAL ? this.y : 80;
     if (playing && (this.state === RUN || this.state === FLOWERS || this.state === JUMP)) this.move(t, sx, sy);
     // the state's clip
     if (this.restart) {
       switch (this.state) {
         case JUMP: this.restart = 0; break;
-        case RUN: case FLOWERS: this.setClip(CLIP.run); this.speed = this.animSpeed; break;
+        case RUN: this.shadow = 1.5; // (its shadow back: 0x86706024)
+        // fallthrough
+        case FLOWERS: this.setClip(CLIP.run); this.speed = this.animSpeed; break;
         case KNOCK_S: case KNOCK: this.setClip(CLIP.knock); this.speed = 2; this.setFrame(0); this.restart = 0; break;
         case TRIP: this.setClip(CLIP.trip); this.speed = 2; this.setFrame(0); this.restart = 0; break;
       }
@@ -332,10 +361,12 @@ export class Lane {
         else this.px -= d * SCROLL;
         for (const o of this.slots) o.z += d;
         this.rollTrack();
+        const was = this.progress;
         this.measure();
         for (const o of this.slots) if (o.z < GONE) Object.assign(o, { type: -1, z: 3000, shown: false });
         if (this.finish === null && this.tile > END_TILE && this.px >= END_PX && this.z >= GOAL_Z) {
           this.finish = t;
+          this.prior = was;
           if (this.cpu) this.progress = 120 - 3 * this.rank; // (keeping its place)
           this.side = this.turn = 0;
           this.glide = Math.abs(this.x - START_X) > LANE / 2 - MARGIN - 30 ? (START_X - this.x) / 10 : 0;
@@ -353,11 +384,9 @@ export class Lane {
     }
     if (this.jumpT === 0) this.restart = 1;
     this.animSpeed = this.state === JUMP ? 1 : Math.max(1, trunc(Math.max(Math.abs(CC), Math.abs(D0)) / 9));
-    if (this.jumpT === 0 && (CC < -5 || D0 > 5 || D0 < -5)) { // facing the way it runs (0x86703D98: a quarter turn from the stick's way)
-      const x = trunc(D0), y = Math.min(trunc(CC), 0), r = Math.sqrt(x * x + y * y);
-      this.side = r ? x / r : 0;
-      this.turn = Math.atan2(y, x) + Math.PI / 2; // (drawn)
-    }
+    // facing the way it runs; or, the stick let go, back to about straight on, as the
+    // game's (1, -45) gives (0x86705DC0-0x86705F48)
+    if (this.jumpT === 0) [this.side, this.turn] = CC < -5 || D0 > 5 || D0 < -5 ? facing(trunc(D0), trunc(CC)) : facing(1, -45);
     if ((this.state === RUN || this.state === FLOWERS) && (this.clip === CLIP.run)) { // footsteps (0x8670408C)
       const f = Math.floor(this.frame + 1e-9);
       if (f < 10) this.steps = 0;
@@ -613,12 +642,22 @@ export function rankCpus(lanes) {
     l.finishers = done;
   }
 }
-// the places: by the frame each finished, then (if the race was called) by
-// how far each got; ties share a place
-export function places(lanes) {
-  const key = (l) => (l.finish !== null ? [0, l.finish] : [1, -l.progress]);
-  return lanes.map((l) => {
-    const [a, b] = key(l);
-    return 1 + lanes.filter((m) => { const [c, d] = key(m); return c < a || (c === a && d < b); }).length;
-  });
+// The places: by the frame each finished, the ones in on the same frame by their
+// progress the frame before (the game's ranks then: 0x867097D8, which the finish
+// keeps as 120 - 3 x rank, 0x86705960), then (if the race was called) by how far
+// each got; ties share a place. fin, prior and prog: each seat's.
+export function placesOf(fin, prior, prog) {
+  const key = (z) => (fin[z] !== null ? [0, fin[z], -(prior[z] ?? 0)] : [1, -prog[z], 0]);
+  const before = (a, b) => a[0] < b[0] || (a[0] === b[0] && (a[1] < b[1] || (a[1] === b[1] && a[2] < b[2])));
+  return fin.map((f, z) => 1 + fin.filter((g, y) => before(key(y), key(z))).length);
+}
+export const places = (lanes) => placesOf(lanes.map((l) => l.finish), lanes.map((l) => l.prior), lanes.map((l) => l.progress));
+
+// A finish's time in hundredths of a second, as the game works out the first
+// one's (0x86703F9C): its frames in whole seconds, the rest x 100 / 30 (cut), and
+// 0-2 more at random (rand_lcg % 3; here from the round's seed and the seat, so
+// the same everywhere)
+export function timeOf(f, seed, seat) {
+  const r = (Math.imul((seed ^ 0x68e31da4 ^ Math.imul(seat + 1, 0x9e3779b1)) >>> 0, 1664525) + 1013904223) >>> 0;
+  return Math.floor(f / FPS) * 100 + Math.floor(((f % FPS) * 100) / FPS) + (r % 3);
 }

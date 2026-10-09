@@ -924,6 +924,13 @@ await test("Tumbling Togepi: the lanes and the CPUs are the same as the server's
     const got = await sha16(s);
     assert(got === want, `seed ${seed}: ${got}; tools/togepi_rules.py expects ${want} (update both, and the digests)`);
   }
+  // let go of the stick, a Togepi turns back to about straight on (the game's (1, -45): 0x86705F40);
+  // its push aside when knocked goes by it (tools/test_rooms.py checks the server's the same)
+  const l = new R.Lane(5, 0, R.course(5));
+  for (let t = 0; t < 8; t++) l.step(t, 60, 0);
+  const steered = l.side;
+  l.step(8, 0, 0);
+  assert(steered === 1 && l.side === 1 / Math.sqrt(2026), `facing aside: ${steered}, let go: ${l.side}`);
 });
 
 await test("Tumbling Togepi: its music and sound effects play from sound.bin", () => soundTest("assets/togepi/sound.bin", [
@@ -945,7 +952,7 @@ await test("Tumbling Togepi: a finger on your belt steers your Togepi to it", as
 
 await test("Tumbling Togepi: a solo race, played headless: all four get there, and the places go by time", async () => {
   await solo.mg.show("togepi");
-  const api = solo.mg.mini, g = api.game, saved = g.listeners, { BOX } = await moduleOf(solo, "./src/togepi/rules.js");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners, { BOX, timeOf } = await moduleOf(solo, "./src/togepi/rules.js");
   solo.mg.paused = true;
   g.listeners = {};
   const out = [];
@@ -958,7 +965,9 @@ await test("Tumbling Togepi: a solo race, played headless: all four get there, a
       assert(fin.every((f) => f !== null), `${level}: not all in: ${fin}`);
       const order = [...res].sort((a, b) => a.place - b.place).map((r) => fin[r.i]);
       assert(order.every((f, k) => !k || order[k - 1] <= f), `${level}: places ${res.map((r) => r.place)} for finishes ${fin}`);
-      assert(res.every((r) => r.score === Math.round((fin[r.i] * 100) / 30)), "the times: " + res.map((r) => r.score));
+      // (the game's sum: whole seconds, the frames past x 100 / 30 cut, and 0-2 hundredths more)
+      assert(res.every((r) => r.score === timeOf(fin[r.i], seed, r.i) && r.score - Math.floor((fin[r.i] * 100) / 30) in { 0: 1, 1: 1, 2: 1 }),
+        "the times: " + res.map((r) => r.score));
       out.push(`${level}: ${fin.join(", ")}`);
     }
   } finally {

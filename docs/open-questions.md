@@ -95,6 +95,20 @@ What isn't known yet, roughly by how useful it would be.
   next or from frame to frame (the remake takes them per CPU); and the
   instruction screen's show (state 11: four small Pichus turning, humming and
   sparking as it fades out), which the remake leaves out.
+- **Tumbling Togepi's loose ends** (its rules are read: [minigames.md](minigames.md#tumbling-togepi)):
+  where the dash's aura is (`0x867043AC` takes its x and y from `+0xAC` and
+  `+0xB0` of the Togepi's node, the place a matrix at `+0x7C` holds, as with
+  Pichu's dizzy stars: whose matrix wasn't traced; the remake puts it 50 over
+  the Togepi, about where its body's joint is); the Diglett's quad (upright,
+  `+0x1E` 0, where the remake turns a sprite to the camera); the end of a goal
+  run slower than 1 (the game ends the race at the last one's goal clip's
+  end, the remake 30 frames after it's in at the latest); the end's camera
+  when no one wins (its step across is the last round's, from statics); and
+  the instructions' run-in (state 10: four small Togepi running at the camera
+  as the screen fades, [minigames.md](minigames.md#tumbling-togepi)): how long
+  the fade is (`0x80007B14(0x14)`, read by the screen's own code) and the
+  instructions' camera (`0x8670A404`: what its +0x14 and +0x18 do), which the
+  remake leaves out, as the other games' instructions shows.
 - **Audio:** the voices' codec (5, in sample banks 4–6), the reverb
   settings, the game's custom sequence function (`0x800275D8`), and the
   0x28-byte records at `0x49B780` ([audio.md](audio.md)).
