@@ -9,7 +9,7 @@
 // a while two are live. A press of the right button with the direction held
 // towards a live Electrode charges 1; 80 wins (a tie: everyone who gets
 // there on the same frame). The wrong button, or a press towards a dead one,
-// charges nothing and shocks the Pichu: no input for 9 frames. A press with
+// charges nothing and shocks the Pichu: no input for 10 frames. A press with
 // no direction does nothing, and the button has to come up between presses
 // (one every other frame at most).
 //
@@ -20,17 +20,19 @@
 
 export const FPS = 30;
 export const FULL = 80; // charge to win (0x86606720)
-export const SHOCK = 9; // frames without input after a miss (clip 10, Pichu's)
+// frames without input after a miss: clip 10 (10 frames) starts the frame
+// after it (0x86601A9C), and input's back once it's at its last (0x86601B04)
+export const SHOCK = 10;
 export const GAP = 2; // frames between one press and the next, at least
-export const END = 50; // frames from the finish to the losers' zap (the round's end here)
+export const END = 130; // frames from the finish to the results (0x8660429C: 50 + 80, all won or not)
 export const A = 5, B = 6; // the buttons, as the game numbers what an Electrode wants
 export const DIRS = { up: 1, down: 2, right: 3, left: 4 };
 export const LEVELS = { easy: 1, normal: 2, hard: 3 };
 // by c (4 - the COM level; 0 with no CPUs: 0x86600EEC): the base cycle
 // (0x8660722C), the warning W (0x86606724), the first cycle's pop-out
-// (0x86606ADC), the button balance's step
+// (0x86606ADC), the button balance's step (2 for c 0-2, 1 for c 3-4: 0x86600474)
 const BASE = { 0: 70, 1: 60, 2: 60, 3: 80, 4: 120 };
-const WARN = { 0: 35, 1: 25, 2: 25, 3: 40, 4: 60 };
+export const WARN = { 0: 35, 1: 25, 2: 25, 3: 40, 4: 60 };
 const FIRST = [1, 12, 15, 20, 25];
 const STICK = { 1: 0, 2: 0, 3: 0, 4: 1 }; // 0x86606ACC[c] (c 0 reads the column counter there)
 // the CPUs (0x86600678): x = rand % 399, then x / a0 + add frames to the next press,
@@ -69,7 +71,7 @@ export const levelCode = (level, cpus) => (cpus ? 4 - (LEVELS[level] || 2) : 0);
 // last frame), cur and nxt (indexes into list).
 export function pattern(seed, c, frames = 30 * 300) {
   const r2 = quad(seed ^ 0x2545f491), rl = lcg(seed ^ 0x6d2b79f5);
-  const W = WARN[c], L0 = BASE[c], step = c >= 3 ? 2 : 1;
+  const W = WARN[c], L0 = BASE[c], step = c < 3 ? 2 : 1;
   const list = [], at = { g0: new Int16Array(frames), L: new Int16Array(frames), cur: new Int16Array(frames), nxt: new Int16Array(frames) };
   let g0 = 0, total = 0, L = 0, event = -100, bal = 0, run = 0, col = 0, row = 0;
   let cur = -1, nxt = -1; // indexes into list
@@ -163,13 +165,17 @@ export class Runner {
 // hit }] up to its finish, and its finish frame (or null). They never pick a
 // button and don't miss a live Electrode; near a cycle's end, aiming past
 // their margin, they go for the next one (with a free pass at it) or, now
-// and then, a random direction (a shock if nothing's live there).
-export function cpuPresses(seed, c, cpus, P) {
+// and then, a random direction (a shock if nothing's live there). A miss
+// drops the plan (0x86600CB8) and the planner, which doesn't look at the
+// shock, plans again that frame; the press waits till the shock's over.
+// w: W as it was before the round, which the margin takes (it's drawn before
+// the round's init sets W: 0x86600F80): 30 (the data's) in a first round, the
+// last round's W[c] in a "play again" (state 13 inits again, 0x866044B8).
+export function cpuPresses(seed, c, cpus, P, w = 30) {
   if (!cpus.some(Boolean) || !c) return [0, 1, 2, 3].map(() => null);
   const r2 = quad(seed ^ 0x1b873593), rl = lcg(seed ^ 0x3c6ef372), at = P.at;
-  const W = 30; // (the margin takes W as it was before the round: 30 in a first one)
   const players = [0, 1, 2, 3].map((i) => ({
-    i, cpu: !!cpus[i], off: (r2() % W) - 5, mood: rl() % 5,
+    i, cpu: !!cpus[i], off: (r2() % w) - 5, mood: rl() % 5,
     planned: false, at: 0, dir: 0, free: false, missAt: -99, charge: 0, full: null, presses: [],
   }));
   const ramp = rl() % 11;
@@ -177,10 +183,7 @@ export function cpuPresses(seed, c, cpus, P) {
     const g0 = t ? at.g0[t - 1] : 0; // (as the players' callbacks see it: before this frame's play)
     for (const p of players) {
       if (!p.cpu || p.full !== null) continue;
-      if (t > p.missAt && t <= p.missAt + SHOCK) {
-        if (t === p.missAt + SHOCK) p.planned = false; // (the shock's over: it plans again)
-        continue;
-      }
+      if (t > p.missAt && t <= p.missAt + SHOCK) continue; // (shocked: no input, 0x86602324)
       if (!p.planned || !(p.at < g0)) continue;
       const e = liveAt(P, t, p.dir);
       let hit = !!e;
@@ -200,7 +203,7 @@ export function cpuPresses(seed, c, cpus, P) {
     if (at.g0[t] === 0) for (const p of players) if (p.cpu) p.planned = false;
     const L = at.L[t], cur = P.list[at.cur[t]], nxt = P.list[at.nxt[t]];
     for (const p of players) {
-      if (!p.cpu || p.planned || p.full !== null || (t >= p.missAt && t < p.missAt + SHOCK)) continue;
+      if (!p.cpu || p.planned || p.full !== null) continue;
       p.planned = true;
       const x = r2() % 399;
       let add = 0, a0;

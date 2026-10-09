@@ -3,7 +3,8 @@
 // B/A sign), the Electrode lamps (57), Pichu (107) with its faces, the dizzy
 // stars (190, drawn through the game's colour combiner: fx.json, src/n64fx.js),
 // and the sparks' and the lightning's pictures (image banks 224 and 225, a
-// strip each). The gauges' pictures are loaded by the page.
+// strip each; 224 again in yellow, for module #64's particles). The gauges'
+// pictures are loaded by the page.
 // Lighting is done on the textures' display values, as the N64 does (see
 // src/egg/assets.js, docs/colours.md).
 import * as THREE from "three";
@@ -70,10 +71,10 @@ export async function loadAssets(base, onProgress = () => {}) {
   const [models, info, strips, fx] = await Promise.all([
     Promise.all(names.map((m) => job(gltf(base + m + ".glb")))),
     job(fetchRetry(base + "pichu.json").then((r) => r.json())),
-    Promise.all(["spark", "bolt"].map((s) => job(texture(base + s + ".png")))),
+    Promise.all(["spark", "bolt", "spark_yellow"].map((s) => job(texture(base + s + ".png")))),
     loadFx(base, job),
   ]);
-  const out = { spark: strips[0], bolt: strips[1], fx };
+  const out = { spark: strips[0], bolt: strips[1], sparkYellow: strips[2], fx };
   await Promise.all(names.map(async (name, i) => {
     const g = models[i];
     tagPrims(g);

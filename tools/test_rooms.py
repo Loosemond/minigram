@@ -61,7 +61,7 @@ JS_STAMPEDE = {1: "84a6cb28cd987d1d", 12345: "2a9b704b839d8309", 2 ** 31 - 1: "1
 # pattern() and cpuPresses() in web/minigames/src/pichu/rules.js, for c 0-3
 # over 3000 frames: every Electrode (its direction, button and frames) and the
 # CPUs' presses and finishes (web/minigames/tests.js has the same)
-JS_PICHU = {1: "e27615795ea9a2a3", 12345: "daf3601d2ace0952", 2 ** 31 - 1: "ecb9ea996496d4dd"}
+JS_PICHU = {1: "85b689e086341c65", 12345: "7a2d41e41a9793ae", 2 ** 31 - 1: "2f91d5687bee0e4b"}
 # web/minigames/src/togepi/rules.js: a race with seat 0 on TOGEPI_SCRIPT and
 # three normal CPUs, every lane's x, z, track, progress and state every 50
 # frames till it's in, and the finishes (web/minigames/tests.js has the same)
@@ -823,7 +823,7 @@ def _():
 def _():
     saved = pichu_rules.FULL, pichu_rules.cpu_presses
     pichu_rules.FULL = 3  # (three hits to win)
-    pichu_rules.cpu_presses = lambda seed, c, cpus, P: [dict(presses=[], full=None) if cpus[s] else None for s in range(4)]
+    pichu_rules.cpu_presses = lambda seed, c, cpus, P, w=30: [dict(presses=[], full=None) if cpus[s] else None for s in range(4)]
     try:
         a, b = Client("PA"), Client("PB")
         a.send("hello", id="pa", name="Pam", game="pichu")
@@ -864,6 +864,9 @@ def _():
         a.s.settimeout(8)
         res = a.wait("results", timeout=10)
         assert res["scores"] == [3, 0, 0, 0] and g.end == (late + pichu_rules.END) / pichu_rules.FPS, (res, g.end)
+        a.send("start")  # play again: the CPUs' margins take the last round's W (Normal with CPUs: 25)
+        st = a.wait("start")
+        assert st["pp"].get("w") == 25 and rooms.rooms[code].game.w == 25, st["pp"]
         b.close()
         a.close()
     finally:

@@ -78,6 +78,23 @@ What isn't known yet, roughly by how useful it would be.
   Furret's Frolic); what image banks 378 and 382 (the gifts and their points,
   by appearance) are for; and the instructions' show (state 2: the
   Delibird walk in), which the remake leaves out.
+- **Pichu's Power Plant's loose ends** (its rules are read: [minigames.md](minigames.md#pichus-power-plant)):
+  the lights' ways (`0x866026B8` and `0x86602720` turn the two lights by the
+  camera's angles, + `0x2000` and the like, but how a light node's angles
+  make its direction wasn't traced: the remake lights it by eye, flatter
+  than the game's ambient `0x646464` with a white and a grey light); what
+  `+0xAC`-`+0xB4` of the Pichu's node are, which the dizzy stars are placed
+  from (taken as its place in the world, the last row of a matrix at `+0x7C`:
+  not traced); the frame order the lamps' and the shock's timings rest on
+  (that a node's clip moves on after its callback each frame, as
+  `0x8003EC64`'s "frame − speed" and the other modules have it: the 4 frames
+  a lamp is held in, and the shock's 10 frames, follow from it); how many
+  frames module #64's particles are drawn for (the remake: their life and
+  one, from the frame they're made); whether the CPUs' "late" and "wrong"
+  flags (locals of `0x86600678`, only ever set to 1) carry from one CPU to the
+  next or from frame to frame (the remake takes them per CPU); and the
+  instruction screen's show (state 11: four small Pichus turning, humming and
+  sparking as it fades out), which the remake leaves out.
 - **Audio:** the voices' codec (5, in sample banks 4–6), the reverb
   settings, the game's custom sequence function (`0x800275D8`), and the
   0x28-byte records at `0x49B780` ([audio.md](audio.md)).

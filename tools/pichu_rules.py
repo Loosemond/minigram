@@ -15,9 +15,9 @@ import math
 SEATS = 4
 FPS = 30
 FULL = 80
-SHOCK = 9
+SHOCK = 10
 GAP = 2
-END = 50
+END = 130
 A, B = 5, 6
 LEVELS = {"easy": 1, "normal": 2, "hard": 3}
 BASE = {0: 70, 1: 60, 2: 60, 3: 80, 4: 120}
@@ -72,7 +72,7 @@ def level_code(level, cpus):
 def pattern(seed, c, frames=FPS * 300):
     """The round's Electrodes and each frame's cycle state (rules.js pattern())."""
     r2, rl = quad(seed ^ 0x2545F491), lcg(seed ^ 0x6D2B79F5)
-    W, L0, step = WARN[c], BASE[c], 2 if c >= 3 else 1
+    W, L0, step = WARN[c], BASE[c], 2 if c < 3 else 1
     lst = []
     at = dict(g0=[0] * frames, L=[0] * frames, cur=[0] * frames, nxt=[0] * frames)
     st = dict(g0=0, total=0, L=0, event=-100, bal=0, run=0, col=0, row=0, cur=-1, nxt=-1)
@@ -173,15 +173,15 @@ class Runner:
         return res
 
 
-def cpu_presses(seed, c, cpus, P):
-    """Each CPU seat's presses and finish frame (rules.js cpuPresses())."""
+def cpu_presses(seed, c, cpus, P, w=30):
+    """Each CPU seat's presses and finish frame (rules.js cpuPresses()); w: W
+    as it was before the round (30 in a first round)."""
     if not any(cpus) or not c:
         return [None] * SEATS
     r2, rl, at = quad(seed ^ 0x1B873593), lcg(seed ^ 0x3C6EF372), P["at"]
-    W = 30
     players = []
     for i in range(SEATS):
-        players.append(dict(i=i, cpu=bool(cpus[i]), off=r2() % W - 5, mood=rl() % 5, planned=False, at=0, dir=0,
+        players.append(dict(i=i, cpu=bool(cpus[i]), off=r2() % w - 5, mood=rl() % 5, planned=False, at=0, dir=0,
                             free=False, miss_at=-99, charge=0, full=None, presses=[]))
     ramp = rl() % 11
     for t in range(P["frames"]):
@@ -190,8 +190,6 @@ def cpu_presses(seed, c, cpus, P):
             if not p["cpu"] or p["full"] is not None:
                 continue
             if p["miss_at"] < t <= p["miss_at"] + SHOCK:
-                if t == p["miss_at"] + SHOCK:
-                    p["planned"] = False
                 continue
             if not p["planned"] or not p["at"] < g0:
                 continue
@@ -217,7 +215,7 @@ def cpu_presses(seed, c, cpus, P):
                     p["planned"] = False
         L, cur, nxt = at["L"][t], P["list"][at["cur"][t]], P["list"][at["nxt"][t]]
         for p in players:
-            if not p["cpu"] or p["planned"] or p["full"] is not None or p["miss_at"] <= t < p["miss_at"] + SHOCK:
+            if not p["cpu"] or p["planned"] or p["full"] is not None:
                 continue
             p["planned"] = True
             x = r2() % 399
@@ -255,11 +253,15 @@ def finish(fulls):
 class Round:
     """One round's presses and finish, on the server."""
 
-    def __init__(self, seed, level="normal", cpus=(False, True, True, True)):
+    def __init__(self, seed, level="normal", cpus=(False, True, True, True), after=None):
+        """after: the room's last round (any game's): a Pichu's Power Plant
+        one before makes this a "play again", whose CPUs' margins take that
+        round's W (rules.js cpuPresses())."""
         self.cpus = list(cpus)
         self.c = level_code(level, any(self.cpus))
+        self.w = WARN[after.c] if isinstance(after, Round) else 30
         self.P = pattern(seed, self.c)
-        self.cpu = cpu_presses(seed, self.c, self.cpus, self.P)
+        self.cpu = cpu_presses(seed, self.c, self.cpus, self.P, self.w)
         self.runners = [None if self.cpus[s] else Runner(self.P) for s in range(SEATS)]
         self.done = None  # (finish frame, winners), once decided
         self.end = self.P["frames"] / FPS  # s after GO: the finish's + END once decided (the pattern's end if no one gets there)
@@ -285,7 +287,10 @@ class Round:
         """What a device needs to rejoin the round: the finish (once decided)
         and the people's presses so far."""
         presses = [None if r is None else [[t, d, b] for t, d, b, _ in r.presses] for r in self.runners]
-        return dict(pp=dict(done=self.result(), presses=presses))
+        pp = dict(done=self.result(), presses=presses)
+        if self.w != 30:
+            pp["w"] = self.w  # (a "play again": the CPUs' margins)
+        return dict(pp=pp)
 
     def result(self):
         if not self.done:

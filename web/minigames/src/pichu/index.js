@@ -35,6 +35,12 @@ const ASPECT = 4 / 3, FOV = 30;
 const GAUGE = [[40, 19], [210, 19], [40, 123], [210, 123]];
 const BADGE = [[41, 39], [280, 39], [41, 143], [280, 143]]; // (2P's and 4P's: their right edges)
 const PER = 60 / R.FULL, WON = 61; // a gauge's fill: px a charge (0x8660673C), and a winner's
+// the fill's pulse (0x86603C38): a grey over it, alpha |10 - n| x 20, n going
+// round 0-20 a step on each frame its player hits (from 10: so the charge
+// says where); from the finish, 0 for all and a step every frame for a winner
+// (its last hit's flag stays up: its callback stops), 10 for the others. A
+// frame with a hit adds 0 or 1 px to the fill (0x86603C4C).
+const PULSE = 21, glowOf = (n) => (Math.abs(10 - (((n % PULSE) + PULSE) % PULSE)) * 20) / 255;
 // portrait: the screen this much wider than the window, so the rooms fill it
 // (the hazard stripes at the sides are cut off)
 const CROP = 1.12;
@@ -82,6 +88,7 @@ export async function create(shell, onProgress) {
   const dpad = hud.querySelector(".pp-dpad");
   const buttons = { [R.A]: hud.querySelector(".pp-a"), [R.B]: hud.querySelector(".pp-b") };
   const rings = [...hud.querySelectorAll(".pp-aim")];
+  const jitter = [0, 1, 2, 3].map(() => [-1, 0]); // each fill's px more: [the game frame, 0 or 1]
 
   // ---- sounds and the like, from the game ----
   const mine = (z) => z === shell.me();
@@ -147,6 +154,7 @@ export async function create(shell, onProgress) {
   }
 
   let view = null, portrait = false, box = null;
+  let lastW = null; // the last solo round's W (a "play again": rules.js cpuPresses()); null from the title
   const api = {
     game, scene, assets,
     get views() { return view ? [view] : []; },
@@ -188,7 +196,8 @@ export async function create(shell, onProgress) {
       // (online: the seats nobody was dealt are CPUs, as the server has them)
       const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me)
         : [0, 1, 2, 3].map((z) => !(round.lineup || []).some((p) => p.seat === z));
-      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, told: m?.pp });
+      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, told: m?.pp, w: round.online ? undefined : lastW ?? 30 });
+      lastW = R.WARN[game.c];
       shell.stopSound();
       aimed = 0;
       setHeld(0);
@@ -198,10 +207,11 @@ export async function create(shell, onProgress) {
     idle() {
       game.reset(game.levelName || "normal");
       game.state = "idle";
+      lastW = null;
       shell.stopSound();
     },
     go() { game.start(); shell.music("main"); }, // song 21, from GO
-    finish() { hum(false); shell.music(null, 40); },
+    finish() { hum(false); }, // (song 21 plays on till the results' own replaces it: no fade, 0x866049B4)
     stop() { game.stop(); hum(false); },
     setControl(z, c) { game.setControl(z, c); },
     get state() { return game.state; },
@@ -266,16 +276,26 @@ export async function create(shell, onProgress) {
     hud.classList.toggle("off", !on);
     aim();
     const playing = game.state === "play" || game.state === "over";
-    const t = Math.max(0, game.lastFrame);
+    const c = game.time * R.FPS, now = Math.floor(c + 1e-6), f = game.fin(), ended = !!f && game.lastFrame >= f.at;
     for (let z = 0; z < 4; z++) {
       const g = gauges[z];
       g.el.hidden = !playing && !(game.state === "ready" && game.glide >= 1);
       if (g.el.hidden) continue;
-      const w = game.won(z) ? WON : Math.min(R.FULL, game.charge(z)) * PER;
+      const won = game.won(z), charge = game.charge(z);
+      let glow = 0, shake = false;
+      if (ended && won) { // (part of the way to the next frame's; the finish's own frame drawn as it was)
+        const k = c - f.at, n = Math.floor(k), at = (j) => glowOf(j > 0 ? j : 10 + charge);
+        glow = at(n) + (at(n + 1) - at(n)) * (k - n);
+        shake = true;
+      } else if (!ended && game.state === "play") {
+        glow = glowOf(10 + charge);
+        shake = game.players[z].hitAt === game.lastFrame;
+      }
+      if (jitter[z][0] !== now) jitter[z] = [now, shake ? Math.floor(Math.random() * 2) : 0];
+      const w = (won ? WON : Math.min(R.FULL, charge) * PER) + jitter[z][1];
       g.fill.style.width = `calc(${w} * var(--u))`;
       g.glow.style.width = g.fill.style.width;
-      // the fill's pulse: a grey over it, alpha |10 - n| x 20, n 0-20 over and over in the play
-      g.glow.style.opacity = game.state === "play" || game.won(z) ? String((Math.abs(10 - (t % 21)) * 20) / 255) : "0";
+      g.glow.style.opacity = String(glow);
     }
     padsEl.hidden = game.state !== "play" && game.state !== "ready";
     // tap to aim: a ring round the lamp you aimed at, and faint ones round all

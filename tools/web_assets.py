@@ -1012,8 +1012,11 @@ def build():
                 fh.write(png.encode_rgba(w, h, bytes(px)))
         # Pichu's Power Plant's sparks (bank 224, drawn white) and lightning (225,
         # yellow): the game's combiner makes a texel's colour prim + (1 - prim) x
-        # its grey, and its alpha the grey (0x86600160, 0x86600020)
-        for name, b, prim in (("spark", 224, (255, 255, 255)), ("bolt", 225, (255, 255, 0))):
+        # its grey, and its alpha the grey (0x86600160, 0x86600020); and module
+        # #64's particles, the same combiner with a yellow prim (0x87F039F0): the
+        # losers' crackle (224) and the charge's lightning (225, as the bolt)
+        for name, b, prim in (("spark", 224, (255, 255, 255)), ("bolt", 225, (255, 255, 0)),
+                              ("spark_yellow", 224, (255, 255, 0))):
             frames = images.bank_images(rom, b)
             w, h = frames[0][1], frames[0][2]
             rows = []

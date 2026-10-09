@@ -430,22 +430,28 @@ Electrode lamps pointing in at it from the ceiling, the floor and the walls.
 When an Electrode pops out, hold the **D-pad** towards it (the arrow keys)
 and tap the button its lamp shows: **A** for blue (X), **B** for green (Z);
 the sign in the middle lights up with the colours that are out. Each right tap
-charges your Pichu one; the wrong button, or a tap towards an Electrode that's
-gone dead, shocks it for 9 frames. The first to 80 wins: the others are
-zapped. This one follows the game's own code too (module #54:
+charges your Pichu one, with a crackle of lightning behind it; the wrong
+button, or a tap towards an Electrode that's gone dead, shocks it for 10
+frames. The first to 80 wins: the others crackle, are zapped and fall down
+dizzy. This one follows the game's own code too (module #54:
 [docs/minigames.md](../docs/minigames.md#pichus-power-plant) has where each
 number is):
 
 - **The Electrodes.** One pops out a cycle (every 1.6-1.8 s on Normal and
   Hard, 2.3-2.4 s on Easy), each direction once in every four, and stays live
   through the next cycle, so for about a second two are out; blue and green
-  come about as often, with runs kept short. Everyone has the same ones.
+  come about as often, with runs kept short (they swing back harder with
+  CPUs on Normal and Hard, or no CPUs, than on Easy). Everyone has the same
+  ones. A lamp stays in, red, for 4 frames after its Electrode is live, and
+  turns red again a few frames before it's dead, as the game's do.
 - **The CPUs** are the game's: they tap the current Electrode every few frames
   (4 apart on average on Hard, 5 on Normal, 7 on Easy, each with a mood of its
   own and the round a speed), never with the wrong button, and near a cycle's
   end go for the next one, or now and then a random direction, which can shock
   them. The first of three is full after about 18 s on Easy, 13 on Normal and
-  10.5 on Hard; tapping right ten times a second beats them.
+  10.5 on Hard; tapping right ten times a second beats them. A shocked CPU
+  plans its next press at once and makes it as soon as the shock's over; in
+  a Play again, their margins take the last round's W, as the game's do.
 
 The screen is the game's one screen (the frame of four rooms, its camera,
 which glides in from the side during the countdown), as big as fits; in
@@ -463,8 +469,8 @@ first seconds faint rings show your four Electrodes. The keys work either
 way. (A game declares its schemes in `src/games.js`, `controls`; the shell
 shows the picker and calls the game's `setControls()`.)
 
-**Sound**: the game's (`assets/pichu/sound.bin`, 477 KB): song 21 from GO,
-and bank 2's effects: its own count and GO, an Electrode popping out, a turn
+**Sound**: the game's (`assets/pichu/sound.bin`, 477 KB): song 21 from GO
+till the results (no fade), and bank 2's effects: its own count and GO, an Electrode popping out, a turn
 (a sound for each player), a shock, the hum while a Pichu charges (each on its own channel), the
 losers' zap, the jingle after the finish and the winner's cry.
 
@@ -472,8 +478,8 @@ What comes from the ROM and what is made up:
 
 | From the game | Made for the remake |
 |---|---|
-| the Electrodes' pattern, the presses, hits, misses and shocks, the CPUs, the finish (module #54's code) | the pattern and the CPUs draw from random numbers of their own (in the game the sparks' flicker takes from the same ones), so every device and the server have the same; the round ends 50 frames after the finish |
-| the frame (object 56) and its B/A sign, the Electrode lamps (57) and their faces, Pichu (107) and its clips and faces, the dizzy stars (190) and how they're coloured and blended (their combiners), the sparks and the lightning (banks 224, 225, coloured as the game draws them), the gauges (banks 409, 410), the camera and its glide | Pichu in every seat (the game's Pikachu comes from a Game Pak), the sparks shown a few frames after each hit, the lightning drawn brighter (it's thin and faint at its size), the stars' place, the portrait screen, the title's art (the frame drawn flat), the badges' intro (not played), the D-pad and the buttons |
+| the Electrodes' pattern, the presses, hits, misses and shocks, the CPUs, the finish and the end's timings, the results 130 frames after it (module #54's code) | the pattern and the CPUs draw from random numbers of their own (in the game the sparks' flicker takes from the same ones), so every device and the server have the same |
+| the frame (object 56) and its B/A sign, the Electrode lamps (57) and their faces and timing, Pichu (107) and its clips and faces (no blends between them), the dizzy stars (190), where they are, how big, tilted and fading in, and how they're coloured and blended (their combiners), the sparks and the lightning (banks 224, 225, coloured as the game draws them), module #64's particles (a charge's lightning, the losers' crackle: banks 225 and 224 in yellow), the gauges and their pulse (banks 409, 410), the camera and its glide | Pichu in every seat (the game's Pikachu comes from a Game Pak), the sparks shown a few frames after each hit, the lightning drawn brighter (it's thin and faint at its size), the lights (by eye: their ways weren't worked out), the portrait screen, the title's art (the frame drawn flat), the badges' intro and the instruction screen's Pichus (not played), the D-pad and the buttons |
 | song 21, the effects of bank 2 | |
 
 Code: `src/pichu/rules.js` has the rules (and `tools/pichu_rules.py`, the
@@ -1192,7 +1198,9 @@ Eager Eevee: `ee`, with `level` (the level code the rounds are dealt for) and,
 to rejoin, `scores` and `prizes`, each seat's by round. Streaming Stampede:
 `ss`, with `told`, the answers so far as `ans` gives them, to rejoin. Pichu's
 Power Plant: `pp`, with `done`, the finish as `won` gives it (null till then),
-and `presses`, the people's so far, `[f, d, b]` by seat, to rejoin. Tumbling
+and `presses`, the people's so far, `[f, d, b]` by seat, to rejoin; and in a
+round after one of its own in the room (a Play again), `w`, the W its CPUs'
+margins take. Tumbling
 Togepi: `tg`, with `done`, the end as `won` gives it (null till then), and
 `sticks`, the people's stick changes so far, `[f, x, y]` by seat, to rejoin.
 Gutsy Golbat: `gb`, with `done`, the end as `won` gives it (null till then),

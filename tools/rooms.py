@@ -440,7 +440,8 @@ def start(room):
     elif room.minigame == "stampede":
         room.game = stampede_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
     elif room.minigame == "pichu":
-        room.game = pichu_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
+        room.game = pichu_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)],
+                                      after=room.game)  # (its last round: a "play again" if it was one of these)
     elif room.minigame == "togepi":
         room.game = togepi_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
     elif room.minigame == "golbat":

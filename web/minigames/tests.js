@@ -18,7 +18,7 @@ const EEVEE = { 1: "d54a9e4e6d7d05ec", 12345: "e4663aef5698855e", 2147483647: "6
 // Streaming Stampede's questions (and the CPUs' answers and presses) for levels 1-3: the same as JS_STAMPEDE in tools/test_rooms.py
 const STAMPEDE = { 1: "84a6cb28cd987d1d", 12345: "2a9b704b839d8309", 2147483647: "15649380292b011a" };
 // Pichu's Power Plant's Electrodes and CPUs for c 0-3: the same as JS_PICHU in tools/test_rooms.py
-const PICHU = { 1: "e27615795ea9a2a3", 12345: "daf3601d2ace0952", 2147483647: "ecb9ea996496d4dd" };
+const PICHU = { 1: "85b689e086341c65", 12345: "7a2d41e41a9793ae", 2147483647: "2f91d5687bee0e4b" };
 // Tumbling Togepi: a race with seat 0 on TOGEPI_SCRIPT ([frame, x, y]) and three normal CPUs, every lane
 // every 50 frames: the same as JS_TOGEPI in tools/test_rooms.py
 const TOGEPI = { 1: "efcaeb571cb83ba1", 12345: "98649f14c45fb285", 2147483647: "897e6c53dd29b182" };
