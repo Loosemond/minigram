@@ -166,7 +166,7 @@ audits of each module; `0x87F0A098`'s callers):
 | Eager Eevee | after the tally (`0x86B09148`) | not faded (its fades are the instructions', its set-up's and the basket's) |
 | Clear Cut Challenge | after the last show (`0x86502B88`) | plays on |
 | Tumbling Togepi | `0x86706664` (*not traced*) | plays on (module #55 never fades it) |
-| Topsy-Turvy | `0x86006918`, `0x86006948` (*not traced*) | plays on |
+| Topsy-Turvy | on the end show's first frame, the frame after the play's last: nobody's left in the play, so the losers drop out of it and `0x8600688C` starts the results (`0x86006B74`-`0x86006BC8`); the show goes on under them | plays on (song 55 takes its place) |
 
 The remake's shell does the countdown and the results this way
 (`web/minigames/src/main.js`; `countdown` in `src/games.js`), the rooms
@@ -1479,17 +1479,25 @@ and V 4000, LEAN BY STICK −0.3, POSTURE RESPONSE 0.5, ROTATION 0.5,
 IMPACT ROTATION 67, DAMAGE ROTATION 0, SPIN SIZE 6, CHARGE SIZE 6, MIN 1.5,
 LAST 5.5, MIN TIME 0.4, SPARK on, SPARK TIME 16/30, WINNERS POINT 5, DAMAGE TO
 DEATH 0 (off), TIME LIMIT 60, NUM PLAYERS 4. Times are in seconds: the game
-takes a frame's length from the retraces since the last (`0x80008950` /
-`0x80001FC0`). The remake runs it 60 frames a second: only then does a
-Hitmontop knocked out come to rest (its test, below, needs a step's gravity
-under 100), and a Hitmontop's drawn spin, 0.5 a frame, is its 27 a second.
+takes a frame's length from the retraces (`0x86006D7C`-`0x86006DC0`:
+`0x80008950` / `0x80001FC0` × tuning +0x8, 1.0). **It runs at 30 frames a
+second**, as nearly every module does: its set-up asks the scheduler for a
+frame every 2 retraces (`0x8600D01C`: `func_800082C0(0, 1, 3, 1, 2, 1)`; the
+5th argument goes to sched +0x17, which `0x80008950` returns), so a frame
+is 2/60 s. The remake's world runs at 30 too, and is drawn between its frames
+at the screen's rate ([web/README.md](../web/README.md#topsy-turvy)).
 
 **The ring** (`0x86004BD4`) is two caps of spheres (`0x86009D7C`; +0 the
 sphere's radius, +8 the cap's, +0x10 its middle, +0x28 and +0x38 its bounce
 and friction, +0x48 1 for a dome): the rim, 1800 across and 85° steep (a
 sphere of 2664 whose middle is 1964 up, so the rim is at y = 0), and the
 floor, inside 90% of it and 10° (a sphere of 18587; 222 deep in the middle).
-Past the rim is the floor round it, the plane y = 0 (bounce and friction 0).
+Past the rim is the floor round it, the plane y = 0 (W + 0x6848, its normal
+up: `0x8600D720`), with a bounce of 0.8 and friction 0.2 (tuning +0x238 and
++0x260, set at `0x8600B9C8`-`0x8600BA00` and copied at `0x86004E38`; the
+floor's loop `0x86009260` asks `0x86008D2C` for those, +0x20 and +0x30, not
++0x28 and +0x38): a Hitmontop knocked out bounces and slides before it comes
+to rest.
 There are three sets: the play's, the reeling one's (bounce and friction 0)
 and the losers' at the end (0.1 and 0.95). The ring is drawn as a picture
 (image bank 223, 320 × 240, the whole screen: `0x8004D27C`), seen from
@@ -1516,13 +1524,18 @@ bounce) × its speed into it × its weight / the step, and a rub of friction ×
 that along the way it slides (its spin counts: each frame starts with none,
 and coming in it has 27 about y), and it's put back on the surface.
 
-**A Hitmontop's states** (`0x86003EFC`; each frame, `0x860033E8`): 0
-waiting outside the ring; 1 crouched (0.35 s; A jumps at once), placed on the
+**A Hitmontop's states** (`0x86003EFC`; each frame, `0x860033E8`, from the
+countdown on: `0x86006D64`): 0 waiting outside the ring, facing the middle
+(`0x860029D0`); 1 crouched (0.35 s; A jumps at once), facing the middle and
+turning 10π a frame, which looks still (`0x86002B20`; once its clip is held at
+its end, it spins up instead: that's at most its last frame), placed on the
 floor at its corner (`0x86001FCC`: at its angle, 1960 out; the players'
 corners, `0x8600D1C8`: 1P top left, 2P top right, 3P bottom left, 4P bottom
 right) and launched in (800 in, 4000 up: the floor under it takes the 4000
 back, so it slides in); 2 in the play but not solid for 1.4 s, then till no
-one is within 50 of touching; 3 in the ring; 4 knocked out (`0x86003B10`:
+one is within 50 of touching, drawn see-through (`0x86003C68`: the object's
+alpha, +0x13D, 0x64; `0x8003D8E8` moves an object under 0xFF to the
+translucent layers); 3 in the ring; 4 knocked out (`0x86003B10`:
 past the rim; a point to whoever hit it last, if that was within a second and
 they're in the ring, 0x0F04), landing on the floor (moving down under 100 and
 no higher than its radius and 10: stopped), 1.4 s there, then back to 1; 5
@@ -1541,7 +1554,13 @@ by the push: over 700000 0x4F03, 2000000 0x4F07, 8000000 with a RAPID SPIN
 are out of it for good (never, with DAMAGE TO DEATH off). All with the same
 points: nobody wins (all 8). Else those with the most win (6: those out of the
 ring jump back in at once) and go to their spots, side by side 30° apart in
-front, 1170 out (`0x86005740`); the others lose (8, then 7).
+front, 1170 out (`0x86005740`); the others lose (8: three times as big, for a
+frame). The show (`0x86006964`, the next frame on) runs the steps, then
+counts those still in the play (states 0-3): there are none, so at once it
+sets W + 0x75C0 bit 3, turns every 8 into 7 (out of the play: the winners pass
+through them), and starts the results (`0x8600688C`: winners are those in 5 or
+6) (`0x86006B74`-`0x86006BC8`). The winners go on to their spots and cheer
+under the results.
 
 **The CPUs** (`0x8600062C`, a step at a time; their parts by level and by
 where they stand among the CPUs, best first: `0x860076EC`, `0x8600D2CC`,
@@ -1552,7 +1571,10 @@ floor, at whoever comes nearest within 0.3 s (or 0.02), aiming at the side of
 them nearer the middle, with the part's push (20-60 of the stick's 64)
 (`0x8600050C`); recharging, away from whoever's coming; past its share,
 back to the middle. Its "lowest scorer" pick (`0x860003DC`) never picks
-anyone: it wants fewer than 0 points.
+anyone: it wants fewer than 0 points. Its branch for a CPU not in the ring
+(`0x86000704`-`0x860007AC`: away from whoever's nearest within 0.1 s) never
+steers either: the search it asks (`0x860002A8`) gives nobody to one not in
+the ring (`0x86000304`-`0x86000318`).
 
 **What's drawn** (`0x86006F20`): the picture; each Hitmontop at its ball's
 bottom (scale radius/200), leaning on the ring and the way it's pushed (half
@@ -1564,14 +1586,44 @@ shrinking from 6 to 1.5 and growing to 5.5 for the last 0.4 s
 colour (`0x86000C6C`, `0x86000CCC`: its last 10 places); the sparks of a bump
 (199, and 200 with a RAPID SPIN: `0x86005B3C`); each player's points by its
 badge, a dot in the colour of each one it knocked out (image bank 401: grey,
-then 1P-4P; `0x8600AE6C`); the clock, whole seconds, in a balloon (401) in a
-swirl (402) at the top (`0x8600B474`). The song is 33 (sequence 72), from
-GO; in the last 30 s it speeds up (`0x80028108(4)`: a beat a minute every
-30 frames, to 15); the shared count sounds at 3, 2 and 1 seconds and 0xCF06
-at 0 ([audio.md](audio.md)). Its name banner is image bank 400. Hitmontop's
-clips (`0x8600D540`, played in sequences, `0x8600D5DC`-`0x8600D61C`): 0
-spinning, 1 a RAPID SPIN, 7 hit, 6 hopping into a spin, 8 landing on its
-feet, 3 standing sadly, 4 and 5 standing, 9 a cheer, 11 and 12 falling over.
+then 1P-4P; `0x8600AE6C`, through the HUD's combiner `FC129A25 FF37FFFF`,
+texel × env: the coloured ones at env 0xFFFFFFFF, the grey ones at alpha
+0x64); the clock, whole seconds, in a balloon (401, env alpha 0xC8, its width
+× 1 + 0.2 × a triangle wave of 32 retraces, its height as it is:
+`0x8600B100`) in a swirl (402, white at alpha 0x9B × its texel's:
+`FC629AC5 FF37FFFF`, `0x8600B328`) at the top (`0x8600B474`), its digits module
+#64's (`0x87F06240`: image bank 429 at 0.7 × 0.61, through `FC30B261
+5566FF7F`, prim `dcbe78` and env `3c3c64`: `0x8600ACC4`). Stretched in a
+RAPID SPIN (`0x86002780`: +0x1808 eased towards 1.5 by 0.2 a frame, 1
+otherwise; x and z × √(1/it), y × it). The song is 33 (sequence 72), when the
+play starts, a countdown step after GO (`0x8600674C`, `0x860075A8`); in the
+last 30 s it speeds up (`0x80028108(4)`: a beat a minute every 30 frames, to
+15); the shared count sounds at 3, 2 and 1 seconds and 0xCF06 at 0
+([audio.md](audio.md)). Its name banner is image bank 400.
+
+**Hitmontop's clips** (object 115; their flags' bit 0, read by `0x87C02040`,
+says which loop: all but 6, 8, 10 and 11): 0 spinning, 1 a RAPID SPIN, 2 a
+wobble, 3 standing sadly, 4 and 5 standing, 6 hopping into a spin, 7 hit, 8
+landing on its feet, 9 a cheer, 10 (the instructions'), 11 falling over, 12
+lying there. Module #48 plays them (the record at player + 0x17A0: `0x87C01A90`
+a frame on, at 0.99-1.01 × 30 a second, each Hitmontop its own: `0x860021C4`),
+alone or in sequences (`0x8600D5DC`-`0x8600D61C`; −2 holds the last, −3 − k
+goes back to the k-th): waiting, `[5, 5, 5, 4]` or `[4, 4, 4, 5]` (round from
+the second), one at random, from a random clip and frame (`0x86003A0C`,
+`0x87C01E98`); crouched `[6]`, held; a winner `[2, 2, 8, 9, 9, 9]`, round
+on 9; landed `[8, 3]`, round on 3; a loser `[11, 12, …]`, round on 12. A clip
+that plays once leaves the next in its sequence at the frame it reached
+(`0x87C01A90` takes the length off only for one that loops). In the ring,
+not reeling, it's clip 0, set each frame (`0x86002D50`): a RAPID SPIN too, so
+clip 1, which `0x860022F8` starts in the step, is replaced before it's drawn.
+A bump starts clip 7 again at each step they touch, for each one it sends
+reeling (`0x860037D8`). **Its face** (`0x87C01910`, `0x87C01CBC`; table
+`0x8600D540`, 13 × [s16 texture clip, s32 at the clip's frame (else its
+own), f32 chance]): as each clip starts or loops, and as its face clip ends,
+a roll: clips 3 and 5 the blink (texture clip 0) at 0.3, at their frame;
+clip 4 the blink at 0.2, from its start; clips 7, 9, 11 and 12 texture clips
+1-4 always, at their frame; the others none. The extractor files texture
+clip 4 with clip 3 (both are 40 frames long), not with clip 12.
 
 **Its effects** are all I8 pictures, whose grey the RDP takes for their
 alpha too: dark is clear ([fragments.md](fragments.md#render-callbacks-geo-0x08)).
@@ -1581,8 +1633,12 @@ alpha too: dark is clear ([fragments.md](fragments.md#render-callbacks-geo-0x08)
   55A6FF7F`: colour env + (prim − env) × I, alpha env's × I. First the ten
   places in the hitter's colours, then the ten again 12 pixels across in
   white (prim and env) at 0x80. The colours (`0x8600D1A0`, 8 bytes each: a
-  grey for nobody, then 1P-4P) are prim, then env at 0x50. The n-th newest
-  place is fainter by 1 − n/10, and by the hit's glow (+0x17F0).
+  grey for nobody, then 1P-4P, by +0x1818 + 1) are prim, then env at 0x50.
+  The n-th newest place is fainter by 1 − n/10, and by the hit's glow as it
+  was then (+0x17F0 / TOUCH TIME: 2.4 just after a RAPID SPIN's hit); each
+  alpha is cut to its byte (`& 0xFF`), so the white wraps round past 255.
+  The places are recorded each frame (`0x86006F20`) while it reels in the
+  ring or flies out of it, not yet landed.
 - **The sparks** (199: six streaks; 200, with a RAPID SPIN: two quads, the
   dots tex02 and the starburst tex01) and **the rings** (195-198) are
   textured by material callbacks (`0x81000178`) and drawn in render layers 6
@@ -1612,8 +1668,19 @@ spark a flat yellow box, the rings and the glow solid), so
 Challenge and Pichu's Power Plant).
 
 **The states** (`0x86006D64`): 0 and 1 the instructions (a show of four
-Hitmontop rolling on a tilted floor, `0x860057D0`), 2 the countdown, 3 the
-play, 4 the end, 5 and 6 the results and the menu after.
+Hitmontop rolling on a tilted floor, `0x860057D0`), 2 the countdown (the
+steps run, and each Hitmontop's frame), 3 the play (from a step after GO, when
+the countdown says it's over: `0x8600674C`), 4 the end, 5 and 6 the results
+and the menu after.
+
+**Its sounds' places** (`0x86001924`): the ball's middle through the view
+(`0x87C03B60`: the camera's matrix × (64, −64), so −64 to 64 across the
+game's screen), × 1.33, held to ±127; worked out before each of 0x4F02,
+0x4F05, 0x4F06 and each frame's hum. A bump's (`0x86006164`-`0x86006198`)
+is worked out into a pair of bytes at W + 0x8138 (a pair for each bump in the
+step), but the sound is handed the next pair, which nothing writes: the bumps
+sound in the middle (W is the module's `.bss`, `0x8600E110`, zeroed *by
+assumption*).
 
 The browser remake runs this world on every device and on the server, from
 everyone's pads (the CPUs think in it) ([web/README.md](../web/README.md#topsy-turvy)).

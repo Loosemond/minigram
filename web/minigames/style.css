@@ -303,14 +303,17 @@ input { -webkit-user-select: text; user-select: text; }
    stick (where a finger went down) and A */
 .tt-clock { position: absolute; width: calc(var(--u) * 6); height: calc(var(--u) * 4.6); pointer-events: none; }
 .tt-clock img { position: absolute; image-rendering: pixelated; }
-.tt-balloon { left: 50%; top: 50%; width: calc(var(--u) * 4.4 * var(--pulse, 1)); transform: translate(-50%, -50%); }
-.tt-swirl { left: 50%; top: 58%; width: calc(var(--u) * 6.4); transform: translate(-50%, -50%); }
-.tt-clock b { position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%); color: #dcbe78; font-weight: 900;
-  font-size: calc(var(--u) * 1.7); font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 2px #3c3c64, 1px 1px 0 #3c3c64, -1px -1px 0 #3c3c64, 1px -1px 0 #3c3c64, -1px 1px 0 #3c3c64; }
+.tt-balloon { left: 50%; top: 50%; width: calc(var(--u) * 4.4 * var(--pulse, 1)); height: calc(var(--u) * 3.3);
+  transform: translate(-50%, -50%); opacity: 0.784; } /* (env alpha 0xC8, its width pulsing: 0x8600B100) */
+.tt-swirl { left: 50%; top: 58%; width: calc(var(--u) * 6.4); transform: translate(-50%, -50%); opacity: 0.608; } /* (0x9B: 0x8600B328) */
+.tt-clock b { position: absolute; left: 50%; top: 50%; display: flex; /* (its digits 16 apart, 4 down the balloon: 0x8600ACC4) */
+  transform: translate(calc(-50% - var(--u) * 0.06), calc(-50% - var(--u) * 0.27)); }
+.tt-clock b img { position: static; width: calc(var(--u) * 1.68); height: calc(var(--u) * 1.95); }
+.tt-clock b img + img { margin-left: calc(var(--u) * -0.08); }
 .tt-points { position: absolute; display: flex; gap: calc(var(--u) * 0.15); pointer-events: none; }
 .tt-points.right { flex-direction: row-reverse; }
 .tt-points img { width: calc(var(--u) * 1.15); height: calc(var(--u) * 1.15); image-rendering: pixelated; }
+.tt-points img.empty { opacity: 0.392; } /* (the grey ones at env alpha 0x64: 0x8600AE6C) */
 .tt-hint { position: absolute; left: 50%; bottom: calc(var(--safe-b) + 14%); transform: translateX(-50%);
   padding: 6px 14px; border-radius: 16px; background: rgba(0, 0, 0, 0.5); color: #fff; font-weight: 700;
   font-size: 15px; white-space: nowrap; text-shadow: 0 1px 2px #000; }

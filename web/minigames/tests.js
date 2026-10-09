@@ -49,7 +49,7 @@ const rolloutPad = (z, t, w) => (z === 0 ? [rolloutWay(w.d[0]) | (t === 0 ? 16 :
 // Topsy-Turvy: a round with seats 0 and 2 on topsyPad() and two CPUs (normal, hard, easy), the world's
 // digest() every 100 frames (the hard one to its end and the show after, the others 600 frames), the end,
 // the points and the places: the same as JS_TOPSY in tools/test_rooms.py
-const TOPSY = { 1: "f73c640b45d45abe", 157: "8dcf2582748da502", 2147483647: "e51f8987128a2605" };
+const TOPSY = { 1: "787fac9096d5b8ba", 157: "272f45629a21406c", 2147483647: "a9b0c75e0b95888e" };
 const TOPSY_LEVEL = { 1: "normal", 157: "hard", 2147483647: "easy" };
 // (seat 0 at whoever's nearest, a RAPID SPIN now and then; seat 2 a pattern)
 function topsyPad(z, t, w) {
@@ -2163,7 +2163,7 @@ lane(2, (f) => test("online: a Topsy-Turvy round, the same on both devices, and 
     await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the round", 20000);
     stop.push(autospin(ann), autospin(bob));
     const net = bob.mg.net(), r = ann.mg.room().round, g = bob.mg.game;
-    await until(() => g.frame > 120, "two seconds in", 20000);
+    await until(() => g.frame > 60, "two seconds in", 20000);
     // Bob steers Ann's Hitmontop, says a RAPID SPIN of his was long ago, and sends a stick that's no stick
     net.send("pad", { r, s: 0, f: g.frame, x: 0x4080, a: 1 });
     net.send("pad", { r, s: 1, f: 5, x: 0x4040, a: 1 });
@@ -2505,7 +2505,7 @@ lane(1, (f) => test("a solo round starts and plays: Topsy-Turvy", async () => {
   solo.document.querySelector("#play").click();
   const stop = autospin(solo);
   try {
-    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > 240, "Topsy-Turvy's first 4 s", 30000);
+    await until(() => solo.mg.phase() === "play" && solo.mg.game.lastFrame > 120, "Topsy-Turvy's first 4 s", 30000); // (30 frames a second)
   } finally { stop(); }
   const g = solo.mg.game, states = g.world.p.map((p) => p.state);
   assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);

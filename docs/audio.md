@@ -331,13 +331,18 @@ module #52 by that id.
 
 Topsy-Turvy's (module #47) are bank 4's (`0x4F00`-`0x4F07`; the hum's
 `0x4000` and `0x4401` are its first two entries, held), placed by where the
-Hitmontop is (`0x86001924`: `0x87C03B60`), and Gutsy Golbat's heart for a
-point. The hum is asked for every frame each Hitmontop spins (`0x860032DC`,
-`0x800278B0`, with the player, its place and a pitch): both entries have flag
-bit 1, so each player's is on its own channel (0-3, and 4-7 for `0x4401`),
-and `0x800278B0` remaps `0x4000`'s pitch, 1.25 (or 1) to 0.825, 0.925, 0.875
-and 0.775 for players 1-4 (0.70, 0.80, 0.75, 0.65). The remake hums for all
-four, each placed where it is, at the pitch asked for. Sound `0x36`'s script picks its effect as it plays (40), so
+Hitmontop is on the screen (`0x86001924`: `0x87C03B60`, −64 to 64 across, ×
+1.33), and Gutsy Golbat's heart for a point. A bump's (`0x4F03`, `0x4F07`,
+`0x4F04`) is handed the place after the one the step works out
+(`0x86006164`-`0x86006198`), which nothing writes: it's in the middle. The hum
+is asked for every frame each Hitmontop spins (`0x860032DC`: in states 1, 2,
+3 and 6; `0x800278B0`, with the player, its place and a pitch): both entries
+have flag bit 1, so each player's is on its own channel (0-3, and 4-7 for
+`0x4401`), and `0x800278B0` remaps `0x4000`'s pitch, 1.25 (or 1, recharging
+and not reeling) to 0.825, 0.925, 0.875 and 0.775 for players 1-4 (0.70,
+0.80, 0.75, 0.65). The remake does the same: one `hum` held for each player
+at that pitch (changing as it plays), `humSpin` at 1.75, each placed where it
+is. Sound `0x36`'s script picks its effect as it plays (40), so
 `tools/web_assets.py` lists it by hand. Its count and GO are Pichu's Power
 Plant's (`0x2F00`, `0x2F01`); the shared count (`0xCF00`) sounds 3, 2 and 1
 seconds before the time's up, `0xCF06` at 0 (the clock's last second). In the

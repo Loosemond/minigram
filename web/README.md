@@ -732,9 +732,21 @@ is):
 
 - **One ring for all four.** As in Rampage Rollout, every device runs the
   whole world from everyone's pads, and the server too: the game's physics,
-  six steps a frame, 60 frames a second, in doubles (module #48's vectors),
+  six steps a frame, 30 frames a second, in doubles (module #48's vectors),
   its float square roots (`Math.fround`) and its own sine, cosine (libultra's)
-  and arctangent, made from + − × / alone the same way in both copies.
+  and arctangent, made from + − × / alone the same way in both copies. The
+  play starts a countdown step (20 frames) after GO, as the game's does, and
+  its frames count from there.
+- **Drawn smooth at the screen's rate.** The world runs at the game's 30
+  frames a second; each picture is drawn between the last two frames it ran,
+  by the time gone since (a 60 Hz screen draws each frame twice, half way
+  between and at it): where each Hitmontop is, its turn (the shorter way
+  round from the last frame's, which is how 30 frames a second shows the
+  game's fast spins), the trail of glow behind one reeling (each of its ten
+  places half way to the next), the ring round one recharging. What the game
+  moves a frame at a time is moved by the time gone instead: how it leans
+  (half way a 30th of a second), its stretch in a RAPID SPIN (0.2 a 30th), its
+  clips (30 frames a second, posed between their keys), the sparks.
 - **The CPUs** are the game's: each a part by level and by where it stands
   among the CPUs (how near the middle it keeps, its push, whom it minds), a
   RAPID SPIN when someone's about to hit it (and now and then a wrong one), at
@@ -750,23 +762,27 @@ balloon; by each card, five dots, filled in the colour of each one that player
 knocked out. A glow in the hitter's colour trails one sent reeling. On a
 phone: a finger anywhere is a stick (the way and how far it slides from where
 it went down, a full push at 56 px), and the A button is the RAPID SPIN. With
-a keyboard: the arrows (or W A S D: the D-pad's push) and Space. At GO they
-crouch at their corners and hop in; at the end the winners go to their spots
-and cheer, and the others fall over.
+a keyboard: the arrows (or W A S D: the D-pad's push) and Space. In the
+countdown they stand at their corners facing the middle; a step after GO they
+crouch and hop in, see-through till there's room for them; a RAPID SPIN
+stretches one tall. The losers drop out as the play ends, and the results
+come at once; under them the winners go to their spots and cheer, and the
+others lie where they fell.
 
-**Sound**: the game's (`assets/topsy/sound.bin`, 584 KB): song 33 from GO,
-faster in the last 30 s, bank 4's effects (a RAPID SPIN, bumps by how hard,
-knocked out, jumping in) placed by where they are, Gutsy Golbat's heart for a
-point, every Hitmontop's hum, each on its own channel and placed where it is
-(higher in a RAPID SPIN, lower while it recharges), and the count, GO and the
-last seconds' count.
+**Sound**: the game's (`assets/topsy/sound.bin`, 584 KB): song 33 as the play
+starts, faster in the last 30 s, bank 4's effects (a RAPID SPIN, knocked out,
+jumping in) placed where they are on the screen, the bumps by how hard (in
+the middle, as the game hands them a place it never works out), Gutsy
+Golbat's heart for a point, every Hitmontop's hum, each on its own channel,
+placed where it is, at its player's own pitch (higher in a RAPID SPIN, lower
+while it recharges), and the count, GO and the last seconds' count.
 
 What comes from the ROM and what is made up:
 
 | From the game | Made for the remake |
 |---|---|
-| the ring, the physics and the bumps, the stick, the RAPID SPIN, reeling, points, jumping in, the CPUs, the end and the winners' spots, the camera (module #47's code) | 60 frames a second (the game's frame's length isn't traced), the field of view that fits the window, the portrait layout, the floor round the picture, the effects' colour tracks and scrolls run at 30 frames a second, the hum's pitch (the game's is lower, and a little different for each player) |
-| Hitmontop (115) and its clips and faces, the shadow (79), the rings (195-198), the sparks (199, 200) and their clips, the ring's picture (223), the points' dots and the clock's balloon (401), its swirl (402), the glow (151), how the rings, sparks and glow are coloured and blended (their combiners and colour tracks), the badges (434) | the touch stick and A button (the menus' A, bank 51), the title's art (the ring's picture) |
+| the ring, the physics and the bumps, the stick, the RAPID SPIN, reeling, points, jumping in, the CPUs, the end and the winners' spots, the camera, the frame rate, the clips and their faces, the sounds' places and the hum's pitches (module #47's code) | the drawing between frames, the field of view that fits the window, the portrait layout, the floor round the picture, the effects' colour tracks and scrolls run at 30 frames a second, a pair's bump sound not again for 4 frames |
+| Hitmontop (115) and its clips and faces, the shadow (79), the rings (195-198), the sparks (199, 200) and their clips, the ring's picture (223), the points' dots and the clock's balloon (401), its swirl (402), its digits (429, as module #64 colours them), the glow (151), how the rings, sparks and glow are coloured and blended (their combiners and colour tracks), the badges (434) | the touch stick and A button (the menus' A, bank 51), the title's art (the ring's picture) |
 | song 33, bank 4's effects, the count | |
 
 Code: `src/topsy/rules.js` has the world (and `tools/topsy_rules.py`, the
@@ -985,9 +1001,10 @@ How it works:
   in, and the server says when, the frame each came in on and the places
   (`won`).
 - **Topsy-Turvy**: the same (`pad`: the stick, and A), with
-  `tools/topsy_rules.py`, 60 frames a second; the server says the frame the
-  play ended on and each one's points (`won`). A minute of it is about 2 s of
-  the server's time (Python).
+  `tools/topsy_rules.py`; its frames count from the play's start, 20 after
+  GO (`START`); the server says the frame the play ended on and each one's
+  points (`won`), and the round's over the frame after. A minute of it is
+  about 0.3 s of the server's time (Python).
 - **Furret's Frolic**: the same (`pad`: the spot the D-pad holds, and A),
   with `tools/furret_rules.py`; the play's over when the minute's up, and the
   server says that frame and each one's points (`won`). A minute of it is
@@ -1005,8 +1022,7 @@ How it works:
   again, and nothing on their screens is put right after the fact. How many
   frames (`src/lag.js` `leadFor`): enough for the way to the slowest other
   person's device (both round trips, from `start`'s `rtt`), 1 to 3 (100 ms at
-  most; none offline, or with only CPUs; Topsy-Turvy's, 60 a second, twice as
-  many); the server takes pads up to 4 frames ahead (`AHEAD`; Topsy-Turvy's 8). Going for the mouse or a finger, Mr. Mime's pad is worked
+  most; none offline, or with only CPUs); the server takes pads up to 4 frames ahead (`AHEAD`). Going for the mouse or a finger, Mr. Mime's pad is worked
   out from where it will be by then. Measured with `?lag=80` on two pages
   (80 ms there and back each, a phone's) in Barrier Ball, 15 s each: with the
   keys (the stick jumps), Ann's device put Mr. Mime right by 96 units a second
@@ -1155,7 +1171,7 @@ Messages are JSON objects with their type in `t`. From the client:
 | `count` | `r`, `s`, `n`, `f` | Streaming Stampede: seat `s` pressed (counted one) on frame `f` of question `n`'s counting |
 | `press` | `r`, `s`, `f`, `d`, `b` | Pichu's Power Plant: seat `s` pressed A (`b: 5`) or B (`6`) on frame `f` from GO, held towards `d` (1 up, 2 down, 3 right, 4 left) |
 | `stick` | `r`, `s`, `f`, `x`, `y` | Tumbling Togepi: seat `s`'s stick is at `x`, `y` (-60-60 each, right and up) from frame `f` from GO |
-| `pad` | `r`, `s`, `f`, `x`, `a` | Gutsy Golbat: seat `s`'s stick is at `x` (-64-64, right) from frame `f` from GO, and A was pressed on it (`a: 1`) or not (`0`). Barrier Ball: the same, `x` along the seat's lane (+ is the court's +x) and A a smash. Rampage Rollout: `x` the D-pad held (up 8, down 4, left 2, right 1; + 16 on the first: A was pressed in the countdown) and A a dust cloud. Topsy-Turvy: `x` the stick, (x + 64) \| (y + 64) << 8 (each -64-64, right and up; 60 frames a second), and A a RAPID SPIN. Furret's Frolic: `x` the spot the D-pad holds (0 the middle hollow; 1-4 the ones to the right, down, up and left in the game's view), and A a swing. Delibird's Delivery: `x` the stick, packed as Topsy-Turvy's, and `a` 0 (it has no A). A device may send its own a few frames ahead (up to 4; Topsy-Turvy's 8) |
+| `pad` | `r`, `s`, `f`, `x`, `a` | Gutsy Golbat: seat `s`'s stick is at `x` (-64-64, right) from frame `f` from GO, and A was pressed on it (`a: 1`) or not (`0`). Barrier Ball: the same, `x` along the seat's lane (+ is the court's +x) and A a smash. Rampage Rollout: `x` the D-pad held (up 8, down 4, left 2, right 1; + 16 on the first: A was pressed in the countdown) and A a dust cloud. Topsy-Turvy: `x` the stick, (x + 64) \| (y + 64) << 8 (each -64-64, right and up), and A a RAPID SPIN; `f` from the play's start, 20 frames after GO. Furret's Frolic: `x` the spot the D-pad holds (0 the middle hollow; 1-4 the ones to the right, down, up and left in the game's view), and A a swing. Delibird's Delivery: `x` the stick, packed as Topsy-Turvy's, and `a` 0 (it has no A). A device may send its own a few frames ahead (up to 4) |
 | `done` | `r` | this device's round is over |
 | `leave` | | |
 

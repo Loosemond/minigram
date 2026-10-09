@@ -36,9 +36,16 @@ What isn't known yet, roughly by how useful it would be.
   the remake takes its arguments in order: from the winners, (−200, +450,
   +80), looking at (+90, −40, 0)); and sound `0x5F02` (`0x39`), in bank 5 but
   not asked for.
-- **Topsy-Turvy's loose ends** (its rules are read: [minigames.md](minigames.md#topsy-turvy)):
-  its frame rate (60 a second is assumed, as the game's numbers suggest: the
-  scheduler's retrace count wasn't traced); what its list's 123 (a Hitmontop
+- **Topsy-Turvy's loose ends** (its rules are read: [minigames.md](minigames.md#topsy-turvy);
+  its frame rate is settled, 30 a second): what the audio thread does with a
+  bump's sound asked for again at each step the two touch (`0x80026C70`
+  queues it; the remake lets a pair's sound go again 4 frames on); how a
+  texture clip shows a frame past its end (`0x8003F028`: the remake shows its
+  last, so clips 3 and 5 blink only as they start); that W (the module's
+  `.bss`) is zeroed, so the bumps' sounds, handed a place nothing writes, are
+  in the middle; a crouched Hitmontop's spin-up once its clip is held
+  (`0x86002B20`: at most a frame, not in the remake); the frame being 3
+  retraces when one runs over (not modelled); what its list's 123 (a Hitmontop
   in one piece), 124 (the same, white), 152 and the whirlwinds 191-194 are for
   (nothing in module #47 draws them; 191-194 are hidden every frame,
   `0x86001DBC`); what clock the sparks' and rings' colour tracks and scrolls

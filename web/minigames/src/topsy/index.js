@@ -9,12 +9,12 @@ import { loadAssets } from "./assets.js";
 import { Game, CAMERA } from "./game.js";
 import * as R from "./rules.js";
 import { meMark } from "../mark.js";
+import { tintURL } from "../tint.js";
 
 export const SOUNDS = {
   url: "assets/topsy/sound.bin",
   standIns: {
     hum: (tone) => tone(110, 0, 0.3, { type: "sawtooth", vol: 0.015 }),
-    humCharge: (tone) => tone(90, 0, 0.3, { type: "sawtooth", vol: 0.015 }),
     humSpin: (tone) => tone(160, 0, 0.3, { type: "sawtooth", vol: 0.02 }),
     spin: (tone) => tone(300, 0, 0.3, { type: "sawtooth", vol: 0.06, to: 900 }),
     hit1: (tone) => tone(220, 0, 0.08, { type: "square", vol: 0.06, to: 120 }),
@@ -50,8 +50,8 @@ export async function create(shell, onProgress) {
   hud.className = "game-hud tt";
   const A = "assets/topsy/";
   hud.innerHTML = `
-    <div class="tt-clock"><img class="tt-swirl" src="${A}swirl0.png" alt=""><img class="tt-balloon" src="${A}balloon.png" alt=""><b>60</b></div>
-    ${[0, 1, 2, 3].map((z) => `<div class="tt-points tt-p${z}">${[0, 1, 2, 3, 4].map(() => `<img src="${A}dot0.png" alt="">`).join("")}</div>`).join("")}
+    <div class="tt-clock"><img class="tt-swirl" src="${A}swirl0.png" alt=""><img class="tt-balloon" src="${A}balloon.png" alt=""><b aria-label="60"><img alt=""><img alt=""></b></div>
+    ${[0, 1, 2, 3].map((z) => `<div class="tt-points tt-p${z}">${[0, 1, 2, 3, 4].map(() => `<img class="empty" src="${A}dot0.png" alt="">`).join("")}</div>`).join("")}
     <div class="tt-hint" hidden></div>
     <div class="tt-pads" hidden>
       <div class="tt-stick rest"><i class="tt-knob"></i></div>
@@ -59,25 +59,32 @@ export async function create(shell, onProgress) {
     </div>`;
   shell.hud.append(hud);
   const clock = hud.querySelector(".tt-clock"), clockNum = clock.querySelector("b"), swirl = clock.querySelector(".tt-swirl");
+  // the clock's digits: module #64's (0x87F06240: image bank 429, 0.7 x 0.61 of their size) through
+  // FC30B261 5566FF7F, prim dcbe78 and env 3c3c64 (0x8600D440, 0x8600D43C)
+  const digitPics = [];
+  for (let d = 0; d < 10; d++) tintURL(`assets/ui/big${d}.png`, 0xdcbe78, 0x3c3c64).then((url) => { digitPics[d] = url; });
   const points = [...hud.querySelectorAll(".tt-points")];
   const hint = hud.querySelector(".tt-hint"), pads = hud.querySelector(".tt-pads"), stickEl = hud.querySelector(".tt-stick"),
     knob = hud.querySelector(".tt-knob"), aEl = hud.querySelector(".tt-a");
   const mark = meMark(hud, shell.me), over = new THREE.Vector3();
 
   // ---- sounds and the like, from the game ----
+  // (each where the game has it: x, its place across the screen, game.js place())
   const mine = (z) => z === shell.me();
   game.on("send", (m) => shell.send("pad", m));
   game.on("tempo", (n) => shell.tempo(n)); // (the last 30 s: the tune speeds up)
   game.on("sound", (name) => shell.sound(name));
-  game.on("loop", (name, z, on, pan) => shell.hold(name, z, on, { pan }));
-  game.on("jump", (z, pan) => shell.sound("jump", { pan })); // (0x4F06)
-  game.on("spin", (z, pan) => { shell.sound("spin", { pan }); if (mine(z)) shell.haptic("medium"); }); // (0x4F02)
-  game.on("hit", (a, b, k, pan) => { // (0x4F03, 0x4F07, 0x4F04)
-    shell.sound("hit" + k, { pan });
+  game.on("loop", (name, z, on, how) => shell.hold(name, z, on, how)); // (0x4000, 0x4401: each one's hum)
+  game.on("jump", (z, x) => shell.sound("jump", z, { x })); // (0x4F06)
+  game.on("spin", (z, x) => { shell.sound("spin", z, { x }); if (mine(z)) shell.haptic("medium"); }); // (0x4F02)
+  // (0x4F03, 0x4F07, 0x4F04: in the middle. 0x86006164-0x86006198 works out where the bump is into one
+  // pair of bytes of W + 0x8138 and hands the sound the next, which nothing writes: 0)
+  game.on("hit", (a, b, k) => {
+    shell.sound("hit" + k);
     if (mine(a) || mine(b)) shell.haptic(k >= 2 ? "heavy" : "light");
   });
-  game.on("out", (z, pan) => { // (0x4F05)
-    shell.sound("out", { pan });
+  game.on("out", (z, x) => { // (0x4F05)
+    shell.sound("out", z, { x });
     shell.flash(z, "hurt");
     if (mine(z)) shell.haptic("heavy");
   });
@@ -126,7 +133,7 @@ export async function create(shell, onProgress) {
   }
   let rest = {};
 
-  let view = null, portrait = false, theCards = [];
+  let view = null, portrait = false, theCards = [], song = false;
   const api = {
     game, scene, assets,
     get views() { return view ? [view] : []; },
@@ -196,15 +203,21 @@ export async function create(shell, onProgress) {
     idle() {
       game.reset(game.levelName || "normal");
       game.state = "idle";
+      song = false;
       shell.stopSound();
     },
-    go() { game.start(); shell.music("main"); }, // (song 33, as the play starts: 0x860075A8)
+    go() { game.start(); song = false; },
     finish() { shell.music(null, 40); },
     stop() { game.stop(); },
     setControl(z, c) { game.setControl(z, c); },
     get state() { return game.state; },
     get time() { return game.time; },
-    step(dt) { game.update(dt); },
+    step(dt) {
+      game.update(dt);
+      // song 33 as the play starts, a countdown step after GO (0x8600674C, 0x860075A8; not while
+      // catching up, rejoining: then once caught up)
+      if (!song && game.state === "play" && game.frame >= 0 && !shell.catchingUp()) { song = true; shell.music("main"); }
+    },
     animate() {},
     score(i) { return game.points()[i]; },
     setScores(scores) { game.scores = scores.map((x) => (Number.isInteger(x) && x >= 0 ? x : 0)); },
@@ -261,13 +274,22 @@ export async function create(shell, onProgress) {
     clock.hidden = !showing && game.state !== "ready";
     // the clock: whole seconds left, in its balloon, the swirl round it going round (0x8600B100, 0x8600B328)
     const s = game.state === "ready" ? R.TIME_LIMIT / R.FPS : game.secondsLeft();
-    if (clockNum.textContent !== String(s)) clockNum.textContent = s;
+    const shown = String(s);
+    clockNum.setAttribute("aria-label", shown);
+    [...clockNum.children].forEach((img, k) => {
+      const d = shown[k], src = d === undefined ? "" : digitPics[d] || `assets/ui/big${d}.png`;
+      img.hidden = d === undefined;
+      if (src && img.getAttribute("src") !== src) img.src = src;
+    });
     const k = Math.floor(game.clockS * 30) % 6, frame = [0, 1, 2, 3, 2, 1][k];
     const src = `${A}swirl${frame}.png`;
     if (!swirl.src.endsWith(src)) swirl.src = src;
-    clock.style.setProperty("--pulse", 1 + 0.2 * Math.abs(((game.clockS * 30) % 32) - 16) / 16);
-    // each one's points: a dot in the colour of each one it knocked out, then grey ones up to five, by its
-    // card (under the top ones, over the bottom ones in landscape), running in from its side
+    // (its balloon a little wider and back, 32 retraces round, 0x8600B100; its height as it is)
+    const beat = (game.clockS * 60) % 32;
+    clock.style.setProperty("--pulse", 1 + (0.2 * (beat >= 16 ? 32 - beat : beat)) / 16);
+    // each one's points: a dot in the colour of each one it knocked out, then grey ones up to five (at
+    // alpha 100: 0x8600AE6C), by its card (under the top ones, over the bottom ones in landscape),
+    // running in from its side
     const w = game.world;
     for (let z = 0; z < 4; z++) {
       const got = w.p[z].victims, imgs = points[z].children, c = theCards[z];
@@ -285,14 +307,15 @@ export async function create(shell, onProgress) {
       }
       for (let k2 = 0; k2 < 5; k2++) {
         const src2 = `${A}dot${k2 < got.length ? got[k2] + 1 : 0}.png`;
-        if (!imgs[k2].src.endsWith(src2)) imgs[k2].src = src2;
+        if (!imgs[k2].src.endsWith(src2)) { imgs[k2].src = src2; imgs[k2].classList.toggle("empty", k2 >= got.length); }
       }
     }
     hint.hidden = !(game.state === "ready" || (game.state === "play" && game.lastFrame < SHOW_HINT));
     hint.textContent = coarse?.matches ? "Slide a finger to push · A: RAPID SPIN" : "Arrows to push · Space: RAPID SPIN";
     // which Hitmontop is yours (the four look the same), knocked out onto the floor too
+    // (stretched in a RAPID SPIN, it's that much taller)
     const top = game.tops[shell.me()];
-    over.set(0, MIDDLE, 0).applyQuaternion(top.posture).add(top.model.root.position).y += HEAD;
+    over.set(0, MIDDLE * top.stretch, 0).applyQuaternion(top.posture).add(top.model.root.position).y += HEAD + MIDDLE * (top.stretch - 1);
     mark.place(showing && view, over);
   }
 

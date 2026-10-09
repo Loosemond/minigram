@@ -12,7 +12,8 @@ import math
 import struct
 
 SEATS = 4
-FPS = 60
+FPS = 30
+START = 20  # frames from GO to the play: the countdown's over a step after GO (0x8600674C)
 LEVELS = {"easy": 1, "normal": 2, "hard": 3}
 
 
@@ -25,7 +26,7 @@ def f32(x):
 
 
 REPEAT = 6
-DT = 1 / 60
+DT = 1 / 30
 DTS = DT / REPEAT
 MASS = 100
 IMPACT_WEIGHT = 5
@@ -49,6 +50,7 @@ BOUNDS = [
     dict(outer=(0, 0), inner=(0, 0)),
     dict(outer=(f32(0.1), f32(0.95)), inner=(f32(0.1), f32(0.95))),
 ]
+FLOOR = (0.8, 0.2)  # the floor round the ring's bounce and friction (tuning +0x238 and +0x260, 0x86004E38)
 FRICTION = 0
 INITIAL_OFFSET, INITIAL_SPEED_H, INITIAL_SPEED_V = 160, 800, 4000
 WAIT_IN = 0.35
@@ -61,8 +63,8 @@ WINNERS_POINT = 5
 TIME_LIMIT = 60 * FPS
 RIM = 1800
 FLOOR_SHARE = 90 * 0.01
-AHEAD = 8  # frames ahead of now a pad may be for (a device sends its player's up to 6 ahead: game.js)
-AFTER = 180  # frames from the end to the results (the winners going to their spots)
+AHEAD = 4  # frames ahead of now a pad may be for (a device sends its player's up to 3 ahead: src/lag.js leadFor)
+AFTER = 1  # frames from the end to the results: the show's first frame hands over (0x86006B74-0x86006BC8)
 
 CPU_RECS = [dict(near=f32(a), wrong=f32(b), power=f32(c), bits=d << 16) for a, b, c, d in (
     (0.85, 0.01, 24, 0x8FC0), (0.9, 0.0115, 20, 0x0DC0), (0.9, 0.01, 24, 0x3DC0), (0.8, 0.0405, 55, 0x29C0),
@@ -82,6 +84,7 @@ def bit(rec, b):
 
 START_ANGLE = [-2.35619455575943, 2.35619455575943, -0.7853981852531433, 0.7853981852531433]
 PI, TWO_PI, HALF_PI = 3.1415927410125732, 6.2831854820251465, 1.5707963705062866
+TEN_PI = 31.41592788696289  # (0x86002B20's)
 U = 4294967296
 
 
@@ -367,7 +370,7 @@ def floor(p):
     d = p.pos[1] - p.r
     if 0 < d:
         return
-    rub(p, [p.pos[0], 0, p.pos[2]], [0, 1, 0], (0, 0))
+    rub(p, [p.pos[0], 0, p.pos[2]], [0, 1, 0], FLOOR)
     p.pos = [p.pos[0], p.pos[1] - d, p.pos[2]]
 
 
@@ -440,12 +443,12 @@ class World:
             self.end = t
             self.over = True
             self.events.append(["end"])
-        for p in self.p:
-            self.update(p)
-        if self.over and not any(p.state == 6 for p in self.p):
+        if self.over and t == self.end + 1:
             for p in self.p:
                 if p.state == 8:
                     self.enter(p, 7)
+        for p in self.p:
+            self.update(p)
 
     def parts(self):
         lst = [self.p[(self.first + k) % 4] for k in range(4) if self.p[(self.first + k) % 4].cpu]
@@ -548,6 +551,9 @@ class World:
             if p.hold <= 0:
                 p.hold = 0
                 self.enter(p, 2)
+            else:
+                p.turn = TEN_PI
+                p.heading = atan2(-p.pos[0], -p.pos[2])
         elif p.state == 2:
             p.hold -= DT
             if p.hold <= 0:
@@ -631,6 +637,7 @@ class World:
         p.spin = 0
         if s == 0:
             p.on, p.solid = False, False
+            p.heading = atan2(-p.pos[0], -p.pos[2])
         elif s == 1:
             p.on, p.solid = False, False
             self.events.append(["jump", p.z])
@@ -811,7 +818,7 @@ class Round:
         self.pads = [[] for _ in range(SEATS)]  # each person's pad changes: [frame, stick, A]
         self.at = [0] * SEATS  # where each one's list has been read to
         self.done = None  # how it ended, once decided: dict(f, s)
-        self.end = (TIME_LIMIT + AFTER) / FPS  # s after GO it's over (sooner once decided)
+        self.end = (START + TIME_LIMIT + AFTER) / FPS  # s after GO it's over (sooner once decided)
 
     def pad_at(self, s, t):
         """Seat s's [stick x, stick y, A] on frame t (frames are run in order)."""
@@ -834,13 +841,14 @@ class Round:
 
     def pad(self, s, f, x, a, now, allow):
         """Seat s's stick went to x ((sx + 64) | (sy + 64) << 8, each -64 to 64)
-        and A if a, on frame f (its device's word); it came in at round time
-        now, and may be at most allow s old. Returns the frame it counts on, or None."""
+        and A if a, on frame f of the play (which starts START frames after GO;
+        its device's word); it came in at round time now (s from GO), and may be
+        at most allow s old. Returns the frame it counts on, or None."""
         if self.cpus[s] or self.done or type(f) is not int or type(x) is not int or a not in (0, 1):
             return None
         if not 0 <= x <= 0x8080 or (x & 0xFF) > 128:
             return None
-        here = int(now * FPS)
+        here = int(now * FPS) - START  # (the play's frames: from a step after GO)
         f = min(max(f, here - int(allow * FPS)), here + 1 + AHEAD)  # (no older than the way here allows; not far ahead)
         f = max(f, self.world.t + 1)  # (not what's been run)
         if self.pads[s]:
@@ -867,16 +875,16 @@ class Round:
         it's over, how: dict(f, s), or None."""
         if self.done:
             return None
-        safe = int(now * FPS) - int(allow * FPS) - 1
+        safe = int(now * FPS) - START - int(allow * FPS) - 1
         if safe < 0:
             return None
         self.run_to(min(safe, TIME_LIMIT))
         if self.world.end is not None:
             self.done = dict(f=self.world.end, s=self.world.scores)
-            self.end = (self.world.end + AFTER) / FPS
+            self.end = (START + self.world.end + AFTER) / FPS
             return self.done
         return None
 
     def next_settle(self, allow):
         """When (round time, s) to look again: anyone can score on any frame, so every half second."""
-        return None if self.done else (self.world.t + 1 + FPS // 2) / FPS + allow
+        return None if self.done else (START + self.world.t + 1 + FPS // 2) / FPS + allow

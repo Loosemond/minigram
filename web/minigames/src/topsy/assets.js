@@ -81,10 +81,12 @@ export async function loadAssets(base, onProgress = () => {}) {
     g.scene.traverse((o) => { if (o.isMesh && o.material.userData.ps2_face) like = o.material.map; });
     await Promise.all(FACES.map((k) => job(faceTexture(`${base}face${k}.png`, like)).then((t) => { out[name].faces[k] = t; })));
   }));
-  // Hitmontop's face tracks, by clip (its blink, texanim00, the rest of the time)
+  // Hitmontop's texture clips (its face: 0 a blink, then those of clips 7, 9, 11 and 12), by number. The
+  // extractor files each with a clip of its length (face_clip), so the one of clip 12 is with clip 3; the
+  // game says which plays with which (0x8600D540: game.js)
   const H = out.hitmontop;
-  H.faceTracks = H.clips.map((c) => info.clips.find((m) => m.name === c.name)?.face || null);
-  H.blink = info.clips.find((m) => m.name.startsWith("texanim"))?.face || null;
+  H.texanims = [];
+  for (const m of info.clips) if (Number.isInteger(m.face_clip) && m.face) H.texanims[m.face_clip] = m.face;
   PICTURES.forEach((name, i) => { out[name] = pics[i]; });
   out.fx = fx;
   fx.pics["glow.png"] = out.glow; // (drawn through the combiner 0x86000CCC sets: game.js)
@@ -92,8 +94,8 @@ export async function loadAssets(base, onProgress = () => {}) {
 }
 
 // A model, at the game's scale (s), with its own mixer and faces: a clip
-// posed at a frame (looped, or held at its end) sets them from its face
-// track, or the blink does
+// posed at a frame (looped, or held at its end), and a texture clip's frame
+// on its face (else its own)
 export function makeModel(a, s = 1) {
   const model = cloneSkinned(a.scene);
   model.scale.setScalar(GLB * s);
@@ -107,6 +109,7 @@ export function makeModel(a, s = 1) {
     o.material = [o.material].flat().map((m) => {
       const c = m.clone();
       c.userData.base = c.color.clone();
+      c.userData.own = { transparent: c.transparent, opacity: c.opacity, depthWrite: c.depthWrite };
       mats.push(c);
       if (c.userData.ps2_face) faceMats.push(c);
       return c;
@@ -119,8 +122,8 @@ export function makeModel(a, s = 1) {
     root, model, mixer, mats,
     get clip() { return current; },
     length: (i) => (a.clips[i] ? Math.max(1, Math.round(a.clips[i].duration * FPS)) : 1), // (at least a frame: clip 0's is one pose)
-    // clip i at frame f (looped; or held on its last frame); blink: the blink's frame, between clips
-    pose(i, f, hold = false, blink = 0) {
+    // clip i at frame f (looped; or held on its last frame); face: [texture clip, its frame], or none
+    pose(i, f, hold = false, face = null) {
       const next = actions[i];
       if (!next) return;
       if (i !== current) {
@@ -136,11 +139,11 @@ export function makeModel(a, s = 1) {
       const d = a.clips[i].duration, t = Math.max(0, f) / FPS;
       action.time = d > 0 ? (hold ? Math.min(t, d - 1e-4) : t % d) : 0;
       mixer.update(0);
-      const track = a.faceTracks?.[i], k = Math.floor(action.time * FPS);
+      // (a texture clip's frame past its end: its last, *by assumption*)
+      const track = face && a.texanims?.[face[0]];
       for (const m of faceMats) {
-        const ch = m.userData.ps2_face.channel, list = track?.[ch] || (a.blink && blink >= 0 ? a.blink[ch] : null);
-        const at = track?.[ch] ? k : blink;
-        setFace(m, list ? list[Math.min(list.length - 1, Math.max(0, at))] : m.userData.ps2_face.default);
+        const ch = m.userData.ps2_face.channel, list = track?.[ch];
+        setFace(m, list ? list[Math.min(list.length - 1, Math.max(0, face[1]))] : m.userData.ps2_face.default);
       }
     },
     // a colour laid over it: towards rgb by k (0 none)
@@ -148,6 +151,16 @@ export function makeModel(a, s = 1) {
       for (const m of mats) {
         m.color.copy(m.userData.base).lerp(rgb, k);
         m.emissive?.copy(rgb).multiplyScalar(k * 0.6);
+      }
+    },
+    // see-through, at alpha k (1: as it is): the game draws an object under 0xFF in its translucent
+    // layers, which don't hide what's behind (0x8003D8E8)
+    alpha(k) {
+      for (const m of mats) {
+        const own = m.userData.own, see = k < 1;
+        if (m.transparent !== (see || own.transparent)) { m.transparent = see || own.transparent; m.needsUpdate = true; }
+        m.opacity = see ? k * own.opacity : own.opacity;
+        m.depthWrite = see ? false : own.depthWrite;
       }
     },
   };

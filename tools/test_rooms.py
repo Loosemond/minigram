@@ -108,9 +108,9 @@ def rollout_pad(z, t, w):
 
 # web/minigames/src/topsy/rules.js: a round with seats 0 and 2 on topsy_pad()
 # and two CPUs (normal, hard, easy), the world's digest() every 100 frames:
-# the hard one to its end and the show after (1186 frames), the others 600;
+# the hard one to its end and the show after (912 frames), the others 600;
 # then the end, the points and the places (web/minigames/tests.js has the same)
-JS_TOPSY = {1: "f73c640b45d45abe", 157: "8dcf2582748da502", 2 ** 31 - 1: "e51f8987128a2605"}
+JS_TOPSY = {1: "787fac9096d5b8ba", 157: "272f45629a21406c", 2 ** 31 - 1: "a9b0c75e0b95888e"}
 TOPSY_LEVEL = {1: "normal", 157: "hard", 2 ** 31 - 1: "easy"}
 
 
@@ -1300,7 +1300,7 @@ def _():
         a.send("pad", r=r, s=1, f=1, x=right, a=1)  # someone else's Hitmontop: ignored
         for x, ok in ((-1, 1), (0x8081, 1), (129, 1), (right, 2), (1.5, 1)):  # no stick (or not A or none): ignored
             b.send("pad", r=r, s=1, f=2, x=x, a=ok)
-        at(go, 40 / topsy_rules.FPS)
+        at(go, (topsy_rules.START + 40) / topsy_rules.FPS)  # (the play's frame 40: it starts a countdown step after GO)
         b.send("pad", r=r, s=1, f=0, x=right, a=0)  # Tom's, older than the way here allows: as late as that does
         late = 40 - int(rooms.ALLOW_GUESS * topsy_rules.FPS)
         mine = [(m["s"], m["f"], m.get("o")) for m in b.drain(0.3) if m["t"] == "pad"]
@@ -1316,11 +1316,11 @@ def _():
         said = {k: won[k] for k in ("f", "s")}
         assert want.settle(1000, 0) == said, (won, want.done)
         assert said["f"] == topsy_rules.TIME_LIMIT - 1, said  # (nobody gets five points in four seconds)
-        assert g.end == (said["f"] + topsy_rules.AFTER) / topsy_rules.FPS
+        assert g.end == (topsy_rules.START + said["f"] + topsy_rules.AFTER) / topsy_rules.FPS
         a.send("pad", r=r, s=0, f=won["f"] + 5, x=right, a=1)  # after the end: nothing
         a.send("done", r=r)
         b.send("done", r=r)
-        a.s.settimeout(8)  # (the round's over 3 s after the play: AFTER)
+        a.s.settimeout(8)  # (the round's over a frame after the play: AFTER)
         res = a.wait("results", timeout=10)
         assert res["scores"] == said["s"], res
         b.close()

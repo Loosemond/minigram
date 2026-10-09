@@ -1,9 +1,10 @@
 // Topsy-Turvy's rules, as the game's code module (#47) has them
 // (docs/minigames.md has where each number is). The game counts time in
-// seconds, and runs the play six steps a frame, 60 frames a second (its
-// numbers say so: only then does a Hitmontop knocked out come to rest); its
-// units: the ring is a bowl sunk in the floor (the plane y = 0), x across, z
-// towards the camera, seen from (0, 3878, 4979) towards (0, -300, 0).
+// seconds, and runs the play six steps a frame, 30 frames a second (it asks
+// the scheduler for a frame every 2 retraces, 0x8600D01C, and takes its
+// frame's length from them, 0x86006D7C); its units: the ring is a bowl sunk
+// in the floor (the plane y = 0), x across, z towards the camera, seen from
+// (0, 3878, 4979) towards (0, -300, 0).
 //
 // Four Hitmontop spin in the ring: a ball each (radius 135), pushed about by
 // its player's stick, bouncing off the others (hard: a bounce gives more than
@@ -23,13 +24,16 @@
 // its float square roots with Math.fround. tools/topsy_rules.py is the rooms
 // server's copy: keep the two the same.
 
-export const FPS = 60; // (frames a second: the game takes its frame's length from the retraces, 1 of 60)
+export const FPS = 30; // (frames a second: 2 retraces of 60 each, 0x80008950 / 0x80001FC0)
+// frames from GO to the play: the countdown's over a step after GO, and only
+// then does the play start (0x8600674C: module #64's step, 20 frames)
+export const START = 20;
 export const LEVELS = { easy: 1, normal: 2, hard: 3 };
 const f32 = Math.fround;
 
 // The game's tuning (its debug menu's, set at 0x8600B610)
 const REPEAT = 6; // "CALICULATION REPEAT": steps a frame
-export const DT = 1 / 60; // a frame, in s
+export const DT = 1 / 30; // a frame, in s
 const DTS = DT / REPEAT; // a step
 const MASS = 100; // a Hitmontop's weight...
 const IMPACT_WEIGHT = 5; // ...times this in a RAPID SPIN...
@@ -53,6 +57,8 @@ const BOUNDS = [ // the bowl's bounce and friction (outer: the rim; inner: the f
   { outer: [0, 0], inner: [0, 0] },
   { outer: [f32(0.1), f32(0.95)], inner: [f32(0.1), f32(0.95)] }, // (the losers', at the end)
 ];
+// the floor round the ring's (the plane at W + 0x6848: tuning +0x238 and +0x260, 0x86004E38)
+const FLOOR = [0.8, 0.2];
 const FRICTION = 0; // between two Hitmontop
 const INITIAL_OFFSET = 160, INITIAL_SPEED_H = 800, INITIAL_SPEED_V = 4000; // jumping in: from this far out, at this speed
 const WAIT_IN = 0.35; // crouched before the jump (0x86003A98)
@@ -85,6 +91,7 @@ const bit = (rec, b) => (rec.bits >>> b) & 1;
 const START_ANGLE = [-2.35619455575943, 2.35619455575943, -0.7853981852531433, 0.7853981852531433];
 
 const PI = 3.1415927410125732, TWO_PI = 6.2831854820251465, HALF_PI = 1.5707963705062866; // (the game's, floats)
+const TEN_PI = 31.41592788696289; // (0x86002B20's)
 const U = 4294967296;
 
 // the level the game plays (with four people, the CPUs' don't matter)
@@ -241,8 +248,10 @@ export class World {
     if (!this.over) this.parts();
     for (let k = 0; k < REPEAT; k++) this.sub(pads, !this.over);
     if (!this.over && this.done(t)) { this.end = t; this.over = true; this.events.push(["end"]); }
+    // (the show's first frame: nobody's in the play, so the losers drop out of it, and the results
+    // start: 0x86006B74-0x86006BC8)
+    if (this.over && t === this.end + 1) for (const p of this.p) if (p.state === 8) this.enter(p, 7);
     for (const p of this.p) this.update(p);
-    if (this.over && !this.p.some((p) => p.state === 6)) for (const p of this.p) if (p.state === 8) this.enter(p, 7);
   }
 
   // the CPUs' parts, by their points (0x860076EC): best first
@@ -335,9 +344,11 @@ export class World {
         spinTo(0);
         p.heading = atan2(-p.pos[0], -p.pos[2]);
         break;
-      case 1: // crouched to jump in (0x86002B20)
+      case 1: // crouched to jump in, facing the middle (0x86002B20: its spin 10 pi a frame, which looks still)
         p.hold -= DT;
-        if (p.hold <= 0) { p.hold = 0; this.enter(p, 2); }
+        if (p.hold <= 0) { p.hold = 0; this.enter(p, 2); break; }
+        p.turn = TEN_PI;
+        p.heading = atan2(-p.pos[0], -p.pos[2]);
         break;
       case 2: // in, a ghost, till there's room (0x86002A58)
         p.hold -= DT;
@@ -411,7 +422,10 @@ export class World {
     p.state = s;
     p.spin = 0;
     switch (s) {
-      case 0: p.on = false; p.solid = false; break;
+      case 0: // waiting at its corner (0x86003A0C), facing the middle (0x860029D0, each frame of the countdown)
+        p.on = false; p.solid = false;
+        p.heading = atan2(-p.pos[0], -p.pos[2]);
+        break;
       case 1: // crouch, ready to jump in from the floor where it is (0x86003A98)
         p.on = false; p.solid = false;
         this.events.push(["jump", p.z]);
@@ -653,11 +667,11 @@ function bowl(p, S, bound, skip) {
   rub(p, at, n, bound);
   p.pos = add(p.pos, scale(n, pen));
 }
-// onto the floor round the ring (bouncing and rubbing nothing: 0x86008D2C)
+// onto the floor round the ring (0x86008D2C: 0x86009260 asks for its bounce and friction, +0x20 and +0x30)
 function floor(p) {
   const d = p.pos[1] - p.r;
   if (0 < d) return;
-  rub(p, [p.pos[0], 0, p.pos[2]], [0, 1, 0], [0, 0]);
+  rub(p, [p.pos[0], 0, p.pos[2]], [0, 1, 0], FLOOR);
   p.pos = [p.pos[0], p.pos[1] - d, p.pos[2]];
 }
 // a step on (0x86009674): its weight, its pushes, gravity g

@@ -676,15 +676,15 @@ SOUNDS = {
         "go": _sound(0x40, 127, 2, 0x0C00),  # 0x5F08, GO, and each one in
     }),
     # Topsy-Turvy asks for song 33 (sequence 72) as the play starts. Its
-    # effects are bank 4's (0x4Fxx; 0x4400 and 0x4401 are its first two
+    # effects are bank 4's (0x4Fxx; the hum's 0x4000 and 0x4401 are its first two
     # entries), placed by where they happen; a point is Gutsy Golbat's heart
     # (0x0F04); its count and GO are Pichu's Power Plant's (0x2F00, 0x2F01),
     # and the shared count (0xCF00, 0xCF06) sounds the last three seconds
     "topsy": ({"main": 72, "win": 94}, {
-        # 0x4400, asked for each frame a Hitmontop spins (0x860032DC): at 1.25
-        # (1 while its RAPID SPIN recharges); 0x4401 at 1.75 in a RAPID SPIN
-        "hum": dict(_sound(0x30, 75, 1, 0x0001), pitch=1.25),
-        "humCharge": _sound(0x30, 75, 1, 0x0001),
+        # 0x4000, asked for each frame a Hitmontop spins (0x860032DC): at 1.25
+        # (1 while its RAPID SPIN recharges), which 0x800278B0 remaps for each
+        # player (game.js passes it); 0x4401 at 1.75 in a RAPID SPIN
+        "hum": _sound(0x30, 75, 1, 0x0001),
         "humSpin": dict(_sound(0x31, 98, 1, 0x0010), pitch=1.75),
         "spin": _sound(0x32, 98, 1, 0x1000),  # 0x4F02, a RAPID SPIN
         "hit1": _sound(0x33, 93, 1, 0x0700),  # 0x4F03, a bump (harder than 700000)
