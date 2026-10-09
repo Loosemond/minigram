@@ -7,7 +7,10 @@
 // baked still reads them opaque: white, dark and flat boxes). All are drawn
 // translucent (geo 0x22's layers 5 and up, 0x80094B04's table, or the game's
 // own G_RM_AA_ZB_XLU_SURF): the colour by its alpha over what's there, the
-// depth tested, not written. So here: never added on.
+// depth tested, not written. So here: never added on. And a plain model's
+// textures that a callback scrolls (scrollMaps: Delibird's Delivery's belts).
+// (Joints drawn facing the camera: src/facing.js; grey HUD pictures through
+// a combiner: src/tint.js.)
 import * as THREE from "three";
 import { retry, attemptURL, fetchRetry } from "./retry.js";
 
@@ -19,10 +22,12 @@ const texture = (url) => retry((n) => texLoader.loadAsync(attemptURL(url, n)), u
 
 // A game's recipes (base: its folder) and their pictures, each once: { recipes,
 // pics }. job wraps each load (the loading bar's count). A picture a game's
-// code draws goes in pics too, by its file name.
+// code draws goes in pics too, by its file name. (A recipe's null where its
+// callback has no colours of its own: a plain model's, for its scroll.)
 export async function loadFx(base, job = (p) => p) {
   const recipes = await job(fetchRetry(base + "fx.json").then((r) => r.json()));
-  const files = [...new Set(Object.values(recipes).flatMap((o) => o.recipes).flatMap((s) => s.textures.filter(Boolean).map((t) => t.file)))];
+  const files = [...new Set(Object.values(recipes).flatMap((o) => o.recipes || []).filter(Boolean)
+    .flatMap((s) => s.textures.filter(Boolean).flatMap((t) => [t.file, ...(t.frames || [])])))];
   const pics = Object.fromEntries(await Promise.all(files.map((f) => job(texture(base + f)).then((t) => [f, t]))));
   return { recipes, pics };
 }
@@ -75,10 +80,14 @@ const lerp = (a, b, k) => a.map((x, i) => x + (b[i] - x) * k);
 // tile). Its frame(f, loop) sets its colours and
 // its tiles' scroll for frame f (the game's, 30 a second) of its colour
 // track: between keys, linearly (as tools/blender reads them), held at its
-// last (loop: round its period, back to its first). Its opacity still fades
+// last (loop: round its period, back to its first); and a flipbook's picture
+// (a texture table's: frame_time frames each, held at its last, or round
+// again with loop: Eager Eevee's fire puffs, 204). Its opacity still fades
 // it all.
 export function combiner(fx, spec, { sprite = false, shade = false, flipY = false, uv = [1, 1] } = {}) {
-  const [s0, s1 = s0] = spec.textures;
+  const s0 = spec.textures[0], s1 = spec.textures[1] || s0; // (no TEXEL1 of its own: null, tile 0's)
+  const book = (s) => (s.frames?.length > 1 ? s.frames.map((f) => tile(fx.pics[f], s.wrap, flipY)) : null);
+  const books = [book(s0), s1 === s0 ? null : book(s1)];
   const u = {
     prim: { value: new THREE.Vector4() }, env: { value: new THREE.Vector4() }, plod: { value: 1 },
     map1: { value: tile(fx.pics[s1.file], s1.wrap, flipY) },
@@ -133,6 +142,13 @@ export function combiner(fx, spec, { sprite = false, shade = false, flipY = fals
       const off = (s, k) => (((-(s.scroll?.[k] || 0) * f) / s.size[k]) % 2 + 2) % 2;
       u.tile0.value.set(uv[0], uv[1], off(s0, 0), off(s0, 1));
       u.tile1.value.set(rel(0), rel(1), off(s1, 0), off(s1, 1));
+      // a flipbook's picture now (tile 1 the same as tile 0's when it's the same texture)
+      const page = (pics, s) => {
+        const n = Math.floor(Math.max(0, f) / Math.max(1, s.frame_time || 1));
+        return pics[loop ? n % pics.length : Math.min(n, pics.length - 1)];
+      };
+      if (books[0]) m.map = page(books[0], s0);
+      if (books[1] || (books[0] && s1 === s0)) u.map1.value = books[1] ? page(books[1], s1) : m.map;
     },
   };
   m.n64.frame(0);
@@ -140,16 +156,56 @@ export function combiner(fx, spec, { sprite = false, shade = false, flipY = fals
 }
 
 // The meshes under root (a model, tagPrims'd) dressed in their recipes, as
-// fx.json's name has them: each primitive the callback of its render layer.
-// Returns the materials (to set their frame).
+// fx.json's name has them: each primitive the last callback before it in its
+// render layer (tools/web_assets.py, fx_recipes). A primitive with a texture
+// of its own (null) keeps the glTF's material. Returns the materials (to set
+// their frame).
 export function dress(fx, root, name) {
   const { recipes, prims, uv } = fx.recipes[name], mats = [];
   let k = 0;
   root.traverse((o) => {
     if (!o.isMesh) return;
     const i = o.userData.n64prim ?? k++;
-    o.material = combiner(fx, recipes[prims[i]] || recipes[0], { shade: !!o.geometry.attributes.color, uv: uv?.[i] });
+    const spec = prims[i] === null ? null : recipes[prims[i]] || recipes[0];
+    if (!spec) return;
+    o.material = combiner(fx, spec, { shade: !!o.geometry.attributes.color, uv: uv?.[i] || undefined });
     mats.push(o.material);
   });
   return mats;
+}
+
+// A plain model's moving textures: the meshes under root (a model,
+// tagPrims'd) whose glTF texture is a callback's that scrolls (fx.json's
+// scroll, texels a frame: Delibird's Delivery's belts, 147 and 148, by
+// 0x81000178), each kept in its material (lit, as the glTF has it) but its
+// texture moved. frame(f) puts them where they are on frame f (the game's,
+// 30 a second): the tile's origin moved on, the picture slides back, as
+// combiner's do (a texel is a picture's pixel in the glTF's coordinates, a
+// mirrored one doubled or not).
+export function scrollMaps(fx, root, name) {
+  const moves = fx.recipes[name]?.scroll || [], maps = [];
+  root.traverse((o) => {
+    const s = o.isMesh && moves[o.userData.n64prim];
+    if (!s) return;
+    for (const m of [o.material].flat()) {
+      if (!m.map) continue;
+      if (!m.map.userData.n64scroll) { // (its own texture, to move: the picture's the same)
+        m.map = m.map.clone();
+        m.map.userData.n64scroll = true;
+        for (const [k, w] of [[0, "wrapS"], [1, "wrapT"]]) if (s[k] && m.map[w] === THREE.ClampToEdgeWrapping) m.map[w] = THREE.RepeatWrapping;
+        m.map.needsUpdate = true;
+      }
+      maps.push([m.map, s]);
+    }
+  });
+  return {
+    maps: maps.map(([t]) => t),
+    frame(f) {
+      for (const [t, s] of maps) {
+        const w = t.image?.width || 1, h = t.image?.height || 1;
+        const per = (k) => ((k === 0 ? t.wrapS : t.wrapT) === THREE.MirroredRepeatWrapping ? 2 : 1);
+        t.offset.set(((-s[0] * f) / w) % per(0), ((-s[1] * f) / h) % per(1));
+      }
+    },
+  };
 }

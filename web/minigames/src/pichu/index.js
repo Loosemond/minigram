@@ -85,12 +85,8 @@ export async function create(shell, onProgress) {
 
   // ---- sounds and the like, from the game ----
   const mine = (z) => z === shell.me();
-  let humming = false;
-  const hum = (on) => {
-    if (on === humming) return;
-    humming = on;
-    if (on) shell.sound("hum", shell.me()); else shell.stopSound("hum"); // (0x200B: asked for every frame it charges)
-  };
+  // every Pichu's hum, on its own channel (0x200B + 0x100 x the player: asked for every frame it charges)
+  const hum = (on) => { for (let z = 0; z < 4; z++) shell.hold("hum", z, on && game.charging(z)); };
   game.on("send", (m) => shell.send("press", m));
   game.on("pop", () => shell.sound("pop")); // (0x2F03)
   game.on("turn", (z) => shell.sound("turn" + z, z)); // (0x2F04 + the player)
@@ -194,7 +190,6 @@ export async function create(shell, onProgress) {
         : [0, 1, 2, 3].map((z) => !(round.lineup || []).some((p) => p.seat === z));
       game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, told: m?.pp });
       shell.stopSound();
-      humming = false;
       aimed = 0;
       setHeld(0);
       keys.length = 0;
@@ -204,7 +199,6 @@ export async function create(shell, onProgress) {
       game.reset(game.levelName || "normal");
       game.state = "idle";
       shell.stopSound();
-      humming = false;
     },
     go() { game.start(); shell.music("main"); }, // song 21, from GO
     finish() { hum(false); shell.music(null, 40); },
@@ -295,7 +289,7 @@ export async function create(shell, onProgress) {
       Object.assign(el.style, { left: x + "px", top: y + "px" });
       el.classList.toggle("on", held === d);
     });
-    hum(on && game.charging(shell.me()) && !shell.catchingUp());
+    hum(on);
   }
 
   // The camera: the game's view (or the opening glide to it), its 4:3 screen

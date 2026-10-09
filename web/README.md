@@ -58,8 +58,8 @@ freezes them at a time). `party.html` runs several online players in one tab,
 and `tests.html` runs the regression tests ([below](#online-play)).
 
 **The shell** (`src/main.js`) has the title with the game picker, the rounds
-(the countdown, GO, the finish and the results), the online rooms and their
-lobby, the players' cards and the renderer. A game is a module
+(the game's countdown and GO, its winners' banner and the results), the online
+rooms and their lobby, the players' cards and the renderer. A game is a module
 (`src/<game>/index.js`, listed in `src/games.js` with its name, banner,
 instructions and colour) with its own scene, cameras, controls, bits of HUD,
 sounds (`assets/<game>/sound.bin`) and online messages; the shell gives it the
@@ -67,10 +67,28 @@ taps and keys while a round is on, and passes on its messages. A small arrow
 in your colour marks your player through the play (the remake's,
 `src/mark.js`: the four mostly look the same), over its head, or under its
 feet where things come at it from above (Egg Emergency, Clear Cut Challenge,
-Barrier Ball); in Furret's Frolic and Delibird's Delivery it sits over the
-game's own 1P-4P and COM label (small on a phone), and is gone with it in the
-end's show. Pichu's Power Plant has none: the top Electrode pops out just over
+Barrier Ball); in Furret's Frolic, Gutsy Golbat and Delibird's Delivery it
+sits just over the game's own 1P-4P and COM label (small on a phone), and in
+Furret's Frolic is gone with it in the end's show. Pichu's Power Plant has none: the top Electrode pops out just over
 each Pichu's head, and each has its own room and card.
+
+**A round's start and end** are what the minigames' shared code (module #64,
+[docs/minigames.md](../docs/minigames.md#the-shared-module-64-the-countdown-and-the-results))
+does in the game. The countdown: "3", "2", "1" and GO (image bank 360) a step
+apart, 20 frames (25 in Gutsy Golbat and Streaming Stampede), each popping up
+and wobbling as the game's do, with each game's own sounds on them (none in
+Streaming Stampede; Eager Eevee starts its song in it); `countdown` in
+`src/games.js`, and online the server deals GO on the same steps. The end: once
+a game's round is over (when its code hands over, after its own show), the
+winners' banner drops in at once over it: their badges (bank 435) and WINS,
+or DRAW (bank 442) when no one won or all four are level, with the results'
+fanfare (song 55) and cheer (`0xCA0F`), or song 56 and the crowd (`0x1E09`),
+for everyone. 60 frames after it's down (when the game takes A to go on), the
+ranking comes up, the remake's, with Play again and Menu (online, Lobby, once
+the server's ranking is in). There's no FINISH: no game has one. The sounds a
+game gives each player a channel of its own play on that player's, panned to
+its column or where it is as the game pans them (`src/audio.js`), and a sound
+asked for every frame (a hum) can play for each player at once.
 
 ## Egg Emergency
 
@@ -136,15 +154,16 @@ envelopes, vibrato and pans into Web Audio events a little ahead. What plays
 ([docs/audio.md](../docs/audio.md) has how each was found):
 
 - Egg Emergency's song (song 45, a 23.6 s loop) from GO! until the finish,
-  when it fades out with the finish whistle as in the game.
+  when it fades out with the finish whistle.
 - The effects the minigame's code plays, with the game's volumes, reverbs
   and pans (yours to your column): a catch, a Voltorb's shock and the eggs
-  it knocks out, a drop falling in the water, the countdown, GO! and the
-  whistle; and a menu sound for the buttons.
-- The fanfare the minigame results play (song 55), when you win.
+  it knocks out, a drop falling in the water, its own count and GO! (`0x7F03`,
+  `0x7F04`) and the whistle; and a menu sound for the buttons.
+- The minigame results' fanfare (song 55) and cheer when someone won, or
+  song 56 and the crowd when no one did, for everyone.
 
-Egg Emergency's file is 372 KB (322 KB gzipped): the song's samples are 138 KB, the
-fanfare's another 97, the effects' 159, and the scripts 10 KB. It's fetched
+Egg Emergency's file is 554 KB (483 KB gzipped): the song's samples are 138 KB, the
+fanfare's another 97 and the draw's 104, the effects' 232, and the scripts 10 KB. It's fetched
 after the first tap with the sound on, so with the sound off it's never
 downloaded; until it's in, simple Web Audio tones stand in. For comparison,
 the same half minute of sound recorded would be about as big (Opus at 64
@@ -160,9 +179,9 @@ each asset was found):
 | the stage's layout, sizes and colours (background picture 19), the window paintings' Pokémon, Voltorb's 6-frame sprite (bank 227) | the 3D stage itself and its textures, the bays beyond the players', the far bank |
 | the three-column lean-and-catch, read from Chansey's clips | where the HUD sits |
 | the rules: L/R, Voltorb costs 5 eggs and a stun, 100 eggs (text 50.11) | the reverb (the game's settings aren't known) |
-| HUD: player badges (434), "EGGS" and digits (404), "+1" / "−5" (429), countdown 3-2-1-GO! (360), the name banner (403), "The Champion!" (358) | "FINISH!", the menus |
+| HUD: player badges (434), "EGGS" and digits (404), "+1" / "−5" (429), countdown 3-2-1-GO! (360), the name banner (403), the winners' banner (435, 442), "The Champion!" (358) | the menus |
 | effects: the splash (152), explosion textures (object 185) | how the effects move |
-| the song, the fanfare and the sound effects (sequences 84, 94 and 9; fonts 49, 54 and 12's samples) | when the song starts (at GO!), and that the fanfare plays only for the winner |
+| the song, the results' songs and the sound effects (sequences 84, 94, 95 and 9; their fonts' samples) | when the song starts (at GO!) |
 
 Colours follow [docs/colours.md](../docs/colours.md): the textures are used
 without sRGB conversion, lighting is Lambert (ambient + one sun, no specular)
@@ -177,7 +196,13 @@ engine that plays them), `src/telegram.js` the Telegram glue, `src/net.js` the
 connection to the rooms server, `src/retry.js` tries failed loads again,
 `src/config.js` the online settings, `src/n64fx.js` the game's colour combiner
 for effects the glTF can't hold (each game's `fx.json`, from the ROM: the
-sparks, rings, glows, Mr. Mime's barrier and the dizzy stars).
+sparks, rings, glows, Mr. Mime's barrier and the dizzy stars; flipbooks, and a
+plain model's moving textures), `src/facing.js` turns the joints the game
+draws facing the camera (the glTF marks them: the gifts and fruit, the dizzy
+stars, the Electrode lamps' faces, the Poké Balls' glint, the sparks),
+`src/badge.js` makes the 1P-4P and COM badges over the players (image bank
+434, as module #64's labels), `src/tint.js` colours a grey HUD picture as the
+game's combiner does, and `src/mark.js` is the arrow over your player.
 
 ## Clear Cut Challenge
 
@@ -229,12 +254,12 @@ the white line). `tools/ps2tool/minigames.py` takes the textures out;
 `src/clearcut/assets.js` builds the prism from the module's numbers, so a cut
 can split it anywhere, with the bark wrapping as the module's tiles have it.
 
-**Sound**: the game's (`assets/clearcut/sound.bin`, 706 KB, 627 gzipped,
+**Sound**: the game's (`assets/clearcut/sound.bin`, 832 KB, 737 gzipped,
 fetched only with the sound on): song 18 while each log is hauled up, song 19
 when the pieces are shown, the crowd (by the sound of it: while a log hangs,
 as each comes up and for the best cut), the cut, a perfect cut, a swing
 that misses, Scyther getting ready, the points in, the minigame's own
-countdown and GO, the shared finish whistle, and the fanfare when you win.
+countdown and GO, the shared finish whistle, and the results' songs.
 The crowd's samples are 238 KB of it and the fanfare 131.
 
 What comes from the ROM and what is made up:
@@ -300,12 +325,13 @@ front of the clearing and Aipom's rope goes on up out of sight (in the game it
 ends just above the screen). A small arrow in your colour marks
 your Eevee, as in the other games (the game's four look the same).
 
-**Sound**: the game's (`assets/eevee/sound.bin`, 350 KB): song 54 as Aipom
+**Sound**: the game's (`assets/eevee/sound.bin`, 489 KB): song 54 as Aipom
 calls each round (song 101, the same 40 beats a minute faster, for the final
 one), song 53 (a held roll) after each prize, the effects of bank 10 (the
 dash, the basket, running into it, the prize, bouncing back, a Pineco, a
-blown-away Eevee coming down), the eating, the shared count, GO and finish
-whistle, and the fanfare when you win. As in the game, the basket's sound is
+blown-away Eevee coming down), the eating, Pichu's Power Plant's count (no
+GO sound, and song 53 starts 15 frames before GO), the shared finish whistle,
+and the results' songs. As in the game, the basket's sound is
 for the real lift only (frame 5), when the song stops; for a fake the music
 and the effects hush, from 5 frames before it till the basket's back down.
 
@@ -365,7 +391,7 @@ down more, so the stream fills the middle of the screen, and sees as far
 across at the back as the game's screen (the Pokémon go at its edge there, so
 none goes before it's out of sight); the board goes below the stream.
 
-**Sound**: the game's (`assets/stampede/sound.bin`, 640 KB): song 29 over
+**Sound**: the game's (`assets/stampede/sound.bin`, 785 KB): song 29 over
 the countdown (the game's opening), song 30 from the first question, 31 for
 the results and 32 before the last answer; the effects of bank 3 (a count,
 the cards, "Stop!", the answer, right, no one, the points, a booth going up)
@@ -437,9 +463,9 @@ first seconds faint rings show your four Electrodes. The keys work either
 way. (A game declares its schemes in `src/games.js`, `controls`; the shell
 shows the picker and calls the game's `setControls()`.)
 
-**Sound**: the game's (`assets/pichu/sound.bin`, 310 KB): song 21 from GO,
+**Sound**: the game's (`assets/pichu/sound.bin`, 477 KB): song 21 from GO,
 and bank 2's effects: its own count and GO, an Electrode popping out, a turn
-(a sound for each player), a shock, the hum while your Pichu charges, the
+(a sound for each player), a shock, the hum while a Pichu charges (each on its own channel), the
 losers' zap, the jingle after the finish and the winner's cry.
 
 What comes from the ROM and what is made up:
@@ -492,7 +518,7 @@ with how far each has got; a rank coin floats over each Togepi, and on each
 belt the others' badges show where they are along the track, as in the game.
 The end: the camera comes down to the winner, who cheers, and goes round.
 
-**Sound**: the game's (`assets/togepi/sound.bin`, 343 KB): song 46 from GO,
+**Sound**: the game's (`assets/togepi/sound.bin`, 520 KB): song 46 from GO,
 bank 9's effects (footsteps, in the flowers too, a knock, a bounce, the dash,
 the winner's cry), bank 5's count and GO (again as each one reaches the goal)
 and Clear Cut Challenge's crowd for the first in.
@@ -546,7 +572,8 @@ side, filling it: the course is the same every round, so the Magnemite and
 hearts the game brings on just past its screen's edge are drawn coming from
 further off, and the backdrops go on past the game's two (the cave, its
 mouth, the meadow, then the meadow mirrored). The badges and hearts are at the
-top where the game has them. On a phone: slide
+top where the game has them, and a badge (1P-4P, or COM in its colour) over
+each Golbat, as in the game. On a phone: slide
 a finger on the left half to fly left and right (the stick's middle is where
 it went down, and follows it), tap the right half to flap; a resting stick
 and the A button show where. In portrait the screen is at the top, a little
@@ -555,7 +582,7 @@ wider than the window, the stick and the button below it. With a keyboard:
 the camera; at the end the winners fly round cheering, the others drop to the
 floor, and Jynx throws hearts.
 
-**Sound**: the game's (`assets/golbat/sound.bin`, 392 KB): song 13 from GO,
+**Sound**: the game's (`assets/golbat/sound.bin`, 517 KB): song 13 from GO,
 bank 0's effects (the wingbeats, a heart caught, one knocked out, a Magnemite's
 hit, a dash's), panned by where the Golbat is, its own count and GO, and the
 shared count for the last three seconds.
@@ -564,7 +591,7 @@ What comes from the ROM and what is made up:
 
 | From the game | Made for the remake |
 |---|---|
-| the course (its sections and their order), the flying, the bumps and dashes, the Magnemite and the hearts, the clock and the backdrops' timing, the CPUs, the end (module #49's code) | the countdown's 2.65 s as 80 frames of the backdrops going by (the game's lasts as long as its count), the end's flight (its winners roam and its losers fall the game's way, from random spots of the remake's own), the sparkles, a hurt Golbat's flashing |
+| the course (its sections and their order), the flying, the bumps and dashes, the Magnemite and the hearts, the clock and the backdrops' timing, the CPUs, the end (module #49's code) | 80 frames of the backdrops going by before GO (the game's countdown is 100, 25 a number), the end's flight (its winners roam and its losers fall the game's way, from random spots of the remake's own), the sparkles, a hurt Golbat's flashing |
 | Golbat (53) and its clips, Jynx (110), the backdrops (bank 221), Magnemite (69), the hearts (222), the glows (343, coloured as the game's combiner does), the badges (434), the camera | Golbat in every seat, the touch stick and A button (the menus' A, bank 51), the 92% screen, more of the cave on a wide screen (the meadow mirrored past its edge), the title's art (the cave) |
 | song 13, bank 0's effects, the count | |
 
@@ -608,7 +635,7 @@ a click smashes; with a keyboard, ← → move and Space (or ↑) smashes. In th
 countdown the Mr. Mime mime, then put up their barriers; at the end the
 winners dance and the others flop.
 
-**Sound**: the game's (`assets/barrier/sound.bin`, 381 KB): song 35 from GO,
+**Sound**: the game's (`assets/barrier/sound.bin`, 554 KB): song 35 from GO,
 18 beats a minute faster over the last 30 s as the game makes it, bank 6's
 effects (the smash, the hits by how much they curl the ball, the walls, the
 goals, a ball coming up and flying off), placed by where they happen, the
@@ -619,7 +646,7 @@ What comes from the ROM and what is made up:
 
 | From the game | Made for the remake |
 |---|---|
-| the court, the balls (their coming, spin and serve, curl, bounces and speed), the barriers and smashes, the scoring, the clock, the CPUs, the tune's hurry (module #51's code) | the view turned to your corner, the countdown's 2.65 s (miming, then the barrier going up), the trail's copies (where and how often: by eye), the barrier's colour track and scroll run at 30 frames a second, the winners' dance's length |
+| the court, the balls (their coming, spin and serve, curl, bounces and speed), the barriers and smashes, the scoring, the clock, the CPUs, the tune's hurry (module #51's code) | the view turned to your corner, the countdown's 80 frames shown as miming, then the barrier going up, the trail's copies (where and how often: by eye), the barrier's colour track and scroll run at 30 frames a second, the winners' dance's length |
 | Mr. Mime (218, 129) and their clips, the barrier (141), the court (120), the Poké Ball (154), the glow (151) and its size, how the barrier, the glow and its trail are coloured and blended (their combiners, colours and fade), the badges (434), the camera | the touch slide and A button (the menus' A, bank 51), the mouse, the title's art (the court, flat) |
 | song 35, bank 6's effects, the count | |
 
@@ -668,7 +695,7 @@ the arrows (or W A S D) and Space. In the countdown the Donphan run in to the
 grid under the start camera, which then moves over the track; at the end the
 camera goes to the winners, who cheer, and the others slump.
 
-**Sound**: the game's (`assets/rollout/sound.bin`, 472 KB): song 34 from
+**Sound**: the game's (`assets/rollout/sound.bin`, 649 KB): song 34 from
 just after GO, 17 beats a minute faster from the final lap (the game's song
 100), bank 5's effects (footsteps, rolling, the stun's ring, a cloud, the
 laps, the end's cheers and slumps) placed by where the Donphan is, the crowd
@@ -727,17 +754,18 @@ a keyboard: the arrows (or W A S D: the D-pad's push) and Space. At GO they
 crouch at their corners and hop in; at the end the winners go to their spots
 and cheer, and the others fall over.
 
-**Sound**: the game's (`assets/topsy/sound.bin`, 419 KB): song 33 from GO,
+**Sound**: the game's (`assets/topsy/sound.bin`, 584 KB): song 33 from GO,
 faster in the last 30 s, bank 4's effects (a RAPID SPIN, bumps by how hard,
 knocked out, jumping in) placed by where they are, Gutsy Golbat's heart for a
-point, this device's own Hitmontop's hum (higher in a RAPID SPIN, lower while
-it recharges), and the count, GO and the last seconds' count.
+point, every Hitmontop's hum, each on its own channel and placed where it is
+(higher in a RAPID SPIN, lower while it recharges), and the count, GO and the
+last seconds' count.
 
 What comes from the ROM and what is made up:
 
 | From the game | Made for the remake |
 |---|---|
-| the ring, the physics and the bumps, the stick, the RAPID SPIN, reeling, points, jumping in, the CPUs, the end and the winners' spots, the camera (module #47's code) | 60 frames a second (the game's frame's length isn't traced), the field of view that fits the window, the portrait layout, the floor round the picture, the effects' colour tracks and scrolls run at 30 frames a second, the hum for this device's player only |
+| the ring, the physics and the bumps, the stick, the RAPID SPIN, reeling, points, jumping in, the CPUs, the end and the winners' spots, the camera (module #47's code) | 60 frames a second (the game's frame's length isn't traced), the field of view that fits the window, the portrait layout, the floor round the picture, the effects' colour tracks and scrolls run at 30 frames a second, the hum's pitch (the game's is lower, and a little different for each player) |
 | Hitmontop (115) and its clips and faces, the shadow (79), the rings (195-198), the sparks (199, 200) and their clips, the ring's picture (223), the points' dots and the clock's balloon (401), its swirl (402), the glow (151), how the rings, sparks and glow are coloured and blended (their combiners and colour tracks), the badges (434) | the touch stick and A button (the menus' A, bank 51), the title's art (the ring's picture) |
 | song 33, bank 4's effects, the count | |
 
@@ -788,7 +816,7 @@ middle from their goal and hop into the middle; at the end the winners hop
 back to the middle and cheer, the others sulk, and the camera closes in and
 goes round.
 
-**Sound**: the game's (`assets/furret/sound.bin`, 321 KB): song 47 from GO,
+**Sound**: the game's (`assets/furret/sound.bin`, 495 KB): song 47 from GO,
 faster in the last 30 s, bank 11's effects (a swing, a ball batted, a goal, a
 ball landing hard, a winner's cry) placed by where they are, and the count,
 GO and the last seconds' count.
@@ -842,7 +870,7 @@ where each number is):
 The stage is objects 148 and 147, seen from the game's camera, with the field
 of view that shows the field, both belts and the doors' feet; in portrait the
 picture's moved up under the cards, the stick below it. Over each Delibird its
-label (1P-4P, COM), and FULL over a full sack; under each Delibird and Swinub
+badge (1P-4P, or COM in its colour), and FULL over a full sack; under each Delibird and Swinub
 a shadow. On a phone: a finger anywhere is the Control Stick (the way and how
 far it slides from where it went down). With a keyboard: the arrows (or W A S
 D), as the game takes the D-pad (64 one way, 45 each way on a diagonal). At
@@ -851,7 +879,7 @@ round the colours), then the winners cheer and the others sulk. A save's
 flags in the game swap the Game Boy and the Nintendo 64 for a Game Boy Advance
 and a GameCube; the remake plays without them.
 
-**Sound**: the game's (`assets/delibird/sound.bin`, 541 KB): song 52 from GO,
+**Sound**: the game's (`assets/delibird/sound.bin`, 670 KB): song 52 from GO,
 in the last 30 s 90 beats a minute faster (a beat every 5 frames), bank 8's
 effects (a footstep, a heavy sack's strain, a gift into the sack, onto the
 back belt and through a door, the combos, a ring or a piano coming in, a
@@ -862,8 +890,8 @@ What comes from the ROM and what is made up:
 
 | From the game | Made for the remake |
 |---|---|
-| the gifts and their points, weights and sizes, the belts, the sacks, the doors, the Swinub, the knocks and spins, the combos, the CPUs, the end and its tally, the camera (module #60's code) | the field of view that fits the window, the portrait layout, the labels' size, the stick on a phone, the tally's layout, where a gift being picked up goes, the sack's reach (above) |
-| Delibird and its sack (127) and their clips, the Swinub (82, 103), the gift boxes (92, 96), the gifts (169-184), the stage (147, 148), the shadow's dot (307), FULL (379), the HUD's box, gift and digits (376, 381, 380), the combo's flash and x2-x5 (398, 377), "Points" (430), the labels (260), the badges (434), the big digits (429) | the title's art (the doors, flat) |
+| the gifts and their points, weights and sizes, the belts, the sacks, the doors, the Swinub, the knocks and spins, the combos, the CPUs, the end and its tally, the camera (module #60's code) | the field of view that fits the window, the portrait layout, the stick on a phone, the tally's layout, where a gift being picked up goes, the sack's reach (above) |
+| Delibird and its sack (127) and their clips, the Swinub (82, 103), the gift boxes (92, 96), the gifts (169-184), the stage (147, 148), the shadow's dot (307), FULL (379), the HUD's box, gift and digits (376, 381, 380), the combo's flash and x2-x5 (398, 377), "Points" (430), the badges (434: over each Delibird as module #64's labels, and in the tally), the gifts and the Swinub turned to the camera (their joints' flag), the colours of x2-x5, the big digits (429) | the title's art (the doors, flat) |
 | song 52, bank 8's effects, the count | |
 
 Code: `src/delibird/rules.js` has the world (and `tools/delibird_rules.py`,
@@ -1136,7 +1164,8 @@ state (`state` lobby or playing, `round`, `level`, `game`, `host`, `players`
 with `away`, and during a round the `lineup`, with `here` for who's still in
 it); `start` (`game`, `round`, `seed`, `level`, `host`, `lineup`, `rtt`, the
 round trip of the device playing each seat, ms or null; `at` and
-`go` on the server's clock: the countdown starts at `at`, GO is at `go`. Egg
+`go` on the server's clock: the countdown starts at `at`, GO is at `go`, four of
+the game's countdown steps on. Egg
 Emergency: `drops`, each
 seat's `[t, col, "e" or "v", fall]`; and, to rejoin midway, `scores`, each
 seat's last lean `leans` `[g, l]`, last shock `hits` and how many of its
@@ -1193,7 +1222,7 @@ opens it (and nothing in a normal browser):
   swipe down doesn't close the game mid-round).
 - Header, background and bottom-bar colours matched to the game on show.
 - The Telegram **back button** leaves a round.
-- **Haptics** on a catch, a Voltorb hit, a cut, a count, GO and FINISH.
+- **Haptics** on a catch, a Voltorb hit, a cut, a count, GO and the round's end.
 - **CloudStorage** keeps the best score per game and level, the last game,
   the level and the sound setting, so they follow the player across devices; localStorage is the
   fallback. Reads time out after 1.5 s, so a slow answer can't block loading.

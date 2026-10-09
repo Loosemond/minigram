@@ -2,6 +2,12 @@
 // files are only loaded once it's picked (import() and its own assets/<id>/),
 // so a player downloads just the games they play. The id is also the rooms
 // server's name for the game (tools/rooms.py).
+//
+// countdown: the game's own, if not the usual (module #64's, 0x87F006BC: docs/
+// minigames.md): step, the frames between "3", "2", "1" and GO (20, unless the
+// game sets its own: 0x87F00020; tools/rooms.py has the same); count and go,
+// its sounds on them ("count" and "go"; null: none); song, [frame, name]: a
+// song it starts during it.
 export const GAMES = {
   egg: {
     id: "egg",
@@ -51,6 +57,8 @@ export const GAMES = {
     invite: "Race to the fruit with me in Eager Eevee!",
     store: "eevee_",
     messages: ["dash", "got"],
+    // Pichu's Power Plant's count (0x2F00), no GO sound, and song 53 at frame 65 (0x86B01BB0-0x86B01BF0)
+    countdown: { go: null, song: [65, "main"] },
     load: () => import("./eevee/index.js"),
   },
   stampede: {
@@ -68,6 +76,7 @@ export const GAMES = {
     invite: "Count Pokémon with me in Streaming Stampede!",
     store: "stampede_",
     messages: ["count", "ans"],
+    countdown: { step: 25, count: null, go: null }, // (0x869055FC; no sounds: neither module asks for any)
     load: () => import("./stampede/index.js"),
   },
   pichu: {
@@ -123,6 +132,7 @@ export const GAMES = {
     invite: "Fly through the cave with me in Gutsy Golbat!",
     store: "golbat_",
     messages: ["pad", "won"],
+    countdown: { step: 25 }, // (0x86107DF0; its own count and GO, 0x0F06 and 0x0F07)
     load: () => import("./golbat/index.js"),
   },
   barrier: {

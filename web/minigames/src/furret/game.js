@@ -17,6 +17,8 @@ import * as THREE from "three";
 import { makeModel } from "./assets.js";
 import * as R from "./rules.js";
 import { leadFor } from "../lag.js";
+import { faceOnRender } from "../facing.js";
+import { makeBadge } from "../badge.js";
 
 // frames after the play's over before the round is (the winners hop to the middle and cheer)
 export const AFTER = 120;
@@ -39,6 +41,7 @@ const LABEL = [96, 48]; // (its size: made for the remake)
 // the badges over the goals (0x86207874: on the field's attachments 1-4, tilted to the camera), by goal
 const BADGE_AT = [[-460, 64, -460], [457, 64, -462], [-462, 64, 457], [460, 64, 460]];
 const BADGE = [150, 117]; // (their size: made for the remake, the badges' 36 x 28)
+const BADGE_A = 0x96 / 255; // (their env alpha: 0x86207760)
 const SHADOW_A = 0x80 / 255; // a ball's shadow (0x862014B8: the dot, black at 128)
 // each player's colours (0x862040AC: their points' digits)
 export const COLOURS = [0x5f7dff, 0x50d050, 0xff6464, 0xffd23c];
@@ -49,6 +52,7 @@ export class Game {
     this.assets = assets;
     this.listeners = {};
     const add = (o) => { scene.add(o); return o; };
+    faceOnRender(scene); // (the balls' glint: its joint drawn facing the camera, however the ball rolls)
     // the field
     this.field = ["field", "field_shadows", "boards"].map((name) => {
       const m = makeModel(assets[name], 1);
@@ -71,11 +75,9 @@ export class Game {
     });
     // the badges over the goals
     this.badges = [0, 1, 2, 3].map(() => {
-      const m = add(new THREE.Mesh(new THREE.PlaneGeometry(BADGE[0], BADGE[1]),
-        new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, alphaTest: 0.1 })));
+      const m = add(makeBadge(assets.badges, { size: BADGE, opacity: BADGE_A, flat: true, renderOrder: 2 }));
       m.rotation.order = "YXZ";
       m.rotation.x = ANG(-0x3777);
-      m.renderOrder = 2;
       return m;
     });
     // the balls (made as they come) and their shadows
@@ -127,11 +129,8 @@ export class Game {
     if (told?.pads) told.pads.forEach((list, z) => { if (list && !this.cpus[z]) this.inputs[z] = list.map((e) => [...e]); });
     if (told?.done) this.told("won", told.done);
     // the badges: each goal's player's (1P-4P; a CPU's COM in its colour)
-    const names = ["com_blue", "com_green", "com_red", "com_yellow"];
     for (let z = 0; z < 4; z++) {
-      const m = this.badges[R.GOALS[z]];
-      m.material.map = this.assets.badges[this.cpus[z] ? names[z] : `${z + 1}p`];
-      m.material.needsUpdate = true;
+      const m = this.badges[R.GOALS[z]].seat(z, this.cpus[z]);
       m.position.set(...BADGE_AT[R.GOALS[z]]);
       const v = this.furret[z];
       v.label.material.map = this.assets[`label${this.cpus[z] ? 4 : z}`];

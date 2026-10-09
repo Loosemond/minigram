@@ -17,6 +17,8 @@ import * as THREE from "three";
 import { makeModel } from "./assets.js";
 import * as R from "./rules.js";
 import { leadFor } from "../lag.js";
+import { faceOnRender } from "../facing.js";
+import { makeBadge } from "../badge.js";
 
 // the camera (0x86A00020: 550 back from 400 above where it looks, 0.36 rad up; fov 24.69)
 const AT = [0, 130, 50], LOOK = 0.3599900007247925;
@@ -27,10 +29,11 @@ const KEEP = 20 * R.FPS; // and how far back they go
 const SMOOTH = 0.88; // a corrected Delibird's ease to where it is, a 60th of a second
 const STAGE = 1 / 9; // the stage's scale, and the rest (0x86A004B4)
 const DELIBIRD = 0.07923809438943863, GIFT = 0.2222222238779068, BOX = 1 / 9, SWINUB = 0.6;
-const FACING = /^(gift|swinub)/; // the models drawn facing the camera (see camera())
 const CLIP_RATE = 1.5; // Delibird's clips: 1.5 frames a frame (0x18000)
 const SHADOW = 16 * 2.5, SHADOW_A = 0x80 / 255; // the shadows: image bank 307's dot at 2.5, black at 128 (0x86A0B8A4)
-const LABEL_Y = 55, LABEL = [36, 18], LABEL_A = 0xb4 / 255; // the label over each (the remake's size)
+// the badge over each (module #64's labels: image bank 434, 1P-4P or a CPU's COM in
+// its colour; the object 0.9, 55 up, its env alpha 0xB4: 0x86A004B4, 0x87F02878)
+const LABEL_Y = 55, LABEL_SCALE = 0.9, LABEL_A = 0xb4 / 255;
 const FULL_Y = 82, FULL = [56, 17], FULL_GROW = 20; // FULL over a full sack, growing (0x86A0B98C)
 // the sack's clip (11): how far it plays by how full it is (0x86A01EF0)
 const SACK_AT = [1, 12, 23, 34, 45, 56];
@@ -55,6 +58,7 @@ export class Game {
     this.assets = assets;
     this.listeners = {};
     const add = (o) => { scene.add(o); return o; };
+    faceOnRender(scene); // (the gifts and the Swinub: their joints drawn facing the camera)
     // the stage
     for (const name of ["field", "walls"]) add(makeModel(assets[name], STAGE).root);
     this.shadowMat = new THREE.MeshBasicMaterial({ color: 0, map: assets.shadow, transparent: true, opacity: SHADOW_A, depthWrite: false,
@@ -66,14 +70,12 @@ export class Game {
       return m;
     };
     this.shadow = shadow;
-    // the Delibird: each with its sack, shadow, label and FULL
+    // the Delibird: each with its sack, shadow, badge and FULL
     this.birds = [0, 1, 2, 3].map((z) => {
       const v = { bird: makeModel(assets.delibird, DELIBIRD), sack: makeModel(assets.sack, DELIBIRD), shadow: shadow() };
       add(v.bird.root);
       add(v.sack.root);
-      v.label = add(new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, opacity: LABEL_A, depthTest: false })));
-      v.label.scale.set(LABEL[0], LABEL[1], 1);
-      v.label.renderOrder = 5;
+      v.label = add(makeBadge(assets.badges, { scale: LABEL_SCALE, opacity: LABEL_A }));
       v.full = add(new THREE.Sprite(new THREE.SpriteMaterial({ map: assets.fullFor[z], transparent: true, depthTest: false })));
       v.full.renderOrder = 6;
       v.full.visible = false;
@@ -132,8 +134,7 @@ export class Game {
     if (told?.done) this.told("won", told.done);
     for (let z = 0; z < 4; z++) {
       const v = this.birds[z];
-      v.label.material.map = this.assets[`label${this.cpus[z] ? 4 : z}`];
-      v.label.material.needsUpdate = true;
+      v.label.seat(z, this.cpus[z]);
       v.full.visible = false;
       v.fullAt = null;
       v.sackFrame = 0;
@@ -362,12 +363,11 @@ export class Game {
       v.sack.root.rotation.y = ANG(p.sackYaw);
       v.sack.pose(sackClip, sf);
       v.shadow.position.set(x, 1, zz);
-      // its label, riding with it as it hops (0x86A01EF0)
+      // its badge, riding with it as it hops (0x86A01EF0), on through the tally and the cheer
       let y = LABEL_Y;
       if (p.state === R.ST.cheer) y = HOP[Math.min(HOP.length - 1, Math.floor(f))] * DELIBIRD * 100 - 16.154227;
       if (p.state === R.ST.knocked) y = FALL[Math.min(FALL.length - 1, Math.floor(f))] * DELIBIRD * 100 - 16.154227;
-      v.label.position.set(x, y + LABEL[1] / 2, zz);
-      v.label.visible = w.phase !== "show";
+      v.label.position.set(x, y, zz);
       // FULL over a full sack, growing (0x86A0BA80, 0x86A0B98C)
       if (p.load === R.SACK_MAX) {
         if (v.fullAt === null) v.fullAt = now;
@@ -466,12 +466,11 @@ export class Game {
     (this.spare[v.kind] ||= []).push(v);
   }
 
-  // the camera's place: the game's, the gifts and the Swinub turned to it (flat
-  // pictures on joints flagged to be drawn at the camera's turn: 0x8003B858)
+  // the camera's place: the game's (the gifts and the Swinub turn to it as
+  // they're drawn: their joints are flagged to be, src/facing.js)
   camera(cam) {
     cam.position.set(...CAMERA.eye);
     cam.lookAt(...CAMERA.at);
-    for (const [, v] of this.things) if (FACING.test(v.kind)) v.model.root.quaternion.copy(cam.quaternion);
   }
 
   // ---- the end ----

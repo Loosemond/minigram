@@ -84,7 +84,13 @@ export function makeModel(a, s = 1) {
   const mats = [];
   model.traverse((o) => {
     if (!o.isMesh) return;
-    o.material = [o.material].flat().map((m) => { const c = m.clone(); c.userData.base = c.color.clone(); mats.push(c); return c; });
+    o.material = [o.material].flat().map((m) => {
+      const c = m.clone();
+      c.userData.base = c.color.clone();
+      c.userData.blend = c.transparent; // (its own: the Poke Ball's glint, an IA picture in layer 6)
+      mats.push(c);
+      return c;
+    });
     if (o.material.length === 1) o.material = o.material[0];
   });
   let current = -1, action = null;
@@ -115,9 +121,9 @@ export function makeModel(a, s = 1) {
       for (const m of mats) {
         m.color.copy(m.userData.base).lerp(rgb, k);
         m.emissive?.copy(rgb).multiplyScalar(k * 0.6);
-        m.transparent = alpha < 1;
+        m.transparent = alpha < 1 || m.userData.blend;
         m.opacity = alpha;
-        m.depthWrite = alpha >= 1;
+        m.depthWrite = alpha >= 1 && !m.userData.blend;
       }
     },
   };

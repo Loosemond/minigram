@@ -393,13 +393,19 @@ input { -webkit-user-select: text; user-select: text; }
 .dd-stick.rest { opacity: 0.55; }
 .game-hud.off .dd-pads, .game-hud.off .dd-hint { display: none; }
 
-#banner img { height: clamp(90px, 22vh, 200px); display: inline-block; }
-#banner {
-  position: absolute; left: 0; right: 0; top: 34%; text-align: center; pointer-events: none;
-  font-size: clamp(72px, 26vw, 150px); font-weight: 700; color: #ffe14d;
-  -webkit-text-stroke: 4px #8a3a00; paint-order: stroke fill; text-shadow: 0 6px 0 #8a3a00; opacity: 0;
+/* the countdown's 3, 2, 1, GO (image bank 360; main.js moves them as module #64 does) */
+#banner img { height: clamp(90px, 22vh, 200px); display: inline-block; transform: scale(0); }
+#banner { position: absolute; left: 0; right: 0; top: 34%; text-align: center; pointer-events: none; }
+/* module #64's results banner (0x87F0A098: UI layouts 93-96), in the game's
+   320 x 240 screen's pixels (--u, main.js): the winners' badges (image bank
+   435) 44 apart and WINS, or DRAW (bank 442), 69 down, dropping in from above */
+#winners {
+  position: absolute; left: 0; right: 0; top: calc(100% * 69 / 240); display: flex; justify-content: center;
+  align-items: flex-start; pointer-events: none;
 }
-#banner.show { animation: pop 0.8s both; }
+#winners img { display: block; height: calc(var(--u) * 39px); margin-right: calc(var(--u) * -4px); }
+#winners img:nth-last-child(2) { margin-right: calc(var(--u) * -2px); }
+#winners .word { height: calc(var(--u) * 36px); margin: calc(var(--u) * 2px) 0 0; }
 
 /* screens */
 .screen {
@@ -521,12 +527,6 @@ kbd { display: inline-block; min-width: 1.4em; padding: 0 0.3em; border-radius: 
 
 @keyframes bump { 50% { transform: scale(1.35); } }
 @keyframes shake { 20%, 60% { transform: translateX(-4px); } 40%, 80% { transform: translateX(4px); } }
-@keyframes pop {
-  0% { opacity: 0; transform: scale(0.4); }
-  20% { opacity: 1; transform: scale(1.12); }
-  30%, 75% { opacity: 1; transform: scale(1); }
-  100% { opacity: 0; transform: scale(1.05); }
-}
 @keyframes rise { from { opacity: 0; transform: translateY(16px); } }
 @keyframes breathe { 50% { opacity: 0.6; } }
 @media (prefers-reduced-motion: reduce) {

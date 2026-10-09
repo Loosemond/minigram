@@ -69,13 +69,27 @@ A joint with flag 2 faces the camera: the walker (`0x80040880`, command
 `0x1D` of the table at `0x80094D14`) keeps it on the joint (+0x31), and the
 drawing (`0x8003B858`) builds its matrix with `0x80037184` / `0x800367F4`:
 the camera's own turn (its matrix at camera +0x64, transposed), the parent's
-scale along each axis, at the parent's place for the joint. So a flat picture
-on such a joint is always seen square on, wherever the camera is: the gifts
-and props (169-178, 180-182, 184: those of Delibird's Delivery among them),
-the fruit (208-213, 215, 216), the dizzy stars (190), sparks and flashes
-(199, 200), the panels (217, 219), and parts of others: Swinub (82, 103),
-Poké Balls (153, 154), Pineco (151), the Electrode lamp (57) and
-24, 33, 49, 115, 130, 131, 185, 203, 204, 207.
+scale along each axis (the lengths of its matrix's rows), then the joint's
+own rotation and scale (its clip's: `0x8003622C`, `0x80036B18`,
+`0x80036D4C`), at the parent's place for the joint (its translation through
+the parent's matrix). So a flat picture on such a joint is always seen square
+on, wherever the camera is, turned in the picture's plane only by its own
+rotation: the gifts and props (169-178, 180-182, 184: those of Delibird's
+Delivery among them), the fruit (208-213, 215, 216), the dizzy stars (190),
+sparks and flashes (199, 200), the panels (217, 219), and parts of others:
+Swinub (82, 103), Poké Balls (153, 154: the glint), Pineco (151), the
+Electrode lamp (57: its face), Hitmontop (115: three of its joints) and
+24, 33, 49, 130, 131, 185, 203, 204, 207. (A model flag, 8 on the object's
++0x26, turns a whole object so instead: `0x8003BE3C`, Delibird's Delivery's
+Swinub and FULL, module #64's labels.)
+
+The exporter marks such a joint's node in the glTF with extras
+`{"facing": true}` (`ps2tool/gltf.py`: the node with its rotation and
+translation; static arena joints never have it). In the web remake
+`src/facing.js` turns them as each view is drawn (`faceOnRender(scene)`): the
+parent's world turn undone, the camera's, then the joint's own from its
+clip. The objects with the flag were exported again with it; nothing else in
+them changed.
 
 **Render layers.** Command 0x22 queues its list with its layer (`0x80038BD4`:
 a node of type 0x19, the layer at +3). When it's drawn, the layer picks the
@@ -208,21 +222,33 @@ the dizzy stars (190) and Mr. Mime's barrier (141).
 
 **Which callback a draw takes.** A callback only sets the RDP's state, for
 the draws after it in its own render layer. Each is queued right after an
-empty draw in its layer (geo `22 0L 00000000`, then `08`), and the layers are
-drawn one after another, so a draw takes its layer's callback. The glTF
+empty draw in its layer (geo `22 0L 00000000`, then `08`), the layers are
+drawn one after another and a layer's queue in order, so a draw takes the
+last callback queued in its layer before it. In the dizzy stars (190) all of
+a layer's callbacks come before its draws, so that's the layer's last; in the
+cut's effects (130, 131) and the Pineco's fire flash (203) each callback comes
+just before its own draw, so each draw has its own. A draw with a texture of
+its own (a material state, 0x23) isn't drawn by a callback at all. The glTF
 instead gives an untextured draw with no callback of its own the last
 callback in the extractor's order. Where layers interleave that's another
 layer's: the dizzy stars' second and third halos (layer 6) get the stars'
 callback (layer 8), with its picture and its tile's texture coordinates.
 
 **In the web remake**, `tools/web_assets.py` (`fx_recipes`) writes each
-effect's recipes with `arena.combiner_spec` to its game's `fx.json`. It also
-writes the recipe each glTF primitive takes (by its layer), and what to scale
-its texture coordinates by when the glTF has them by another callback's tile.
-`web/minigames/src/n64fx.js` draws them through the combiner as a shader:
-Topsy-Turvy's sparks and rings, Mr. Mime's barrier and the dizzy stars
-(Clear Cut Challenge, Pichu's Power Plant). It also draws the glows Topsy-Turvy
-and Barrier Ball draw from bank 151 through combiners of their own
+effect's recipes with `arena.combiner_spec` to its game's `fx.json` (null for
+a callback with no colours of its own, a texture only). It also writes the
+recipe each glTF primitive takes (as above; null for a draw with its own
+texture, which keeps the glTF's material), what to scale its texture
+coordinates by when the glTF has them by another callback's tile, and, where
+a primitive's glTF texture is a callback's that scrolls, how far a frame
+(`scroll`: Delibird's Delivery's belts, 147 and 148, a texel a frame either
+way; a lit draw, so it keeps its material). A flipbook's pictures (a texture
+table, `frames` and `frame_time`: Eager Eevee's fire puffs, 204) go with its
+recipe. `web/minigames/src/n64fx.js` draws them through the combiner as a
+shader (`dress`; `scrollMaps` moves a plain model's textures): Topsy-Turvy's
+sparks and rings, Mr. Mime's barrier and the dizzy stars (Clear Cut
+Challenge, Pichu's Power Plant). It also draws the glows Topsy-Turvy and
+Barrier Ball draw from bank 151 through combiners of their own
 ([minigames.md](minigames.md#topsy-turvy)). The shade is the vertex colour,
 or white on a lit draw (its lighting isn't modelled), as `ps2tool/combiner.py`
 takes it.

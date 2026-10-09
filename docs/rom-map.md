@@ -94,7 +94,7 @@ module owns a 1 MB slot.
 | 47, 49–56, 59–61 | `0x2469A0`–`0x2F32D0` | `0x86000000`–`0x86B00000` | the 12 minigames, in 12 consecutive slots ([minigames.md](minigames.md)); #48, #57 and #58 in between run elsewhere |
 | 62 | `0x303890` | `0x86C00000` | tiny module next to the minigames (*unknown*) |
 | 63 | `0x303CF0` | `0x87E00000` | the Mini-Game Park's menus: it writes the COM level (Easy 1, Normal 2, Hard 3) the minigames read |
-| 64 | `0x322FF0` | `0x87F00000` | code the minigames share: their countdown, and more (*by usage*) |
+| 64 | `0x322FF0` | `0x87F00000` | code the minigames share: their countdown and results banner ([minigames.md](minigames.md#the-shared-module-64-the-countdown-and-the-results)), object pools, labels, particles |
 | 79 | `0x36FC10` | `0x84100000` | battle effect engine ([effects.md](effects.md)) |
 
 To find module N: search the code region for `FRAGMENT` (at +8 of every

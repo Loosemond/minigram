@@ -4,13 +4,16 @@
 // the gifts (by the rules' KINDS: 175, 176, 181, 169, 180, 174, 184, 177, 170),
 // the stage (148 the field, 147 its walls), and its pictures: the shadow
 // (image bank 307's dot), FULL (379, tinted per player as the game's combiner
-// does), the ring's sparkle (its texture's 13 frames) and the labels over
-// each Delibird (260: 1P-4P, COM). Lighting is done on the textures' display
-// values, as the N64 does (see src/egg/assets.js, docs/colours.md).
+// does) and the ring's sparkle (its texture's 13 frames); the badges over each
+// Delibird are the shared ones (434: src/badge.js). Lighting is done on the
+// textures' display values, as the N64 does (see src/egg/assets.js,
+// docs/colours.md).
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { retry, attemptURL } from "../retry.js";
+import { loadBadges } from "../badge.js";
+import { tint } from "../tint.js";
 
 const FPS = 30; // the exported clips' rate
 const GLB = 100; // the exported models are in hundredths of the game's units
@@ -60,7 +63,7 @@ function prepare(scene) {
 const GIFTS = 9;
 const MODELS = ["delibird", "sack", "field", "walls", "swinub_right", "swinub_left", "box", "box_big",
   ...Array.from({ length: GIFTS }, (_, k) => "gift" + k)];
-const PICTURES = ["shadow", "full", ...Array.from({ length: 13 }, (_, k) => "sparkle" + k), ...[0, 1, 2, 3, 4].map((k) => "label" + k)];
+const PICTURES = ["shadow", "full", ...Array.from({ length: 13 }, (_, k) => "sparkle" + k)];
 // FULL's colours (0x86A0BB40: white, through each player's dark colour)
 const FULL_ENV = [[0, 0, 0x9b], [0, 0x82, 0], [0x9b, 0, 0], [0xc3, 0x64, 0]];
 
@@ -68,11 +71,12 @@ export async function loadAssets(base, onProgress = () => {}) {
   const jobs = [];
   let done = 0;
   const job = (p) => { jobs.push(p); return p.then((x) => { onProgress(++done / jobs.length); return x; }); };
-  const [models, pics] = await Promise.all([
+  const [models, pics, badges] = await Promise.all([
     Promise.all(MODELS.map((m) => job(gltf(base + m + ".glb")))),
     Promise.all(PICTURES.map((p) => job(image(base + p + ".png")))),
+    loadBadges(job),
   ]);
-  const out = {};
+  const out = { badges };
   MODELS.forEach((name, i) => {
     const g = models[i];
     prepare(g.scene);
@@ -82,24 +86,9 @@ export async function loadAssets(base, onProgress = () => {}) {
   PICTURES.forEach((name, i) => { out[name] = texture(pics[i]); });
   // (the ring's sparkle goes on its model as its own texture did: glTF's way up)
   out.sparkle = PICTURES.filter((n) => n.startsWith("sparkle")).map((n) => { out[n].flipY = false; return out[n]; });
+  // (a picture as the game's combiner draws a grey one: env to prim by its grey)
   out.fullFor = FULL_ENV.map((env) => texture(tint(pics[PICTURES.indexOf("full")], [255, 255, 255], env)));
   return out;
-}
-
-// a picture as the game's combiner draws a grey one: env to prim by its grey
-function tint(img, prim, env) {
-  const c = document.createElement("canvas");
-  c.width = img.width;
-  c.height = img.height;
-  const g = c.getContext("2d");
-  g.drawImage(img, 0, 0);
-  const d = g.getImageData(0, 0, c.width, c.height);
-  for (let i = 0; i < d.data.length; i += 4) {
-    const k = d.data[i] / 255;
-    for (let j = 0; j < 3; j++) d.data[i + j] = Math.round(env[j] + (prim[j] - env[j]) * k);
-  }
-  g.putImageData(d, 0, 0);
-  return c;
 }
 
 // A model, at the game's scale (s), with its own mixer: a clip posed at a

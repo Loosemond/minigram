@@ -13,6 +13,7 @@
 import * as THREE from "three";
 import { makeModel } from "./assets.js";
 import * as R from "./rules.js";
+import { faceOnRender } from "../facing.js";
 
 const EEVEE_SCALE = 1 / 6, AIPOM_SCALE = 0.5, FRUIT_SCALE = 0.355556, PINECO_SCALE = 0.5; // (0x86B01158, 0x86B01268, 0x86B04500)
 // Eevee's clips (object 143), by what the module plays them for (0x86B023FC,
@@ -42,6 +43,7 @@ export class Game {
     this.scene = scene;
     this.assets = assets;
     this.listeners = {};
+    faceOnRender(scene); // (the fruit and Pineco's face: their joints drawn facing the camera)
     this.state = "idle";
     this.time = 0;
     this.shake = 0;

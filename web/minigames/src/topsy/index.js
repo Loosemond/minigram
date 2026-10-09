@@ -69,7 +69,7 @@ export async function create(shell, onProgress) {
   game.on("send", (m) => shell.send("pad", m));
   game.on("tempo", (n) => shell.tempo(n)); // (the last 30 s: the tune speeds up)
   game.on("sound", (name) => shell.sound(name));
-  game.on("loop", (name, on) => (on ? shell.sound(name) : shell.stopSound(name)));
+  game.on("loop", (name, z, on, pan) => shell.hold(name, z, on, { pan }));
   game.on("jump", (z, pan) => shell.sound("jump", { pan })); // (0x4F06)
   game.on("spin", (z, pan) => { shell.sound("spin", { pan }); if (mine(z)) shell.haptic("medium"); }); // (0x4F02)
   game.on("hit", (a, b, k, pan) => { // (0x4F03, 0x4F07, 0x4F04)

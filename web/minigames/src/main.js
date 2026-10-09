@@ -1,11 +1,11 @@
 // The minigames' shell: the title screen with the game picker, rounds (the
-// countdown, GO, the finish and the results), the online rooms and their
+// game's countdown and GO, the winners' banner, the results), the online rooms and their
 // lobby, where the host picks the game, and the renderer. Each game is a
 // module (src/<game>/index.js, listed in games.js) with its own scene,
 // controls, HUD and online messages; it's loaded the first time it's picked.
 import * as THREE from "three";
 import { GAMES, ORDER } from "./games.js";
-import { sfx, music, musicTempo, sound, stopSound, hush, unlock, useSounds, setMuted, isMuted, SHARED_STAND_INS, debug as audioDebug } from "./audio.js";
+import { sfx, music, musicTempo, sound, hold, stopSound, hush, unlock, useSounds, setMuted, isMuted, SHARED_STAND_INS, debug as audioDebug } from "./audio.js";
 import { telegram } from "./telegram.js";
 import { Net } from "./net.js";
 import { startDelay } from "./lag.js";
@@ -15,7 +15,7 @@ THREE.ColorManagement.enabled = false; // colours are the game's own values (doc
 
 const PLAYER_COLOURS = ["#2f5de0", "#23a043", "#dc3030", "#e8a412"]; // 1P-4P, as on the game's badges
 const COLOUR_NAMES = ["blue", "green", "red", "yellow"];
-const COUNTDOWN = 2650; // ms from the countdown's start to GO (online, the server says when GO is)
+const FRAME = 1000 / 30; // ms: the minigames run at 30 frames a second
 const CODE = /^[A-Za-z]{4,6}$/;
 const UI = "assets/ui/";
 
@@ -108,6 +108,7 @@ function frameMinis(views, cardEls, framesEl) {
 function layout() {
   const W = app.clientWidth, H = app.clientHeight;
   renderer.setSize(W, H, false);
+  app.style.setProperty("--u", Math.min(W / 260, H / 240)); // a pixel of the game's 320 x 240 screen (the results banner)
   if (!game) return;
   const safe = $("#safe").getBoundingClientRect();
   $("#frames").innerHTML = "";
@@ -150,10 +151,14 @@ const shell = {
   playing: () => playing(),
   flash, digits, bigDigits,
   haptic: (k) => telegram.haptic(k),
-  sound: (name, seat) => { if (!catchingUp) sound(name, seat); },
+  // a sound: seat, whose (0-3: on its channel, panned to its column); how,
+  // { pan, x, pitch, frames } (src/audio.js)
+  sound: (name, seat, how) => { if (!catchingUp) sound(name, seat, how); },
+  // a sound the game asks for every frame it lasts (a hum), on or off, seat's
+  hold: (name, seat, on, how) => hold(name, seat, on && !catchingUp, how),
   music: (name, fade, once) => { if (!catchingUp) music(name, fade, once); },
   tempo: (bpm) => musicTempo(bpm), // the song on, this much faster (0: as it is)
-  stopSound,
+  stopSound, // (name, seat)
   hush: (on) => { if (!on || !catchingUp) hush(on); },
   // online: a message for the round, to the others (kept while offline, sent on reconnecting)
   send: (t, data) => { if (current?.online) net.send(t, { r: current.round, ...data }, true); },
@@ -210,7 +215,7 @@ async function showGame(id) {
   game = g;
   gameOn = id;
   g.setControls?.(controlsOf(id));
-  if (!playing() && phase !== "finish" && phase !== "results") g.idle(); // on show, not playing yet
+  if (!playing() && phase !== "end" && phase !== "results") g.idle(); // on show, not playing yet
   for (const [k, el] of hudOf) el.hidden = k !== id;
   const label = g.label;
   for (const c of cards) { const l = c.querySelector(".label"); l.hidden = !label; if (label) l.src = label; }
@@ -249,13 +254,53 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const until = (now, at) => new Promise((r) => setTimeout(r, Math.max(0, at - now())));
 const playing = () => phase === "play" || phase === "countdown";
 
-// the countdown is the game's own 3, 2, 1, GO! (image bank 360)
-function banner(what) {
-  const b = $("#banner");
-  b.innerHTML = what.startsWith("img:") ? `<img src="${UI}${what.slice(4)}.png" alt="">` : `<span>${what}</span>`;
-  b.classList.remove("show");
-  void b.offsetWidth; // restart the animation
-  b.classList.add("show");
+// A game's countdown (games.js): module #64's (0x87F005F0, 0x87F006BC), "3",
+// "2" and "1" a step apart, then GO a step on, each with the game's sound
+const countdownOf = (id) => ({ step: 20, count: "count", go: "go", song: null, ...GAMES[id].countdown });
+
+// The countdown's pictures, "count3" to "go" (image bank 360), as module #64's
+// object moves them (0x87F00138): each pops up in the first sixth of its step
+// (sin(min(560t, 90 degrees)) of its size, t going from 0 to 1 over the step)
+// with its width and height wobbling, 0.4 of it out of step (the sine and the
+// cosine of 1080t, dying away by 1 - sin(90t)), then holds till the next. GO,
+// once its step's over (last), is squeezed away in 6 frames: its width x0.55
+// a frame, its height +0.1.
+function banner(what, steps, last) {
+  const b = $("#banner"), d = Math.PI / 180, frames = [];
+  b.innerHTML = `<img src="${UI}${what}.png" alt="">`;
+  for (let k = 0; k <= steps; k++) {
+    const t = k / steps, size = Math.sin(Math.min(560 * t, 90) * d), wobble = 0.4 * (1 - Math.sin(90 * t * d));
+    frames.push({ transform: `scale(${size * (1 + wobble * Math.sin(1080 * t * d))}, ${size * (1 + wobble * Math.cos(1080 * t * d))})`, opacity: 1 });
+  }
+  for (let n = 1; last && n <= 6; n++) frames.push({ transform: `scale(${0.55 ** n}, ${1 + 0.1 * n})`, opacity: n < 6 ? 1 : 0 });
+  b.firstChild.animate(frames, { duration: (frames.length - 1) * FRAME, fill: "forwards" });
+}
+
+// Module #64's results banner (0x87F0A098): the winners' badges (the big ones,
+// image bank 435) in seat order and WINS (UI layouts 93-95: one, two or three
+// winners), or DRAW (layout 96) when no one won or all four did; dropped from a
+// screen up, falling 58.8 / 60 faster each frame and bouncing back at 0.3 of
+// its speed (0x87F0A3E8). Then song 55 and 0xCA0F, or song 56 and the crowd.
+const DROP = [-240];
+for (let y = -240, v = 0; DROP.length < 60;) {
+  v += 58.8 / 60;
+  y += v;
+  if (y > 0) { y = 0; v *= -0.3; }
+  DROP.push(y);
+}
+const RESULTS_AT = DROP.indexOf(0) + 60; // frames: 60 after it's first down, A goes on to the menu
+function showWinners(results, drop) {
+  const el = $("#winners"), won = results.filter((r) => r.place === 1).map((r) => r.i).sort((a, b) => a - b);
+  const draw = won.length === 0 || won.length === 4, was = el.dataset.draw;
+  el.innerHTML = draw ? `<img class="word" src="${UI}draw.png" alt="Draw">`
+    : won.map((i) => `<img src="${UI}winner_${badge(i)}.png" alt="${seats[i].human ? i + 1 + "P" : "COM"}">`).join("")
+      + `<img class="word" src="${UI}wins.png" alt="wins">`;
+  el.dataset.draw = draw;
+  el.hidden = false;
+  if (drop || was !== String(draw)) sfx.results(draw);
+  if (!drop) return;
+  const h = app.clientHeight / 240;
+  el.animate(DROP.map((y) => ({ transform: `translateY(${y * h}px)` })), { duration: (DROP.length - 1) * FRAME, fill: "forwards" });
 }
 
 function flash(i, cls) {
@@ -275,7 +320,7 @@ function bigDigits(n, sign = false) {
 function show(screen) {
   for (const s of ["#title", "#results", "#lobby"]) $(s).hidden = s !== screen;
   $("#hud").hidden = !!screen;
-  if (screen) $("#waiting").hidden = true;
+  if (screen) $("#waiting").hidden = $("#winners").hidden = true;
 }
 
 // A game's control schemes, if it has a choice ({ id: label } in games.js):
@@ -331,6 +376,7 @@ function play() { startRound({ online: false, game: gameId, level, me: 0 }); }
 async function startRound(s) {
   unlock();
   stopSound(); // (anything the last round left going)
+  music(null); // (the last one's fanfare)
   const my = ++round;
   current = s;
   me = s.me;
@@ -345,46 +391,59 @@ async function startRound(s) {
   if (s.seed === undefined) s.seed = (Math.random() * 2 ** 31) | 0;
   game.reset(s);
   show(null);
+  $("#banner").innerHTML = "";
+  $("#winners").hidden = true;
   phase = "countdown";
   telegram.back(toTitle);
   const now = s.online ? () => net.now() : () => performance.now();
-  if (!s.online) s.goAt = now() + COUNTDOWN;
-  for (const n of [3, 2, 1]) {
-    const at = s.goAt - n * 750;
-    await until(now, at);
-    if (round !== my) return;
-    if (now() < at + 500) { banner("img:count" + n); sfx.count(); } // (not when rejoining mid-round)
+  // the game's countdown (online, the server says when GO is: tools/rooms.py has the same steps)
+  const cd = countdownOf(s.game), step = cd.step * FRAME;
+  if (!s.online) s.goAt = now() + 4 * step;
+  const marks = [3, 2, 1].map((n) => ({ at: s.goAt - n * step, n }));
+  if (cd.song) marks.push({ at: s.goAt - (4 * cd.step - cd.song[0]) * FRAME, song: cd.song[1] }); // (a song it starts in it)
+  marks.sort((a, b) => a.at - b.at);
+  for (const m of marks) {
+    await until(now, m.at);
+    if (round !== my || phase !== "countdown") return;
+    if (now() > m.at + 500) continue; // (not when rejoining mid-round)
+    if (m.song) music(m.song, 0, true);
+    else { banner("count" + m.n, cd.step); if (cd.count) sound(cd.count); }
   }
   await until(now, s.goAt);
-  if (round !== my) return;
-  if (now() < s.goAt + 1000) { banner("img:go"); sfx.go(); telegram.haptic("medium"); }
+  if (round !== my || phase !== "countdown") return;
+  if (now() < s.goAt + 1000) { banner("go", cd.step, true); if (cd.go) sound(cd.go); telegram.haptic("medium"); }
   game.go();
   phase = "play";
 }
 
+// The round's over: when the game says (after its own show, as each game's
+// code has it), module #64's results (0x87F0A098) at once, for everyone: the
+// winners' banner over the game going on (the winners cheering, the others
+// not: celebrate()), with its song and sound; 60 frames after it's down, the
+// ranking (the remake's, for the menu the game goes on to with A). There's no
+// FINISH: none of the games has one. Online, the server's ranking is the
+// word (a device that's behind stops when it comes).
 async function finish() {
   const my = round;
-  phase = "finish";
+  phase = "end";
   current.finishedAt = performance.now();
-  banner("FINISH!"); game.finish(); telegram.haptic("success");
-  if (current.online) {
-    net.send("done", { r: current.round }, true);
-    await wait(1300);
-    if (round === my && phase === "finish") $("#waiting").hidden = false; // the results come from the server
-    return;
-  }
-  await wait(1300);
-  if (round === my) showResults();
+  game.finish();
+  telegram.haptic("success");
+  if (current.online) net.send("done", { r: current.round }, true);
+  current.results = game.celebrate();
+  showWinners(current.results, true);
+  await wait(RESULTS_AT * FRAME);
+  if (round !== my || phase !== "end") return;
+  if (current.online && !current.resultsIn) { $("#waiting").hidden = false; return; } // the server's are on their way
+  showResults();
 }
+const resultsDue = () => performance.now() >= current.finishedAt + RESULTS_AT * FRAME;
 
-async function showResults() {
-  const my = round;
+function showResults() {
+  if (phase !== "end") return;
   $("#waiting").hidden = true;
-  const results = game.celebrate();
+  const results = current.results;
   const mine = results.find((r) => r.i === me);
-  if (mine.place === 1) sfx.win();
-  await wait(1700);
-  if (round !== my) return;
   const tie = results.filter((r) => r.place === 1).length > 1;
   const info = GAMES[current.game];
   $("#champion").hidden = !(mine.place === 1 && !tie);
@@ -518,14 +577,14 @@ function connectNet() {
   net.on("welcome", (m) => {
     mySeat = m.seat;
     setUrlRoom(m.room);
-    if (phase === "finish" && current?.online) net.send("done", { r: current.round }); // (in case it was lost)
+    if (phase === "end" && current?.online) net.send("done", { r: current.round }); // (in case it was lost)
   });
   net.on("room", (r) => {
     room = r; roomError = "";
     if (current?.online && r.state === "playing" && r.round === current.round) followRound(r);
-    if (current?.online && phase === "finish" && !current.resultsIn && r.state === "lobby" && r.round >= current.round) {
+    if (current?.online && phase === "end" && !current.resultsIn && r.state === "lobby" && r.round >= current.round) {
       current.resultsIn = true; // the results went out while this device was offline: go with its own counts
-      showResults();
+      if (resultsDue()) showResults();
     }
     if (phase === "lobby") { renderLobby(); if (r.game && r.game !== gameId) showGame(r.game).catch(() => {}); }
     if (phase === "results") resultButtons();
@@ -545,11 +604,14 @@ function connectNet() {
   net.on("results", (m) => {
     if (!current?.online || m.round !== current.round || current.resultsIn) return;
     current.resultsIn = true;
-    if (game.state === "play") { game.stop(); banner("FINISH!"); current.finishedAt = performance.now(); } // time's up
+    if (playing()) { game.stop(); game.setScores(m.scores); finish(); return; } // time's up (this device was behind)
+    if (phase !== "end") return;
     game.setScores(m.scores);
-    phase = "finish";
-    const my = round;
-    setTimeout(() => { if (round === my) showResults(); }, Math.max(0, current.finishedAt + 1300 - performance.now()));
+    if (current.results.some((r) => r.score !== m.scores[r.i])) { // (not what this device made it: the server's ranking)
+      current.results = game.celebrate();
+      showWinners(current.results, false);
+    }
+    if (resultsDue()) showResults();
   });
   net.on("error", (m) => { roomError = m.code; room = null; renderLobby(); });
   net.on("notice", (m) => {

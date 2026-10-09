@@ -13,7 +13,10 @@ exported as two nodes:
     <name>        rotation/translation only, forms the hierarchy
     <name>_scale  child leaf carrying the accumulated scale; this is the
                   skin joint the vertices are bound to.
-That reproduces the game's pose exactly for every frame.
+That reproduces the game's pose exactly for every frame. A joint the game
+draws facing the camera (geo 0x1D flag 2) has extras {"facing": true} on its
+<name> node: a player turns it to the camera as it draws (the camera's turn,
+then the joint's own rotation and scale, at its parent's place for it).
 """
 import json
 import math
@@ -484,6 +487,8 @@ def build_gltf(model, name, clips=(), scale=0.01, bone_names=None, face_sets=Non
     pivot_nodes, scale_nodes = [], []
     for i, b in enumerate(bones):
         pn = g.node(name=names[i], translation=list(local_t[i]), rotation=euler_quat(b.r), children=[])
+        if b.flags & 2 and not b.static:  # drawn facing the camera (geo 0x1D flag 2: docs/fragments.md)
+            g.j["nodes"][pn]["extras"] = {"facing": True}
         sn = g.node(name=names[i] + "_scale", scale=list(accs[i]))
         g.j["nodes"][pn]["children"].append(sn)
         pivot_nodes.append(pn)

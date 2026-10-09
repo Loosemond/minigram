@@ -9,6 +9,7 @@ import { loadAssets } from "./assets.js";
 import { Game, CAMERA, COLOURS } from "./game.js";
 import * as R from "./rules.js";
 import { meMark } from "../mark.js";
+import { tintURL } from "../tint.js";
 
 export const SOUNDS = {
   url: "assets/delibird/sound.bin",
@@ -37,15 +38,15 @@ for (const x of [-195, 195]) {
   FIT.push([x, 0, 210], [x, 0, -200], [x, 70, 135]);
   FIT.push([x * 0.8, 40, -256]);
 }
-// the combo's colours (0x86A095A0: the flash by how many in a row; x2-x5 light and dark)
+// the combo's colours (0x86A095A0: the flash by how many in a row; x2-x5 light and dark,
+// prim and env: their grey pictures (bank 377) as the combiner colours them)
 const FLASH = ["#508cc8", "#64aa00", "#dc50a0", "#f0aa00"];
+const COMBO = [[0xdce6ff, 0x283278], [0xe6ffc8, 0x3c7800], [0xffdcf0, 0xc81e50], [0xffffc8, 0xc85a00]];
 const POP = [0.58, 0.626666, 0.673333, 0.72, 0.696666, 0.673333, 0.65, 0.626666, 0.603333]; // (its pulse: 0x86A0F344)
 const GROW = [0.283333, 0.566666, 0.85]; // (and the x2's: 0x86A0F390)
-// the arrow over your Delibird: from the middle of the game's label (18 tall,
-// small on a phone), over it and over the FULL that shows above it when the
-// sack's full (to 26.5 over the label's middle); riding with the label as it
-// hops, and gone with it in the end's show
-const OVER_LABEL = 30;
+// the arrow over your Delibird: just over its badge, or over the FULL that
+// shows above that when its sack's full; riding with the badge as it hops
+const OVER_LABEL = 4;
 
 export async function create(shell, onProgress) {
   const assets = await loadAssets("assets/delibird/", onProgress);
@@ -78,6 +79,8 @@ export async function create(shell, onProgress) {
   const rows = [...hud.querySelectorAll(".dd-row")], hint = hud.querySelector(".dd-hint"), pads = hud.querySelector(".dd-pads");
   const stickEl = hud.querySelector(".dd-stick"), knob = hud.querySelector(".dd-knob");
   const mark = meMark(hud, shell.me), over = new THREE.Vector3();
+  const comboPics = []; // x2-x5 coloured (src/tint.js), as they're made
+  COMBO.forEach(([prim, env], i) => tintURL(`${A}x${i + 2}.png`, prim, env).then((url) => { comboPics[i] = url; }));
 
   // ---- sounds and the like, from the game ----
   const mine = (z) => z === shell.me();
@@ -294,8 +297,8 @@ export async function create(shell, onProgress) {
       el.querySelector("i").style.background = FLASH[c.n - 1];
       el.querySelector("i").style.transform = `scale(${POP[Math.max(0, Math.floor(f) - 2) % 9] / 0.72})`;
       const img = el.querySelector("img");
-      const src = `${A}x${c.n + 1}.png`;
-      if (!img.src.endsWith(src)) img.src = src;
+      const src = comboPics[c.n - 1] || `${A}x${c.n + 1}.png`;
+      if (img.getAttribute("src") !== src) img.src = src;
       img.style.transform = `scale(${GROW[Math.min(2, Math.floor(f))] / 0.85})`;
     });
     // the tally at the end: each one's points counting up, the winners' rows going round the colours
@@ -313,8 +316,9 @@ export async function create(shell, onProgress) {
       });
     } else shownTally.fill(-1);
     // which Delibird is yours (the four look the same)
-    const label = game.birds[shell.me()].label;
-    over.copy(label.position).y += OVER_LABEL;
+    const { label, full } = game.birds[shell.me()];
+    over.copy(label.position).y += label.top() + OVER_LABEL;
+    if (full.visible) over.y = Math.max(over.y, full.position.y + full.scale.y / 2 + OVER_LABEL);
     mark.place((game.state === "play" || game.state === "over") && label.visible && view, over);
   }
 

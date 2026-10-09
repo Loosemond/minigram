@@ -14,6 +14,7 @@
 import * as THREE from "three";
 import { makeModel, makeLogPiece, makeLine, makeSpinarak, makeSlash } from "./assets.js";
 import { dress } from "../n64fx.js";
+import { faceOnRender } from "../facing.js";
 import * as R from "./rules.js";
 
 export const LANE = [0, 1, 2, 3].map((i) => (i * 120 - 180) * 1.6); // the game's x of each Scyther (0x865020D8)
@@ -67,6 +68,7 @@ export class Game {
     this.scene = scene;
     this.assets = assets;
     this.listeners = {};
+    faceOnRender(scene); // (the dizzy stars: their joints drawn facing the camera)
     this.lanes = [0, 1, 2, 3].map((i) => this.makeLane(i));
     this.state = "idle";
     this.time = 0;

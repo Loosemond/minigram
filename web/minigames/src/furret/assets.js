@@ -3,13 +3,14 @@
 // Poké Balls (153: Poké, Great, Ultra and Master, by their points), the field
 // (155: the field, the shadows along its edges and the boards on its ramps),
 // a ball's shadow (image bank 307's dot) and the labels over each Furret (260:
-// 1P-4P, COM); the badges over the goals are the shared ones (assets/ui,
-// image bank 434). Lighting is done on the textures' display values, as the
+// 1P-4P, COM); the badges over the goals are the shared ones (image bank 434:
+// src/badge.js). Lighting is done on the textures' display values, as the
 // N64 does (see src/egg/assets.js, docs/colours.md).
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { retry, attemptURL } from "../retry.js";
+import { loadBadges } from "../badge.js";
 
 const FPS = 30; // the game's animation rate
 const GLB = 100; // the exported models are in hundredths of the game's units
@@ -46,7 +47,6 @@ function prepare(scene) {
 
 const MODELS = ["furret", "furret_end", "field", "field_shadows", "boards", "ball1", "ball2", "ball3", "ball5"];
 const PICTURES = ["shadow", "label0", "label1", "label2", "label3", "label4"];
-const BADGES = ["com_blue", "com_green", "com_red", "com_yellow", "1p", "2p", "3p", "4p"];
 
 export async function loadAssets(base, onProgress = () => {}) {
   const jobs = [];
@@ -55,9 +55,9 @@ export async function loadAssets(base, onProgress = () => {}) {
   const [models, pics, badges] = await Promise.all([
     Promise.all(MODELS.map((m) => job(gltf(base + m + ".glb")))),
     Promise.all(PICTURES.map((p) => job(texture(base + p + ".png")))),
-    Promise.all(BADGES.map((b) => job(texture(`assets/ui/badge_${b}.png`)))),
+    loadBadges(job),
   ]);
-  const out = { badges: {} };
+  const out = { badges };
   MODELS.forEach((name, i) => {
     const g = models[i];
     prepare(g.scene);
@@ -65,7 +65,6 @@ export async function loadAssets(base, onProgress = () => {}) {
     out[name] = { scene: g.scene, clips };
   });
   PICTURES.forEach((name, i) => { out[name] = pics[i]; });
-  BADGES.forEach((name, i) => { out.badges[name] = badges[i]; });
   return out;
 }
 

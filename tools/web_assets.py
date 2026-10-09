@@ -6,8 +6,11 @@ web/minigames/assets/, and make their sound files from the ROM.
 Run tools/ps2extract.py first. The copies are not in git (like out/). The ROM
 defaults to the one in rom/. assets/ui/ has the HUD pictures the games share,
 assets/<game>/ each game's own files (a player only downloads the games they
-play).
+play). Importing it (for fx_recipes, or its tables) builds nothing; a build
+holds out/.web_assets.lock, so two at once take turns.
 """
+import contextlib
+import fcntl
 import glob
 import json
 import math
@@ -24,9 +27,10 @@ from ps2tool.objects import OBJECT_TABLE  # noqa: E402
 from ps2tool.rom import Rom  # noqa: E402
 
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(root, "out")
-web = sys.argv[2] if len(sys.argv) > 2 else os.path.join(root, "web")
-roms = [sys.argv[3]] if len(sys.argv) > 3 else sorted(glob.glob(os.path.join(root, "rom", "*.[zvn]64")))
+_args = sys.argv[1:] if __name__ == "__main__" else []  # (imported: the defaults)
+out = _args[0] if len(_args) > 0 else os.path.join(root, "out")
+web = _args[1] if len(_args) > 1 else os.path.join(root, "web")
+roms = [_args[2]] if len(_args) > 2 else sorted(glob.glob(os.path.join(root, "rom", "*.[zvn]64")))
 site = os.path.join(web, "minigames", "assets")
 
 
@@ -55,6 +59,11 @@ UI.update({"big%d.png" % i: bank(429, i) for i in range(10)})
 UI.update({"count%d.png" % (i + 1): bank(360, i) for i in range(3)})  # 1, 2, 3
 for _i, _name in enumerate(["blank", "com", "com_blue", "com_green", "com_red", "com_yellow", "1p", "2p", "3p", "4p"]):
     UI["badge_%s.png" % _name] = bank(434, _i)
+# module #64's results banner (UI layouts 93-96): the winners' big badges (bank
+# 435: grey COM, COM in the four colours, 1P-4P) and WINS, or DRAW (bank 442)
+for _i, _name in enumerate(["com", "com_blue", "com_green", "com_red", "com_yellow", "1p", "2p", "3p", "4p"]):
+    UI["winner_%s.png" % _name] = bank(435, _i)
+UI.update({"draw.png": bank(442, 0), "wins.png": bank(442, 1)})
 
 # Egg Emergency is code module #56. Besides objects 144 (Chansey), 145 (egg)
 # and 185 (effect textures) it loads background picture 19 (0x8004D770) and
@@ -328,7 +337,8 @@ UI["title_furret.png"] = bank(405, 0)
 # doors; 147 the front belt, the walls and the counter). Its pictures: the
 # shadow (307's dot), the HUD's panel (376), gift (381) and count's digits
 # (380), the combo (377: x2-x5) on a flash (398), FULL (379) and "Points" (430)
-# for the tally at the end; over each Delibird its label (260: 1P-4P, COM).
+# for the tally at the end; over each Delibird module #64's label, a badge
+# (434, the shared ones: src/badge.js; the module never loads bank 260).
 # The ring's sparkle is its texture's 13 frames.
 # Its banner is image bank 375.
 _DB, _SW = "objects/127_delibird/", "objects/%03d_swinub_running_%s/%03d_swinub_running_%s.glb"
@@ -355,7 +365,6 @@ for _k, (_n, _o) in enumerate([("diamond_ring", 175), ("grand_piano", 176), ("sn
 DELIBIRD.update({"sparkle%d.png" % i: "objects/175_diamond_ring/textures/tex%02d.png" % i for i in range(13)})
 DELIBIRD.update({"x%d.png" % (i + 2): bank(377, i) for i in range(4)})
 DELIBIRD.update({"d%d.png" % i: bank(380, i) for i in range(10)})
-DELIBIRD.update({"label%d.png" % i: bank(260, i) for i in range(5)})  # (the labels over each Delibird: 1P-4P, COM)
 UI["title_delibird.png"] = bank(375, 0)
 
 # folder -> {asset name: file under out/}
@@ -370,74 +379,112 @@ FILES = {"ui": UI, "egg": EGG, "clearcut": CLEARCUT, "eevee": EEVEE, "stampede":
 # its grey its alpha too (white, dark and flat boxes), so the remake draws
 # them from their recipes (src/n64fx.js; docs/fragments.md): Topsy-Turvy's
 # sparks (199, 200) and RAPID SPIN rings (195-198), Mr. Mime's barrier (141)
-# and the dizzy stars (190).
+# and the dizzy stars (190). And a plain model's moving texture: Delibird's
+# Delivery's belts (148 the back one, 147 the front: their textures scroll a
+# texel a frame, n64fx.js scrollMaps).
 FX = {
     "topsy": {"spark": 199, "flash": 200, "ring0": 197, "ring1": 198, "ring2": 195, "ring3": 196},
     "barrier": {"barrier": 141},
     "clearcut": {"stars": 190},
     "pichu": {"stars": 190},
+    "delibird": {"field": 148, "walls": 147},
 }
 
 
 class _Layered(Model):
     """A model that notes each draw's render layer, and each callback's: the
-    layer of the empty draw just before it (geo 0x22 then 0x08)."""
+    layer of the empty draw just before it (geo 0x22 then 0x08); and for each
+    draw, the last callback queued in its layer before it (the RDP state it's
+    drawn with: p.after, in order, one a draw)."""
 
     def __init__(self, frag):
         super().__init__(frag)
         model = self
+        self.layer_cb = {}  # layer -> its last callback so far
 
         class Noting(list):
             def append(self, cb):
                 cb["layer"] = getattr(model, "cur_layer", 1)
+                model.layer_cb[cb["layer"]] = len(self)
                 super().append(cb)
         self.callbacks = Noting()
 
     def _prim(self):
         p = super()._prim()
-        p.layers = getattr(p, "layers", set()) | {getattr(self, "cur_layer", 1)}
+        layer = getattr(self, "cur_layer", 1)
+        p.layers = getattr(p, "layers", set()) | {layer}
+        p.after = getattr(p, "after", [])
+        k = self.layer_cb.get(layer)
+        if k is not None and (not p.after or p.after[-1] != k):
+            p.after.append(k)
         return p
 
 
 def fx_recipes(rom, rec, name, pics):
-    """Object rec's recipes (one a material callback, arena.combiner_spec's)
-    and which each of its glTF's primitives is drawn by. A callback sets the
-    RDP's state for the draws after it in its own render layer, so a draw takes
-    its layer's callback: not the glTF's (the last in the extractor's order,
-    which gives the dizzy stars' other halos the stars' own, and their texture
-    coordinates by its tile: uv, what to scale them by for the right one).
-    Pictures go in pics (bytes -> file name), each once."""
+    """Object rec's recipes (one a material callback, arena.combiner_spec's;
+    null for one with no colours of its own, a texture only) and which each of
+    its glTF's primitives is drawn by. A callback sets the RDP's state for the
+    draws after it in its own render layer, and a layer's queue is drawn in
+    order, so a draw takes the last callback queued in its layer before it: in
+    the dizzy stars (190) all of a layer's come first, so its last; in the
+    cut's effects (130, 131) each comes just before its own draw. Not the
+    glTF's (the last in the extractor's order, which gives the stars' other
+    halos the stars' own, and their texture coordinates by its tile: uv, what
+    to scale them by for the right one). A draw with a texture of its own (a
+    plain model's) takes none: null. scroll: by primitive, the texels a frame
+    (s, t) the glTF's own texture moves by, when it's a callback's that
+    scrolls (Delibird's Delivery's belts, 147 and 148: a lit draw, so its
+    material stays the glTF's), else null; left out if none does. Pictures go
+    in pics (bytes -> file name), each once."""
     m = _Layered(Fragment(rom.archive(OBJECT_TABLE).get(rec), "object %d" % rec)).build()
     files = {}
     recipes = [combiner_spec(m, SimpleNamespace(tlut=-1, mat=None, layer=cb["layer"]), ("cb", k), None, (1.0, 1.0),
                              files, name) for k, cb in enumerate(m.callbacks)]
     for spec in recipes:
-        for t in spec["textures"]:
+        for t in (spec or {}).get("textures", []):
             if t:
                 t["file"] = pics.setdefault(files[t["file"]], t["file"])
+                if "frames" in t:  # (a flipbook's pictures: Eager Eevee's fire puffs, 204)
+                    t["frames"] = [pics.setdefault(files[f], f) for f in t["frames"]]
 
     def texel(cb, p, axis):  # a texture coordinate's texels per glTF unit, by callback cb's tile (gltf.py's)
         tex, smp, scale = m.callback_texture(cb)
         mode = smp["cms" if axis == 0 else "cmt"]
         return (scale or p.tex_scale)[axis] * _shift_factor(smp["shifts" if axis == 0 else "shiftt"]) / \
             (tex["w"] if axis == 0 else tex["h"]) * (0.5 if mode == 3 else 1.0)
-    prims, uv, inherited = [], [], None
+    prims, uv, scroll, inherited = [], [], [], None
     for p in m.prims:  # (the glTF's primitives: the draws with triangles, in order, untextured ones
-        if not p.tris:  # taking their callback or the last one's: ps2tool/gltf.py)
+        if not p.tris:  # taking their callback or the last one's, till one with its own: ps2tool/gltf.py)
+            continue
+        if m.has_texture(p.tex):
+            inherited = None
+            prims.append(None)
+            uv.append(None)
+            scroll.append(None)
             continue
         layer, = p.layers
-        k = max(k for k, cb in enumerate(m.callbacks) if cb["layer"] == layer)
-        glb = inherited = p.callback if p.callback is not None else inherited
-        prims.append(k)
-        uv.append([round(texel(k, p, a) / texel(glb, p, a), 6) for a in (0, 1)])
-    return {"recipes": recipes, "prims": prims, "uv": uv}
+        if p.after:  # (one primitive is one recipe: drawn after two, it takes the later)
+            k = p.after[-1]
+        else:  # (drawn before any: what its layer's last left set)
+            k = max(k for k, cb in enumerate(m.callbacks) if cb["layer"] == layer)
+        cb = p.callback if p.callback is not None else inherited
+        glb = inherited = cb if m.callback_texture(cb) is not None else inherited
+        prims.append(k if recipes[k] else None)
+        uv.append([round(texel(k, p, a) / texel(glb, p, a), 6) for a in (0, 1)] if recipes[k] and glb is not None else None)
+        moves = m.callback_scroll(glb) if glb is not None else None
+        scroll.append(list(moves) if moves else None)
+    fx = {"recipes": recipes, "prims": prims, "uv": uv}
+    if any(scroll):
+        fx["scroll"] = scroll
+    return fx
 
 
 # Sound (docs/audio.md). A game asks for song n, which the game plays as
 # sequence n + 39. The effects are sounds of sequence 9, the one the game runs
 # for them on sequence player 2; each comes with what the game's effect table
 # gives it (EU RAM 0x80090E88, 16 bytes per effect: sound number (bit 7: the
-# second table), volume, pitch, reverb, pan, channels).
+# second table), volume, pitch, reverb, pan, channels, flags). The sound file
+# also gets each one's id and flags from that table (effect_ids, below).
 def _sound(n, vol, rev, chans, **more):
     return dict(n=n, vol=vol, rev=rev, chans=chans, pitch=1.0, **more)
 
@@ -449,17 +496,24 @@ SHARED = {  # the minigames' bank (12)
     # itself from the sound number, so the effect it ends up on (86) is listed by hand
     "finish": _sound(0x86, 117, 30, 0x0700, sfx=[86]),
     "tap": _sound(0x7D, 100, 3, 0x0030),  # 0xCF01, a menu button
+    # module #64's results (0x87F0A098), for 36 and 40 frames: 0xCA0F with the
+    # winners' banner, the crowd (0x1E09, bank 1's) with DRAW
+    "winners": _sound(0x8A, 107, 7, 0x8000),
+    "drawCrowd": _sound(0x10, 110, 1, 0x4000, sfx=[15]),
 }
 SOUNDS = {
     # Egg Emergency asks for song 45 (sequence 84); after the finish, the
-    # minigame results play song 55 (sequence 94), a fanfare: the remake plays
-    # it when you win. Its effects are bank 7's:
+    # minigame results play song 55 (sequence 94), a fanfare, when someone
+    # won (and song 56 when no one did: below). Its effects are bank 7's:
     "egg": ({"egg": 84, "win": 94}, {
         "catch": _sound(0x4E, 83, 1, 0x0003),  # 0x7F01, an egg caught
         "shock": _sound(0x4F, 100, 1, 0x0003),  # 0x7F02, a Voltorb goes off
         "lost": _sound(0x4D, 103, 1, 0x0003),  # 0x7F00, and knocks eggs out (only then)
         "splash": _sound(0x2F, 100, 1, 0x0003),  # 0x7F05, a drop falls in the water
         **SHARED,
+        # 0x7F03 and 0x7F04, the minigame's own count and GO (0x868066B8)
+        "count": _sound(0x66, 105, 1, 0x0010),
+        "go": dict(_sound(0x67, 105, 1, 0x0010), pitch=1.19),
     }),
     # Clear Cut Challenge asks for song 18 (sequence 57) 30 frames into each
     # log, while Spinarak hauls it up, and song 19 (sequence 58) when the cut
@@ -498,6 +552,7 @@ SOUNDS = {
         "dazed": dict(_sound(0x6E, 127, 3, 0x0020), pitch=0.5),  # 0xAF0B, for each Eevee a Pineco blows up
         "munch": _sound(0x8A, 107, 7, 0x8000),  # 0xCA0F (bank 12), while an Eevee eats
         **SHARED,
+        "count": _sound(0x13, 100, 5, 0x0100, sfx=[16]),  # 0x2F00, Pichu's Power Plant's count (no GO sound: 0x86B01BB0)
     }),
     # Streaming Stampede asks for song 29 (sequence 68) in its opening, 30
     # (69, its tune) from the first question, 31 (70) for the results and 32
@@ -687,6 +742,34 @@ SOUNDS = {
         "go": _sound(0x14, 100, 5, 0x0100, sfx=[17]),  # 0x2F01
     }),
 }
+# After the finish every minigame hands over to module #64's results
+# (0x87F0A098): song 55 (sequence 94, a 3.6 s fanfare) when someone won, song
+# 56 (95) when no one did (song 80, sequence 119, which follows them, isn't
+# shipped: audio.py's reader can't follow its script)
+for _songs, _ in SOUNDS.values():
+    _songs.update(win=94, draw=95)
+
+
+def effect_ids(rom, sounds):
+    """The sounds, each with its effect's id (bank << 12 | 0xF00 | entry) and
+    flags (bit 0: panned by where it is, bit 1: on a channel of each player's
+    own, the top four: a random pitch; docs/audio.md) from the effect table
+    (EU 0x80090E88, the 13 banks' sizes at 0x800A3AF0): the one entry with the
+    sound's number, volume, reverb and channels."""
+    def ram(a, n):
+        return rom.data[a - 0x7FFFF400:a - 0x7FFFF400 + n]
+    sizes = ram(0x800A3AF0, 13)
+    assert sum(sizes) == 173, "not the EU ROM's effect table"
+    table = ram(0x80090E88, 16 * sum(sizes))
+    ids = [b << 12 | 0xF00 | k for b, n in enumerate(sizes) for k in range(n)]
+    out = {}
+    for name, s in sounds.items():
+        hits = [i for i in range(len(ids)) if (table[16 * i], table[16 * i + 1], table[16 * i + 8], table[16 * i + 10] << 8 |
+                                               table[16 * i + 11]) == (s["n"], s["vol"], s["rev"], s["chans"])]
+        assert len(hits) == 1, "%s: %d effects like it" % (name, len(hits))
+        out[name] = dict(s, id=ids[hits[0]], flags=table[16 * hits[0] + 13])
+    return out
+
 
 def flat_picture(glb_path, width, more=(), box=None, top=False, turn=0):
     """A model drawn front on (looking down -z, no perspective) into a picture
@@ -837,220 +920,246 @@ def flat_picture(glb_path, width, more=(), box=None, top=False, turn=0):
     return W, H, bytes(out)
 
 
-missing = 0
-for folder, files in FILES.items():
-    dst = os.path.join(site, folder)
-    for name, rel in files.items():
-        src = os.path.join(out, rel)
-        if not os.path.exists(src):
-            print("missing", src)
-            missing += 1
-            continue
-        os.makedirs(os.path.dirname(os.path.join(dst, name)), exist_ok=True)
-        shutil.copyfile(src, os.path.join(dst, name))
-    print(folder, len(files), "files ->", dst)
+def build():
+    """Copies and makes every file under site; returns how many are missing."""
+    missing = 0
+    for folder, files in FILES.items():
+        dst = os.path.join(site, folder)
+        for name, rel in files.items():
+            src = os.path.join(out, rel)
+            if not os.path.exists(src):
+                print("missing", src)
+                missing += 1
+                continue
+            os.makedirs(os.path.dirname(os.path.join(dst, name)), exist_ok=True)
+            shutil.copyfile(src, os.path.join(dst, name))
+        print(folder, len(files), "files ->", dst)
 
-# Streaming Stampede's circus backdrop, up close on a phone: its textures
-# resampled from the game's to up to 4 times their size (ps2tool/upscale.py),
-# and mipmapped. Only the backdrop: its painted colour edges are where it
-# shows; the floor, stage, books and booths looked the same for 4-20 times the
-# memory, so they keep the game's own
-_glb = os.path.join(site, "stampede", "backdrop.glb")
-if os.path.exists(_glb):
-    upscale.upscale_glb(_glb, _glb)
+    # Streaming Stampede's circus backdrop, up close on a phone: its textures
+    # resampled from the game's to up to 4 times their size (ps2tool/upscale.py),
+    # and mipmapped. Only the backdrop: its painted colour edges are where it
+    # shows; the floor, stage, books and booths looked the same for 4-20 times the
+    # memory, so they keep the game's own
+    _glb = os.path.join(site, "stampede", "backdrop.glb")
+    if os.path.exists(_glb):
+        upscale.upscale_glb(_glb, _glb)
 
-# Streaming Stampede's art for the title and the lobby: its circus backdrop, flat
-_backdrop = os.path.join(site, "stampede", "backdrop.glb")
-if os.path.exists(_backdrop):
-    with open(os.path.join(site, "stampede", "backdrop.png"), "wb") as fh:
-        fh.write(png.encode_rgba(*flat_picture(_backdrop, 400)))
+    # Streaming Stampede's art for the title and the lobby: its circus backdrop, flat
+    _backdrop = os.path.join(site, "stampede", "backdrop.glb")
+    if os.path.exists(_backdrop):
+        with open(os.path.join(site, "stampede", "backdrop.png"), "wb") as fh:
+            fh.write(png.encode_rgba(*flat_picture(_backdrop, 400)))
 
-# Pichu's Power Plant's art for the title and the lobby: its frame, flat
-_frame = os.path.join(site, "pichu", "frame.glb")
-if os.path.exists(_frame):
-    with open(os.path.join(site, "pichu", "art.png"), "wb") as fh:
-        fh.write(png.encode_rgba(*flat_picture(_frame, 400)))
+    # Pichu's Power Plant's art for the title and the lobby: its frame, flat
+    _frame = os.path.join(site, "pichu", "frame.glb")
+    if os.path.exists(_frame):
+        with open(os.path.join(site, "pichu", "art.png"), "wb") as fh:
+            fh.write(png.encode_rgba(*flat_picture(_frame, 400)))
 
-# Barrier Ball's art for the title and the lobby: its court from above, as
-# the game puts it (the pieces at 0.1, the walls 180 from the middle)
-_court = os.path.join(site, "barrier", "floor.glb")
-if os.path.exists(_court):
-    _walls = [(os.path.join(site, "barrier", name), dx, dy) for name, dx, dy in (
-        ("lines.glb", 0, 0), ("hole.glb", 0, 0), ("wall_top.glb", 0, 18), ("wall_left.glb", -18, 0),
-        ("wall_bottom.glb", 0, -18), ("wall_right.glb", 18, 0))]
-    with open(os.path.join(site, "barrier", "art.png"), "wb") as fh:
-        fh.write(png.encode_rgba(*flat_picture(_court, 400, _walls, (-27, -27, 27, 27))))
+    # Barrier Ball's art for the title and the lobby: its court from above, as
+    # the game puts it (the pieces at 0.1, the walls 180 from the middle)
+    _court = os.path.join(site, "barrier", "floor.glb")
+    if os.path.exists(_court):
+        _walls = [(os.path.join(site, "barrier", name), dx, dy) for name, dx, dy in (
+            ("lines.glb", 0, 0), ("hole.glb", 0, 0), ("wall_top.glb", 0, 18), ("wall_left.glb", -18, 0),
+            ("wall_bottom.glb", 0, -18), ("wall_right.glb", 18, 0))]
+        with open(os.path.join(site, "barrier", "art.png"), "wb") as fh:
+            fh.write(png.encode_rgba(*flat_picture(_court, 400, _walls, (-27, -27, 27, 27))))
 
-# Rampage Rollout's art for the title and the lobby: its track from above (and the meadow round it)
-_field = os.path.join(site, "rollout", "field.glb")
-if os.path.exists(_field):
-    with open(os.path.join(site, "rollout", "art.png"), "wb") as fh:
-        fh.write(png.encode_rgba(*flat_picture(_field, 400, [(os.path.join(site, "rollout", "frame.glb"), 0, 0)],
-                                               (-15, -12.5, 15, 12.5), top=True)))
+    # Rampage Rollout's art for the title and the lobby: its track from above (and the meadow round it)
+    _field = os.path.join(site, "rollout", "field.glb")
+    if os.path.exists(_field):
+        with open(os.path.join(site, "rollout", "art.png"), "wb") as fh:
+            fh.write(png.encode_rgba(*flat_picture(_field, 400, [(os.path.join(site, "rollout", "frame.glb"), 0, 0)],
+                                                   (-15, -12.5, 15, 12.5), top=True)))
 
-# Furret's Frolic's art for the title and the lobby: its field from above, turned as its camera has it
-_field = os.path.join(site, "furret", "field.glb")
-if os.path.exists(_field):
-    with open(os.path.join(site, "furret", "art.png"), "wb") as fh:
-        fh.write(png.encode_rgba(*flat_picture(_field, 400, [(os.path.join(site, "furret", "boards.glb"), 0, 0)],
-                                               (-14.5, -10.9, 14.5, 10.9), top=True, turn=-45)))
+    # Furret's Frolic's art for the title and the lobby: its field from above, turned as its camera has it
+    _field = os.path.join(site, "furret", "field.glb")
+    if os.path.exists(_field):
+        with open(os.path.join(site, "furret", "art.png"), "wb") as fh:
+            fh.write(png.encode_rgba(*flat_picture(_field, 400, [(os.path.join(site, "furret", "boards.glb"), 0, 0)],
+                                                   (-14.5, -10.9, 14.5, 10.9), top=True, turn=-45)))
 
-# Delibird's Delivery's art for the title and the lobby: the back of its stage, flat (the four doors)
-_field = os.path.join(site, "delibird", "field.glb")
-if os.path.exists(_field):
-    with open(os.path.join(site, "delibird", "art.png"), "wb") as fh:
-        fh.write(png.encode_rgba(*flat_picture(_field, 400, [(os.path.join(site, "delibird", "walls.glb"), 0, 0)],
-                                               (-21.5, 1.5, 21.5, 17))))
+    # Delibird's Delivery's art for the title and the lobby: the back of its stage, flat (the four doors)
+    _field = os.path.join(site, "delibird", "field.glb")
+    if os.path.exists(_field):
+        with open(os.path.join(site, "delibird", "art.png"), "wb") as fh:
+            fh.write(png.encode_rgba(*flat_picture(_field, 400, [(os.path.join(site, "delibird", "walls.glb"), 0, 0)],
+                                                   (-21.5, 1.5, 21.5, 17))))
 
-if roms:
-    rom = Rom(roms[0])
-    for name, (w, h, rgba) in minigames.clearcut_textures(rom).items():
-        with open(os.path.join(site, "clearcut", name + ".png"), "wb") as fh:
-            fh.write(png.encode_rgba(w, h, rgba))
-    print("clearcut: the log's textures from code module #53")
-    # each Pokemon that goes by in Streaming Stampede: its bank's pictures side by side
-    for b in STAMPEDE_SPRITES:
-        frames = images.bank_images(rom, b)
-        w, h = frames[0][1], frames[0][2]
-        assert all(f[1:3] == (w, h) for f in frames), b
-        rows = [b"".join(rgba[y * w * 4:(y + 1) * w * 4] for _, _, _, rgba in frames) for y in range(h)]
-        with open(os.path.join(site, "stampede", "s%d.png" % b), "wb") as fh:
-            fh.write(png.encode_rgba(w * len(frames), h, b"".join(rows)))
-    print("stampede: %d sprite strips (image banks %d-%d)" % (len(STAMPEDE_SPRITES), STAMPEDE_SPRITES[0], STAMPEDE_SPRITES[-1]))
-    # the booths' digits in gold, as the counts show at an answer (prim colour FFC800: 0x8690D000)
-    for k, w, h, rgba in images.bank_images(rom, 415)[:10]:
-        px = bytearray(rgba)
-        for o in range(0, len(px), 4):
-            px[o + 1] = px[o + 1] * 200 // 255
-            px[o + 2] = 0
-        with open(os.path.join(site, "stampede", "g%d.png" % k), "wb") as fh:
-            fh.write(png.encode_rgba(w, h, bytes(px)))
-    # Pichu's Power Plant's sparks (bank 224, drawn white) and lightning (225,
-    # yellow): the game's combiner makes a texel's colour prim + (1 - prim) x
-    # its grey, and its alpha the grey (0x86600160, 0x86600020)
-    for name, b, prim in (("spark", 224, (255, 255, 255)), ("bolt", 225, (255, 255, 0))):
-        frames = images.bank_images(rom, b)
-        w, h = frames[0][1], frames[0][2]
+    if roms:
+        rom = Rom(roms[0])
+        for name, (w, h, rgba) in minigames.clearcut_textures(rom).items():
+            with open(os.path.join(site, "clearcut", name + ".png"), "wb") as fh:
+                fh.write(png.encode_rgba(w, h, rgba))
+        print("clearcut: the log's textures from code module #53")
+        # each Pokemon that goes by in Streaming Stampede: its bank's pictures side by side
+        for b in STAMPEDE_SPRITES:
+            frames = images.bank_images(rom, b)
+            w, h = frames[0][1], frames[0][2]
+            assert all(f[1:3] == (w, h) for f in frames), b
+            rows = [b"".join(rgba[y * w * 4:(y + 1) * w * 4] for _, _, _, rgba in frames) for y in range(h)]
+            with open(os.path.join(site, "stampede", "s%d.png" % b), "wb") as fh:
+                fh.write(png.encode_rgba(w * len(frames), h, b"".join(rows)))
+        print("stampede: %d sprite strips (image banks %d-%d)" % (len(STAMPEDE_SPRITES), STAMPEDE_SPRITES[0], STAMPEDE_SPRITES[-1]))
+        # the booths' digits in gold, as the counts show at an answer (prim colour FFC800: 0x8690D000)
+        for k, w, h, rgba in images.bank_images(rom, 415)[:10]:
+            px = bytearray(rgba)
+            for o in range(0, len(px), 4):
+                px[o + 1] = px[o + 1] * 200 // 255
+                px[o + 2] = 0
+            with open(os.path.join(site, "stampede", "g%d.png" % k), "wb") as fh:
+                fh.write(png.encode_rgba(w, h, bytes(px)))
+        # Pichu's Power Plant's sparks (bank 224, drawn white) and lightning (225,
+        # yellow): the game's combiner makes a texel's colour prim + (1 - prim) x
+        # its grey, and its alpha the grey (0x86600160, 0x86600020)
+        for name, b, prim in (("spark", 224, (255, 255, 255)), ("bolt", 225, (255, 255, 0))):
+            frames = images.bank_images(rom, b)
+            w, h = frames[0][1], frames[0][2]
+            rows = []
+            for y in range(h):
+                row = bytearray()
+                for _, _, _, rgba in frames:
+                    for x in range(w):
+                        i = rgba[(y * w + x) * 4]
+                        row += bytes(c + (255 - c) * i // 255 for c in prim) + bytes([i])
+                rows.append(bytes(row))
+            with open(os.path.join(site, "pichu", name + ".png"), "wb") as fh:
+                fh.write(png.encode_rgba(w * len(frames), h, b"".join(rows)))
+        # its gauges' frame (0x86603604): bank 410's cap, its last column across
+        # 54 pixels, and the cap again, mirrored: 70 x 14
+        _, cw, ch, cap = images.bank_images(rom, 410)[0]
         rows = []
-        for y in range(h):
-            row = bytearray()
-            for _, _, _, rgba in frames:
-                for x in range(w):
-                    i = rgba[(y * w + x) * 4]
-                    row += bytes(c + (255 - c) * i // 255 for c in prim) + bytes([i])
-            rows.append(bytes(row))
-        with open(os.path.join(site, "pichu", name + ".png"), "wb") as fh:
-            fh.write(png.encode_rgba(w * len(frames), h, b"".join(rows)))
-    # its gauges' frame (0x86603604): bank 410's cap, its last column across
-    # 54 pixels, and the cap again, mirrored: 70 x 14
-    _, cw, ch, cap = images.bank_images(rom, 410)[0]
-    rows = []
-    for y in range(ch):
-        row = [cap[(y * cw + x) * 4:(y * cw + x) * 4 + 4] for x in range(cw)]
-        rows.append(b"".join(row + [row[-1]] * (70 - 2 * cw) + row[::-1]))
-    with open(os.path.join(site, "pichu", "gauge.png"), "wb") as fh:
-        fh.write(png.encode_rgba(70, ch, b"".join(rows)))
-    # and its fill and the pulse over it: bank 409's pictures' first column
-    # (the rest is clear), stretched as long as the charge
-    for name, (_, fw, fh_, px) in zip(("gauge_fill", "gauge_glow"), images.bank_images(rom, 409)):
-        with open(os.path.join(site, "pichu", name + ".png"), "wb") as fh:
-            fh.write(png.encode_rgba(1, fh_, b"".join(px[y * fw * 4:y * fw * 4 + 4] for y in range(fh_))))
-    print("pichu: the sparks, the lightning and the gauge (image banks 224, 225, 409, 410)")
-    # Tumbling Togepi's Diglett (bank 205: its hole, then coming up), side by
-    # side; and its art for the title and the lobby: the track (bank 226),
-    # its eight 256 px lengths side by side, START to GOAL
-    frames = images.bank_images(rom, 205)
-    w, h = frames[0][1], frames[0][2]
-    rows = [b"".join(rgba[y * w * 4:(y + 1) * w * 4] for _, _, _, rgba in frames) for y in range(h)]
-    with open(os.path.join(site, "togepi", "diglett.png"), "wb") as fh:
-        fh.write(png.encode_rgba(w * len(frames), h, b"".join(rows)))
-    (_, tw, th, track), = images.bank_images(rom, 226)
-    gap, n = 8, th // 256
-    aw = n * tw + (n - 1) * gap
-    art = bytearray(aw * 256 * 4)
-    for y in range(256):
-        for k in range(n):
-            o = (y * aw + k * (tw + gap)) * 4
-            art[o:o + tw * 4] = track[((k * 256 + y) * tw) * 4:((k * 256 + y) * tw + tw) * 4]
-    with open(os.path.join(site, "togepi", "art.png"), "wb") as fh:
-        fh.write(png.encode_rgba(aw, 256, bytes(art)))
-    print("togepi: the Diglett strip and the art (image banks 205, 226)")
-    # Gutsy Golbat's Magnemite (bank 69) and hearts (222), side by side; and the
-    # glow behind each Golbat (bank 343, grey: its combiner 0x86109D64 makes a
-    # texel env + (prim - env) x its grey, and its alpha 1 - the grey; the prim
-    # and env colours each player's, 0x8610A224), one picture a player
-    for name, b in (("magnemite", 69), ("hearts", 222)):
-        frames = images.bank_images(rom, b)
+        for y in range(ch):
+            row = [cap[(y * cw + x) * 4:(y * cw + x) * 4 + 4] for x in range(cw)]
+            rows.append(b"".join(row + [row[-1]] * (70 - 2 * cw) + row[::-1]))
+        with open(os.path.join(site, "pichu", "gauge.png"), "wb") as fh:
+            fh.write(png.encode_rgba(70, ch, b"".join(rows)))
+        # and its fill and the pulse over it: bank 409's pictures' first column
+        # (the rest is clear), stretched as long as the charge
+        for name, (_, fw, fh_, px) in zip(("gauge_fill", "gauge_glow"), images.bank_images(rom, 409)):
+            with open(os.path.join(site, "pichu", name + ".png"), "wb") as fh:
+                fh.write(png.encode_rgba(1, fh_, b"".join(px[y * fw * 4:y * fw * 4 + 4] for y in range(fh_))))
+        print("pichu: the sparks, the lightning and the gauge (image banks 224, 225, 409, 410)")
+        # Tumbling Togepi's Diglett (bank 205: its hole, then coming up), side by
+        # side; and its art for the title and the lobby: the track (bank 226),
+        # its eight 256 px lengths side by side, START to GOAL
+        frames = images.bank_images(rom, 205)
         w, h = frames[0][1], frames[0][2]
         rows = [b"".join(rgba[y * w * 4:(y + 1) * w * 4] for _, _, _, rgba in frames) for y in range(h)]
-        with open(os.path.join(site, "golbat", name + ".png"), "wb") as fh:
+        with open(os.path.join(site, "togepi", "diglett.png"), "wb") as fh:
             fh.write(png.encode_rgba(w * len(frames), h, b"".join(rows)))
-    (_, gw, gh, grey), = images.bank_images(rom, 343)[:1]
-    for z, (prim, env) in enumerate((((0, 0, 255), (200, 200, 255)), ((0, 255, 0), (200, 255, 200)),
-                                     ((255, 0, 0), (255, 200, 200)), ((255, 255, 0), (255, 255, 200)))):
-        px = bytearray()
-        for o in range(0, gw * gh * 4, 4):
-            i = grey[o]
-            px += bytes(e + (p - e) * i // 255 for p, e in zip(prim, env)) + bytes([255 - i])
-        with open(os.path.join(site, "golbat", "glow%d.png" % z), "wb") as fh:
-            fh.write(png.encode_rgba(gw, gh, bytes(px)))
-    print("golbat: the Magnemite and heart strips and the glows (image banks 69, 222, 343)")
-    # Rampage Rollout's dust (bank 159) and clouds (150), each a strip of its
-    # frames; the clouds and the stars (384) in each player's colours
-    def strip(frames):
-        w, h = frames[0][1], frames[0][2]
-        return w * len(frames), h, b"".join(b"".join(rgba[y * w * 4:(y + 1) * w * 4] for _, _, _, rgba in frames)
-                                             for y in range(h))
+        (_, tw, th, track), = images.bank_images(rom, 226)
+        gap, n = 8, th // 256
+        aw = n * tw + (n - 1) * gap
+        art = bytearray(aw * 256 * 4)
+        for y in range(256):
+            for k in range(n):
+                o = (y * aw + k * (tw + gap)) * 4
+                art[o:o + tw * 4] = track[((k * 256 + y) * tw) * 4:((k * 256 + y) * tw + tw) * 4]
+        with open(os.path.join(site, "togepi", "art.png"), "wb") as fh:
+            fh.write(png.encode_rgba(aw, 256, bytes(art)))
+        print("togepi: the Diglett strip and the art (image banks 205, 226)")
+        # Gutsy Golbat's Magnemite (bank 69) and hearts (222), side by side; and the
+        # glow behind each Golbat (bank 343, grey: its combiner 0x86109D64 makes a
+        # texel env + (prim - env) x its grey, and its alpha 1 - the grey; the prim
+        # and env colours each player's, 0x8610A224), one picture a player
+        for name, b in (("magnemite", 69), ("hearts", 222)):
+            frames = images.bank_images(rom, b)
+            w, h = frames[0][1], frames[0][2]
+            rows = [b"".join(rgba[y * w * 4:(y + 1) * w * 4] for _, _, _, rgba in frames) for y in range(h)]
+            with open(os.path.join(site, "golbat", name + ".png"), "wb") as fh:
+                fh.write(png.encode_rgba(w * len(frames), h, b"".join(rows)))
+        (_, gw, gh, grey), = images.bank_images(rom, 343)[:1]
+        for z, (prim, env) in enumerate((((0, 0, 255), (200, 200, 255)), ((0, 255, 0), (200, 255, 200)),
+                                         ((255, 0, 0), (255, 200, 200)), ((255, 255, 0), (255, 255, 200)))):
+            px = bytearray()
+            for o in range(0, gw * gh * 4, 4):
+                i = grey[o]
+                px += bytes(e + (p - e) * i // 255 for p, e in zip(prim, env)) + bytes([255 - i])
+            with open(os.path.join(site, "golbat", "glow%d.png" % z), "wb") as fh:
+                fh.write(png.encode_rgba(gw, gh, bytes(px)))
+        print("golbat: the Magnemite and heart strips and the glows (image banks 69, 222, 343)")
+        # Rampage Rollout's dust (bank 159) and clouds (150), each a strip of its
+        # frames; the clouds and the stars (384) in each player's colours
+        def strip(frames):
+            w, h = frames[0][1], frames[0][2]
+            return w * len(frames), h, b"".join(b"".join(rgba[y * w * 4:(y + 1) * w * 4] for _, _, _, rgba in frames)
+                                                 for y in range(h))
 
-    def tint(rgba, prim, env):
-        px = bytearray(rgba)
-        for o in range(0, len(px), 4):
-            g = px[o]
-            px[o:o + 3] = bytes(e + (p - e) * g // 255 for p, e in zip(prim, env))
-        return bytes(px)
-    with open(os.path.join(site, "rollout", "dust.png"), "wb") as fh:
-        fh.write(png.encode_rgba(*strip(images.bank_images(rom, 159))))
-    clouds, star = strip(images.bank_images(rom, 150)), images.bank_images(rom, 384)[0]
-    for z, (prim, env) in enumerate(ROLLOUT_COLOURS):
-        with open(os.path.join(site, "rollout", "cloud%d.png" % z), "wb") as fh:
-            fh.write(png.encode_rgba(clouds[0], clouds[1], tint(clouds[2], prim, env)))
-        with open(os.path.join(site, "rollout", "star%d.png" % z), "wb") as fh:
-            fh.write(png.encode_rgba(star[1], star[2], tint(star[3], prim, env)))
-    print("rollout: the dust and cloud strips and the stars (image banks 159, 150, 384)")
-    # Topsy-Turvy's brick floor, to go on past its picture's edges in a window
-    # wider or taller than the game's: a strip of it from the picture's top, between the corner rings
-    _, rw, rh, ring = images.bank_images(rom, 223)[0]
-    x0, y0, cw, ch = 96, 0, 128, 32
-    with open(os.path.join(site, "topsy", "bricks.png"), "wb") as fh:
-        fh.write(png.encode_rgba(cw, ch, b"".join(ring[((y0 + y) * rw + x0) * 4:((y0 + y) * rw + x0 + cw) * 4] for y in range(ch))))
-    # and the swirl round its clock (bank 402, 4 frames): white, as bright as the picture is (0x8600B328)
-    for k, (_, sw, sh, rgba) in enumerate(images.bank_images(rom, 402)):
-        px = bytearray(rgba)
-        for o in range(0, len(px), 4):
-            px[o + 3] = px[o + 3] * max(px[o:o + 3]) // 255
-            px[o:o + 3] = b"\xff\xff\xff"
-        with open(os.path.join(site, "topsy", "swirl%d.png" % k), "wb") as fh:
-            fh.write(png.encode_rgba(sw, sh, bytes(px)))
-    print("topsy: the brick floor and the clock's swirl (image banks 223, 402)")
-    # the effects' recipes (FX, above): each game's fx.json and the pictures it names
-    for game, objects in FX.items():
-        fx, pics = {}, {}
-        for name, rec in objects.items():
-            fx[name] = fx_recipes(rom, rec, name, pics)
-        for data, rel in pics.items():
-            with open(os.path.join(site, game, rel), "wb") as fh:
+        def tint(rgba, prim, env):
+            px = bytearray(rgba)
+            for o in range(0, len(px), 4):
+                g = px[o]
+                px[o:o + 3] = bytes(e + (p - e) * g // 255 for p, e in zip(prim, env))
+            return bytes(px)
+        with open(os.path.join(site, "rollout", "dust.png"), "wb") as fh:
+            fh.write(png.encode_rgba(*strip(images.bank_images(rom, 159))))
+        clouds, star = strip(images.bank_images(rom, 150)), images.bank_images(rom, 384)[0]
+        for z, (prim, env) in enumerate(ROLLOUT_COLOURS):
+            with open(os.path.join(site, "rollout", "cloud%d.png" % z), "wb") as fh:
+                fh.write(png.encode_rgba(clouds[0], clouds[1], tint(clouds[2], prim, env)))
+            with open(os.path.join(site, "rollout", "star%d.png" % z), "wb") as fh:
+                fh.write(png.encode_rgba(star[1], star[2], tint(star[3], prim, env)))
+        print("rollout: the dust and cloud strips and the stars (image banks 159, 150, 384)")
+        # Topsy-Turvy's brick floor, to go on past its picture's edges in a window
+        # wider or taller than the game's: a strip of it from the picture's top, between the corner rings
+        _, rw, rh, ring = images.bank_images(rom, 223)[0]
+        x0, y0, cw, ch = 96, 0, 128, 32
+        with open(os.path.join(site, "topsy", "bricks.png"), "wb") as fh:
+            fh.write(png.encode_rgba(cw, ch, b"".join(ring[((y0 + y) * rw + x0) * 4:((y0 + y) * rw + x0 + cw) * 4] for y in range(ch))))
+        # and the swirl round its clock (bank 402, 4 frames): white, as bright as the picture is (0x8600B328)
+        for k, (_, sw, sh, rgba) in enumerate(images.bank_images(rom, 402)):
+            px = bytearray(rgba)
+            for o in range(0, len(px), 4):
+                px[o + 3] = px[o + 3] * max(px[o:o + 3]) // 255
+                px[o:o + 3] = b"\xff\xff\xff"
+            with open(os.path.join(site, "topsy", "swirl%d.png" % k), "wb") as fh:
+                fh.write(png.encode_rgba(sw, sh, bytes(px)))
+        print("topsy: the brick floor and the clock's swirl (image banks 223, 402)")
+        # the effects' recipes (FX, above): each game's fx.json and the pictures it names
+        for game, objects in FX.items():
+            fx, pics = {}, {}
+            for name, rec in objects.items():
+                fx[name] = fx_recipes(rom, rec, name, pics)
+            for data, rel in pics.items():
+                with open(os.path.join(site, game, rel), "wb") as fh:
+                    fh.write(data)
+            with open(os.path.join(site, game, "fx.json"), "w") as fh:
+                json.dump(fx, fh, separators=(",", ":"))
+            print("%s: the effects' recipes (objects %s)" % (game, ", ".join(str(r) for r in objects.values())))
+        sound = audio.Audio(rom.data)
+        for game, (songs, sounds) in SOUNDS.items():
+            dst = os.path.join(site, game, "sound.bin")
+            data = audio.web_pack(sound, songs, effect_ids(rom, sounds), 9)
+            with open(dst, "wb") as fh:
                 fh.write(data)
-        with open(os.path.join(site, game, "fx.json"), "w") as fh:
-            json.dump(fx, fh, separators=(",", ":"))
-        print("%s: the effects' recipes (objects %s)" % (game, ", ".join(str(r) for r in objects.values())))
-    sound = audio.Audio(rom.data)
-    for game, (songs, sounds) in SOUNDS.items():
-        dst = os.path.join(site, game, "sound.bin")
-        data = audio.web_pack(sound, songs, sounds, 9)
-        with open(dst, "wb") as fh:
-            fh.write(data)
-        print(game, "sound.bin: %d KB ->" % (len(data) // 1024), dst)
-else:
-    print("no ROM in rom/: no sound, and no log for Clear Cut Challenge (the games play stand-ins)")
-    missing += 1
-sys.exit(1 if missing else 0)
+            print(game, "sound.bin: %d KB ->" % (len(data) // 1024), dst)
+    else:
+        print("no ROM in rom/: no sound, and no log for Clear Cut Challenge (the games play stand-ins)")
+        missing += 1
+    return missing
+
+
+@contextlib.contextmanager
+def build_lock():
+    """Holds out/.web_assets.lock while a build runs (fcntl.flock: let go
+    when the process ends, however it ends): two builds at once, by different
+    agents or shells, take turns rather than writing over each other."""
+    os.makedirs(out, exist_ok=True)
+    with open(os.path.join(out, ".web_assets.lock"), "a") as fh:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("waiting for another web_assets build to finish ...", flush=True)
+            fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
+
+if __name__ == "__main__":
+    with build_lock():
+        missing = build()
+    sys.exit(1 if missing else 0)

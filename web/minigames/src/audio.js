@@ -13,9 +13,18 @@ import { Engine, loadBank } from "./n64audio.js";
 const MUSIC = 0, EFFECTS = 2;
 const MUSIC_VOLUME = 0.81, EFFECTS_VOLUME = 0.648;
 const LEVEL = 1.6; // overall loudness: the N64 mixes quietly
-// The game pans a player's sounds to their column (x = 13..306 of 320 on the
-// original screen, four columns)
-const SEAT_PAN = [20, 49, 78, 108];
+const FRAME_MS = 1000 / 30; // the minigames run at 30 frames a second
+// Where the game pans a player's sound (0x80027A18): 64 + a byte of the pairs
+// at 0x80090E64, picked by the sound's bank (0x800A3B78); banks 0, 5, 10 and
+// 12 keep it in the middle
+const SEAT_PANS = { 1: [14, 54, 74, 114], 2: [14, 44, 84, 114], 6: [14, 114, 14, 114], 11: [64, 124, 4, 64] };
+for (const b of [3, 7, 8, 9]) SEAT_PANS[b] = SEAT_PANS[1];
+SEAT_PANS[4] = SEAT_PANS[2];
+// ...and two sounds a player's own pitch too (0x80027AE4): Streaming
+// Stampede's count, Egg Emergency's catch
+const SEAT_PITCH = { 0x3f02: [1.34, 1, 0.85, 0.68], 0x7f01: [0.97, 1, 0.98, 0.99] };
+// (a sound file from before the sounds had their ids: the columns on the screen)
+const OLD_SEAT_PAN = [20, 49, 78, 108];
 
 let ctx = null, master = null, noiseBuf = null, muted = false;
 let pack = null; // the game whose sounds play: { url, standIns, engine, loading, song }
@@ -79,9 +88,9 @@ export function isMuted() { return muted; }
 // ---- music ----
 
 // Start one of the game's songs by name ("egg", "win"...), or stop the one
-// playing (null), fading over the given frames (the games fade their song for
-// 40 at the finish). once: a jingle, which is skipped rather than played late
-// if the sound file isn't in yet.
+// playing (null), fading over the given frames (some games fade their song
+// for 40 as the play ends). once: a jingle, which is skipped rather than
+// played late if the sound file isn't in yet.
 export function music(name, fade = 0, once = false) {
   if (!pack) return;
   pack.song = once ? null : name;
@@ -92,14 +101,15 @@ export function music(name, fade = 0, once = false) {
 
 function playSong(name) {
   startSong(pack.engine, name);
-  if (name === "win") pack.song = null; // a fanfare: plays once
 }
 
 export function startSong(engine, name) {
+  if (!(name in engine.bank.songs)) return false; // (an older sound file)
   engine.play(MUSIC, engine.bank.songs[name]);
   const p = engine.players[MUSIC];
   p.fadeVolumeScale = MUSIC_VOLUME;
   if (engine.bank.tempo?.[name]) p.tempoChange = engine.bank.tempo[name] * 48; // (a song the game plays faster)
+  return true;
 }
 
 // The song playing, faster by bpm beats a minute (audio command 0x49, as
@@ -111,36 +121,102 @@ export function musicTempo(bpm) {
 
 // ---- sound effects ----
 
-// One of the game's sounds on the effects sequence, as the game plays it: it
-// fills a channel's state (volume, reverb, pan: the script reads them every
-// update) and IO ports (the sound's table and number, then "go"). The game
-// picks a free channel among the ones the sound may use.
-export function trigger(engine, name, seat) {
+// One of the game's sounds on the effects sequence, as the game plays it
+// (0x80027BC4, 0x8002701C): it fills a channel's state (volume, reverb, pan:
+// the script reads them every update) and IO ports (the sound's table and
+// number, then "go"). seat: whose it is (0-3), or none; how: { pan (0-127) or
+// x (the place the game works out, a byte: 0x8002780C), pitch (times its
+// own), frames (it stops after that many: 0x80027764) }.
+export function trigger(engine, name, seat, how = {}) {
+  if (seat !== null && typeof seat === "object") { how = seat; seat = undefined; } // (sound(name, { pan }))
   const s = engine.bank.sounds[name], p = engine.players[EFFECTS];
-  if (!s || !p.enabled) return false;
-  const chans = [];
-  for (let i = 0; i < 16; i++) if (s.chans & (1 << i)) chans.push(p.channels[i]);
-  const c = chans.find((ch) => ch.io[2] !== 1) || chans[0];
-  c.sfxName = name;
+  if (!s || !p.enabled) return null;
+  const c = channelFor(p, s, seat);
+  const turn = (c.sfxTurn || 0) + 1;
+  Object.assign(c, { sfxName: name, sfxSeat: seat, sfxTurn: turn });
   c.sfxState[0] = s.vol;
   c.sfxState[1] = s.rev;
-  c.sfxState[2] = seat === undefined ? 64 : typeof seat === "object" ? seat.pan : SEAT_PAN[seat];
-  c.sfxPitch = s.pitch;
+  place(c, s, seat, how);
   c.io[3] = s.n >> 7;
   c.io[1] = (s.n << 24) >> 24;
   c.io[0] = 1;
+  if (how.frames) {
+    setTimeout(() => {
+      if (c.sfxTurn !== turn || c.sfxName !== name) return; // (the channel's playing another by now)
+      stopChannel(c);
+      engine.wake();
+    }, how.frames * FRAME_MS);
+  }
   engine.wake();
-  return true;
+  return c;
+}
+
+// The channels a sound may use (its entry's), turned round to the player's own
+// if the game gives each player theirs for it (its flags' bit 1, not in bank
+// 6: by the player x how many it has, 0x80027D00); a free one, else the first.
+const isSeat = (z) => Number.isInteger(z) && z >= 0 && z < 4;
+function channelFor(p, s, seat) {
+  let mask = s.chans;
+  if (s.flags & 2 && s.id >> 12 !== 6 && isSeat(seat)) {
+    let n = 0;
+    for (let i = 0; i < 16; i++) n += (mask >> i) & 1;
+    const k = (seat * n) % 16;
+    mask = ((mask << k) | (mask >>> (16 - k))) & 0xffff;
+  }
+  const chans = [];
+  for (let i = 0; i < 16; i++) if (mask & (1 << i)) chans.push(p.channels[i]);
+  return chans.find((ch) => ch.io[2] !== 1) || chans[0];
+}
+
+// A sound's pan and pitch (0x8002701C). An entry with its flags' bit 0 is
+// panned by its place, 64 + the game's byte (held to 0-127), or for a player
+// by its column (0x80027A18); else, and with neither, it's in the middle. The
+// pitch is the entry's, times what the game asks for (and a player's own, for two).
+function place(c, s, seat, how) {
+  const bySeat = isSeat(seat) && how.pan === undefined && how.x === undefined;
+  let pan = 64;
+  if (s.flags === undefined) pan = how.pan ?? (bySeat ? OLD_SEAT_PAN[seat] : 64);
+  else if (s.flags & 1) {
+    if (how.x !== undefined) pan = how.x >= 64 ? 127 : how.x < -64 ? 0 : 64 + how.x;
+    else if (how.pan !== undefined) pan = how.pan;
+    else if (bySeat) pan = SEAT_PANS[s.id >> 12]?.[seat] ?? 64;
+  }
+  c.sfxState[2] = Math.max(0, Math.min(127, Math.round(pan)));
+  c.sfxPitch = s.pitch * (how.pitch ?? 1) * ((bySeat && SEAT_PITCH[s.id]?.[seat]) || 1);
 }
 
 // Stop a sound that plays until it's stopped (a crowd, say), as the game's
 // sound manager does once the sound's no longer asked for: 0 on its channel's
-// port 0 (port 2 is 1 while it plays). No name: every sound still playing
-// (and the effects back on after a hush).
-export function stopSound(name) {
+// port 0 (port 2 is 1 while it plays). With a seat, only that player's. No
+// name: every sound still playing (and the effects back on after a hush).
+export function stopSound(name, seat) {
+  for (const k of [...holding.keys()]) {
+    const h = holding.get(k);
+    if ((!name || h.name === name) && (seat === undefined || h.seat === seat)) holding.delete(k);
+  }
   if (!pack?.engine) return;
   if (!name) hush(false);
-  stopEffect(pack.engine, name);
+  stopEffect(pack.engine, name, seat);
+}
+
+// A sound the game asks for every frame it lasts (a hum: its sound manager,
+// 0x80027480, keeps one going while it's asked for and stops it once it isn't),
+// on or off. For a seat, that player's (on its own channel if the game gives it
+// one: Pichu's Power Plant's hum, Topsy-Turvy's); how as for sound(), its pan
+// and pitch followed while it plays.
+const holding = new Map(); // name/seat -> { name, seat }: the ones on
+export function hold(name, seat, on, how = {}) {
+  const key = name + "/" + seat;
+  if (!on) {
+    if (holding.delete(key) && pack?.engine) stopEffect(pack.engine, name, seat);
+    return;
+  }
+  const e = pack?.engine, s = e?.bank.sounds[name];
+  const c = s && e.players[EFFECTS].channels.find((ch) => ch.sfxName === name && ch.sfxSeat === seat && (ch.io[2] === 1 || ch.io[0] === 1));
+  if (c) return place(c, s, seat, how); // (still going: where it is now)
+  if (holding.has(key) && !e) return; // (its stand-in's played)
+  holding.set(key, { name, seat });
+  sound(name, seat, how);
 }
 
 // A hush (Eager Eevee's, before each of Aipom's fakes: 0x800280B0, sound
@@ -162,14 +238,16 @@ export function hush(on) {
   startEffects(e);
   if (m.enabled && m.state !== 2 && m.script === h.script) { m.fadeVolume = h.volume; m.recalculateVolume = true; }
 }
-export function stopEffect(engine, name) {
+export function stopEffect(engine, name, seat) {
   for (const c of engine.players[EFFECTS].channels) {
-    if (!c.sfxName || (name && c.sfxName !== name)) continue;
-    if (c.io[2] === 1) c.io[0] = 0;
-    else if (c.io[0] === 1) c.io[0] = -1; // asked for but not started yet: never mind
-    c.sfxName = null;
+    if (c.sfxName && (!name || c.sfxName === name) && (seat === undefined || c.sfxSeat === seat)) stopChannel(c);
   }
   engine.wake();
+}
+function stopChannel(c) {
+  if (c.io[2] === 1) c.io[0] = 0;
+  else if (c.io[0] === 1) c.io[0] = -1; // asked for but not started yet: never mind
+  c.sfxName = null;
 }
 
 // the effects sequence running, as the game starts it
@@ -190,12 +268,14 @@ function custom(index, value, channel) {
   return value;
 }
 
-// one of the game's sounds by name; seat: whose it is (panned to their column),
-// or { pan } (0-127: Gutsy Golbat pans by where the Golbat is)
-export function sound(name, seat) {
+// One of the game's sounds by name. seat: whose it is (0-3: on that player's
+// channel if the game gives each one, panned to its column unless how says
+// where); how: { pan, x, pitch, frames } (trigger, above). sound(name, { pan })
+// pans one that's no one's.
+export function sound(name, seat, how) {
   if (!ctx || muted || !pack) return;
   const e = pack.engine;
-  if (e && (e.hushed ? name in e.bank.sounds : trigger(e, name, seat))) return;
+  if (e && (e.hushed ? name in e.bank.sounds : trigger(e, name, seat, how))) return;
   pack.standIns[name]?.(tone, noise);
 }
 
@@ -241,10 +321,16 @@ export const sfx = {
   go: () => sound("go"),
   finish: () => sound("finish"),
   tap: () => sound("tap"),
-  win: () => {
+  // module #64's results (0x87F0A098): song 55 and 0xCA0F for 36 frames when
+  // someone won, song 56 and the crowd (0x1E09) for 40 when no one did
+  results: (draw) => {
     if (!ctx || muted || !pack) return;
-    if (pack.engine) music("win");
-    else [1047, 1319, 1568, 2093].forEach((f, i) => tone(f, i * 0.11, 0.22, { type: "triangle", vol: 0.2 }));
+    if (!pack.engine) {
+      (draw ? [523, 494, 466, 440] : [1047, 1319, 1568, 2093]).forEach((f, i) => tone(f, i * 0.11, 0.22, { type: "triangle", vol: 0.2 }));
+      return;
+    }
+    music(draw ? "draw" : "win", 0, true);
+    sound(draw ? "drawCrowd" : "winners", undefined, { frames: draw ? 40 : 36 });
   },
 };
 

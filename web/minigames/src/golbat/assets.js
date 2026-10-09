@@ -1,13 +1,15 @@
 // Loads Gutsy Golbat's files (tools/web_assets.py puts them in
 // assets/golbat/): Golbat (object 53), Jynx (110), the backdrops (image bank
 // 221: the cave, its mouth, the meadow), the Magnemite and heart strips (banks
-// 69 and 222) and each player's glow (bank 343, coloured). Lighting is done
-// on the textures' display values, as the N64 does (see src/egg/assets.js,
+// 69 and 222), each player's glow (bank 343, coloured) and the badges over
+// them (434, the shared ones: src/badge.js). Lighting is done on the
+// textures' display values, as the N64 does (see src/egg/assets.js,
 // docs/colours.md).
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { retry, attemptURL } from "../retry.js";
+import { loadBadges } from "../badge.js";
 
 const FPS = 30; // the game's animation rate
 const GLB = 100; // the exported models are in hundredths of the game's units
@@ -49,11 +51,12 @@ export async function loadAssets(base, onProgress = () => {}) {
   const jobs = [];
   let done = 0;
   const job = (p) => { jobs.push(p); return p.then((x) => { onProgress(++done / jobs.length); return x; }); };
-  const [models, pics] = await Promise.all([
+  const [models, pics, badges] = await Promise.all([
     Promise.all(MODELS.map((m) => job(gltf(base + m + ".glb")))),
     Promise.all(PICTURES.map((p) => job(texture(base + p + ".png")))),
+    loadBadges(job),
   ]);
-  const out = {};
+  const out = { badges };
   MODELS.forEach((name, i) => {
     const g = models[i];
     prepare(g.scene);

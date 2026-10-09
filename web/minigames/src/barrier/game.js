@@ -17,6 +17,7 @@ import { makeModel, piece, COURT_PIECES } from "./assets.js";
 import { combiner, dress } from "../n64fx.js";
 import * as R from "./rules.js";
 import { leadFor } from "../lag.js";
+import { faceOnRender } from "../facing.js";
 
 // frames after the end before the round's over (the winners' dance: made for
 // the remake, the game shows its results over them)
@@ -71,6 +72,7 @@ export class Game {
     this.assets = assets;
     this.listeners = {};
     const add = (o) => { scene.add(o); return o; };
+    faceOnRender(scene); // (the ball's glint: its joint drawn facing the camera, however the ball turns)
     // the court
     for (const name of COURT_PIECES) {
       const p = add(piece(assets[name], COURT));

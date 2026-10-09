@@ -62,7 +62,13 @@ LETTERS = "BCDFGHJKLMNPQRSTVWXZ"  # no vowels, so no code spells a word
 LEVELS = ("easy", "normal", "hard")
 GRACE = 8  # s a dropped connection keeps its seat
 LEAD = 800  # ms from "start" to the countdown, so it reaches everyone before
-GO_DELAY = 2650  # ms of countdown before GO (COUNTDOWN in the game's main.js)
+# The countdown, as the games' shared module (#64) runs it: GO four steps in
+# (0x87F006BC), 20 frames each at 30 a second, or the game's own (0x87F00020);
+# the shell (web/minigames/src/main.js, games.js) has the same
+FPS = 30
+COUNT_STEP = 20
+COUNT_STEPS = dict(golbat=25, stampede=25)
+GO_DELAY = 4 * COUNT_STEP * 1000 / FPS  # ms of countdown before GO (2.67 s), and longer for those
 SETTLE_LAG = 3  # s after a drop reaches the hands, it's judged even if its device hasn't reported it
 SLACK = 2  # s a device's clock may be off from the server's
 END_WAIT = 5  # s after the last drop: the round ends even if a device hasn't finished (one in the background)
@@ -415,12 +421,17 @@ def join(ws, msg):
         return room, m
 
 
+def go_delay(game):
+    """ms from the countdown's start to GO in the minigame."""
+    return GO_DELAY * COUNT_STEPS.get(game, COUNT_STEP) / COUNT_STEP
+
+
 def start(room):
     room.round += 1
     room.state = "playing"
     room.seed = random.getrandbits(31)
     room.at = clock() + LEAD
-    room.go = room.at + GO_DELAY
+    room.go = room.at + go_delay(room.minigame)
     room.lineup = {s: dict(id=m.id, name=m.name) for s, m in room.members.items() if m.away is None}
     if room.minigame == "clearcut":
         room.game = clearcut_rules.Round(room.seed, room.level, cpus=len(room.lineup) < SEATS)

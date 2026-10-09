@@ -24,9 +24,10 @@ What isn't known yet, roughly by how useful it would be.
   quad that flashes red with a smash; `0x86307158`: a big triangle with image
   bank 147's star); the trail's colour (its combiner takes K5, the convert
   constant, which nothing seems to set: the remake takes it as 0, so env's
-  colour); the barrier panel's shade (its recipe takes the lit vertex's
-  colour, which the remake takes as white: the battle lighting below); and
-  the countdown's length (`0x87F00688`).
+  colour); and the barrier panel's shade (its recipe takes the lit vertex's
+  colour, which the remake takes as white: the battle lighting below). (The
+  countdown's length is settled: module #64's 20 frames a count, GO at 80,
+  [minigames.md](minigames.md#the-shared-module-64-the-countdown-and-the-results).)
 - **Rampage Rollout's loose ends** (its rules are read: [minigames.md](minigames.md#rampage-rollout)):
   image bank 343 (Gutsy Golbat's glow: loaded by module #52, but nothing
   found draws it); the Donphan that run in from by the camera before the
@@ -48,9 +49,9 @@ What isn't known yet, roughly by how useful it would be.
   `0x86004544` (a RAPID SPIN's charge, by its look), which nothing calls; and
   the instructions' show (`0x860057D0`), which the remake leaves out.
 - **Furret's Frolic's loose ends** (its rules are read: [minigames.md](minigames.md#furrets-frolic)):
-  the countdown's length (module #64's period, 30 frames a count, is assumed:
-  where it's set wasn't traced; it puts the Furret's popping up at its frame 0
-  at GO); the size of the labels over the Furret and the badges over the goals
+  the Furret's popping up (the countdown is module #64's, 20 frames a count
+  and GO at 80, so a clip started with it is at frame 80 at GO, not 0: which
+  frame the game starts it at wasn't traced); the size of the labels over the Furret and the badges over the goals
   (the game scales the badges' 200-unit quad by 9, too big to be the units
   the remake has, so it picks a size; and the labels are drawn by module #64,
   not read); the lights' ways (worked out from the camera's angles at

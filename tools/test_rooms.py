@@ -20,6 +20,7 @@ import http.server
 import json
 import math
 import os
+import re
 import socket
 import struct
 import sys
@@ -332,6 +333,20 @@ def _():
     fall = clearcut_rules.Fall(2)
     got = [clearcut_rules.judge(fall, {"T": 20}, f) for f in (20, 19, 18, 13, 21, 25, 26, 0, None)]
     assert got == [20, 10, 5, -10, -1, -5, -10, -10, -10], got
+
+
+@check("the countdown is each game's own (GO four steps in), as web/minigames/src/games.js has it")
+def _():
+    js = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "minigames", "src", "games.js")).read()
+    ids = [(m.start(), m.group(1)) for m in re.finditer(r'\bid: "(\w+)"', js)]
+    steps = {}
+    for m in re.finditer(r"\bcountdown: \{([^}]*)\}", js):
+        step = re.search(r"\bstep: (\d+)", m.group(1))
+        if step:
+            steps[[g for at, g in ids if at < m.start()][-1]] = int(step.group(1))
+    assert sorted(g for _, g in ids) == sorted(rooms.GAMES) and steps == rooms.COUNT_STEPS, steps
+    assert rooms.COUNT_STEP == 20 and rooms.FPS == 30 and steps == dict(golbat=25, stampede=25)  # (module #64's; theirs)
+    assert rooms.go_delay("egg") == rooms.GO_DELAY and rooms.go_delay("stampede") == rooms.GO_DELAY * 1.25
 
 
 @check("Eager Eevee: the rounds match the game's, bit for bit")
@@ -1003,6 +1018,7 @@ def _():
         a.send("start")
         st = a.wait("start")
         assert st["game"] == "golbat" and st["gb"] == dict(done=None, pads=[[], [], None, None]), st
+        assert st["go"] - st["at"] == rooms.GO_DELAY * 25 / 20, st  # (its countdown's steps are 25 frames)
         go, r = st["go"], st["round"]
         g = rooms.rooms[code].game
         assert g.cpus == [False, False, True, True]

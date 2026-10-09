@@ -84,7 +84,13 @@ What each minigame's code module asks for:
 Rampage Rollout passes its song in a register (`0x86408CA0`: the song, and
 frames to wait, the old one fading meanwhile). After the finish, the
 minigame results (module #45) play songs 76 (sequence 115) and 55
-(sequence 94, a 3.6 s fanfare; song 57, sequence 96, is another).
+(sequence 94, a 3.6 s fanfare; song 57, sequence 96, is another). Each
+minigame's own results, module #64's banner ([minigames.md](minigames.md#the-shared-module-64-the-countdown-and-the-results)),
+play song 55 with `0xCA0F` when someone won, or song 56 (sequence 95) with the
+crowd (`0x1E09`) when no one did, for 36 or 40 frames (`0x80027764`), and song
+80 (sequence 119) 120 frames after the banner's down; the remake ships 55 and
+56 in every minigame's file, not 80 (`ps2tool/audio.py` can't follow its
+script yet).
 
 ## Sound effects
 
@@ -102,9 +108,42 @@ to end in an effect table at `0x80090E88`, 16 bytes each:
 | 8 | reverb |
 | 9 | pan (64) |
 | 10 | u16 the channels it may use |
-| 13 | flags; bit 0: pan by the player's position |
+| 13 | flags: bit 0, panned by where it is; bit 1, on a channel of each player's own; the top four, a random pitch (`0x80026980`) |
 
 Bank 7 is Egg Emergency's own, bank 12 is shared by the minigames.
+
+**Who and where** (`0x80027BC4` takes every request; `0x8002701C` fills the
+channel's state). The game asks with a player and a place, a pointer to a
+byte the game works out (and keeps up to date) for the pan:
+
+| Call | Player, place |
+|---|---|
+| `0x800279B4(id)` | none, the middle (`0x80090E64`: 0) |
+| `0x80027764(id, frames)` | the same; a held sound (below) that lasts that many frames |
+| `0x80027A18(id, player)` | the player's column: its byte of the pairs at `0x80090E64`, by the sound's bank (`0x800A3B78`): banks 1, 3, 7, 8 and 9 −50, −10, 10, 50; 2 and 4 −50, −20, 20, 50; 6 −50, 50, −50, 50; 11 0, 60, −60, 0; the others 0. Two ids get the player's pitch too (`0x80027AE4`): `0x3F02` 1.34, 1, 0.85, 0.68 and `0x7F01` 0.97, 1, 0.98, 0.99 |
+| `0x8002780C(id, player, place)`, `0x800277E0(id, place)` | the game's place: where the thing is (e.g. `0x87C03B60` projects it to the screen, ±127) |
+| `0x800278B0(id, player, place, pitch)` | the same, with a pitch; for `0x4000` (Topsy-Turvy's hum) it's pitch × 0.5 + 0.25, then −0.05, +0.05, 0 and −0.1 for players 1-4 |
+
+An entry with flag bit 0 is panned 64 + the place's byte (from 64 up 127,
+under −64 0); one without plays in the middle. Bit 1 gives each player
+channels of their own: the entry's channels turned left by the player × how
+many there are (`0x80027D00`; a player's turn, shock or hum in Pichu's Power
+Plant is on channel p, its hum's on 4 + p), so one player's sound doesn't cut
+another's; bank 6's entries keep theirs. The pitch is the entry's times the
+one asked for.
+
+An id's middle digit is F for a sound that plays once. Any other is one of 15
+**held** sounds' slots (`0x80090DE4`, 8 bytes each; with bit 1 the player is
+added to it): asked for again each frame it carries on, its state (pan and
+all) brought up to date, and the frame it isn't asked for it's stopped
+(`0x80027480`); or it lasts the frames `0x80027764` gives. A held sound's
+script plays until it's stopped.
+
+The remake (`web/minigames/src/audio.js`) does the same: `tools/web_assets.py`
+puts each sound's id and flags in the game's sound file (found in the table by
+its sound number, volume, reverb and channels), `sound(name, seat, how)` plays
+one for a player (its channel, its column's pan) or at a place, and
+`hold(name, seat, on)` keeps a held one going for each player that asks.
 
 They play on **sequence player 2, running sequence 9** (`0x80027E20` starts
 it, at volume 0.648), whose 16 channels each wait for a sound. To play one the
@@ -128,7 +167,7 @@ uses:
 | `0x7F02` | `0x4F` | 38, 6, 18 | a Voltorb goes off (Chansey plays clip 13, hurt) |
 | `0x7F00` | `0x4D` | 36, twice | with it, if Chansey had eggs to lose (*by context*) |
 | `0x7F05` | `0x2F` | 81, instrument 35 | a drop falls in the water (*by context*) |
-| `0x7F03`, `0x7F04` | `0x66`, `0x67` | 79, 80 | on what a function of module #64 returns (*unknown*) |
+| `0x7F03`, `0x7F04` | `0x66`, `0x67` (pitch 1.19) | 79, 80 | each count of module #64's countdown; GO (`0x868066B8`) |
 | `0xCF00` | `0x7C` | 96 | a count's 3, 2 and 1 (in Topsy-Turvy's code) |
 | `0xCF06` | `0x28` | 33, three times | the same count's 0 (the remake plays it for GO!) |
 | `0xCF0B` | `0x86` | 86 | the finish whistle (the song fades out for 40 frames with it) |
@@ -136,9 +175,9 @@ uses:
 The finish whistle's script is shared by sounds `0x85`, `0x86`…: it writes
 its note (21 + the sound number − 133) into itself before playing it.
 
-An id's middle digit isn't always `F`: the game calls `0x80027764(id, pan)`
-too, and ids like `0x1005` or `0x1B06` are bank 1's entries 5 and 6 all the
-same (the low byte is the entry). Clear Cut Challenge's (module #53) are bank
+An id's middle digit isn't always `F` (a held sound's slot, above): ids like
+`0x1005` or `0x1B06` are bank 1's entries 5 and 6 all the same (the low byte
+is the entry), and the game asks for some with `0x80027764(id, frames)`. Clear Cut Challenge's (module #53) are bank
 1's, and the shared ones it uses:
 
 | Id | Sound | Effects of font 12 | When (from the code) |
@@ -171,7 +210,7 @@ Pichu's Power Plant's (module #54) are bank 2's, the minigame's own:
 | `0x2F03` | `0x16` | 19 | an Electrode pops out |
 | `0x2F04`-`0x2F07` | `0x17`-`0x1A` | 20-23 | player 1-4 turns to a new direction, panned |
 | `0x2F08` | `0x1B` | 24 | a shock (a miss) starts |
-| `0x200B` + 0x100 × player | `0x1E` (volume 70) | its own script | every frame a player charges (the hum: it goes on until it's no longer asked for) |
+| `0x200B` + 0x100 × player | `0x1E` (volume 70) | its own script | every frame a player charges (the hum: it goes on until it's no longer asked for), each on its own channel (4 + the player) |
 | `0x2F09`, `0x2F0A` | `0x1C`, `0x1D` | instruments | a loser zapped, 50 frames after the finish (1P and 4P; 2P and 3P) |
 | `0x2F0C`, `0x2F0D` | `0x1F`, `0x29` | instruments | 50 frames after the finish, unless all four won |
 | `0x2F0E`-`0x2F10` | `0x2A`-`0x2C` | instruments | 70, 90 and 110 frames after it |
@@ -290,12 +329,15 @@ channel. Sound `0x41`'s script works out its effect from the sound number as
 `0x5F01` (sound `0x3C`, rolling's) and `0x5F02` (`0x39`) aren't asked for by
 module #52 by that id.
 
-Topsy-Turvy's (module #47) are bank 4's (`0x4F00`-`0x4F07`; `0x4400` and
-`0x4401` are its first two entries), placed by where the Hitmontop is
-(`0x86001924`: `0x87C03B60`), and Gutsy Golbat's heart for a point. The hum
-is asked for every frame a Hitmontop spins (`0x860032DC`, `0x800278B0`, with a
-pitch): all four share its one channel, so the remake hums for this device's
-own. Sound `0x36`'s script picks its effect as it plays (40), so
+Topsy-Turvy's (module #47) are bank 4's (`0x4F00`-`0x4F07`; the hum's
+`0x4000` and `0x4401` are its first two entries, held), placed by where the
+Hitmontop is (`0x86001924`: `0x87C03B60`), and Gutsy Golbat's heart for a
+point. The hum is asked for every frame each Hitmontop spins (`0x860032DC`,
+`0x800278B0`, with the player, its place and a pitch): both entries have flag
+bit 1, so each player's is on its own channel (0-3, and 4-7 for `0x4401`),
+and `0x800278B0` remaps `0x4000`'s pitch, 1.25 (or 1) to 0.825, 0.925, 0.875
+and 0.775 for players 1-4 (0.70, 0.80, 0.75, 0.65). The remake hums for all
+four, each placed where it is, at the pitch asked for. Sound `0x36`'s script picks its effect as it plays (40), so
 `tools/web_assets.py` lists it by hand. Its count and GO are Pichu's Power
 Plant's (`0x2F00`, `0x2F01`); the shared count (`0xCF00`) sounds 3, 2 and 1
 seconds before the time's up, `0xCF06` at 0 (the clock's last second). In the
@@ -304,7 +346,7 @@ frames (450 / 15, entry 4 of `0x800A3B30`'s table), to 15.
 
 | Id | Sound | Effects of font 12 | When (from the code) |
 |---|---|---|---|
-| `0x4400` | `0x30` (volume 75; pitch 1.25, 1 while its RAPID SPIN recharges) | | every frame a Hitmontop spins |
+| `0x4000` | `0x30` (volume 75; asked for at pitch 1.25, 1 while its RAPID SPIN recharges, then remapped) | | every frame a Hitmontop spins |
 | `0x4401` | `0x31` (volume 98, pitch 1.75) | | instead, in a RAPID SPIN |
 | `0x4F02` | `0x32` | | a RAPID SPIN |
 | `0x4F03`, `0x4F07`, `0x4F04` | `0x33`, `0x37`, `0x34` | | a bump: harder than 700000, 2000000, and 8000000 with a RAPID SPIN |
@@ -339,8 +381,8 @@ seconds. In the last 30 seconds it calls `0x80028108(8)`: entry 8 of
 `0x800A3B30`'s jump table is the default, 80 beats a minute, so one faster
 every 5 frames (450 / 80, in whole frames) for 450 frames: 90 faster in all.
 The strain (`0x8F10`, `0x8F11`) is asked for every frame a Delibird walks
-with four or five gifts; it shares two channels, so the remake strains for
-this device's own.
+with four or five gifts; it has flag bit 1, so each player's is on two
+channels of its own (the remake strains for this device's own).
 
 | Id | Sound | When (from the code) |
 |---|---|---|

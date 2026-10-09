@@ -13,6 +13,7 @@
 import * as THREE from "three";
 import { makeModel } from "./assets.js";
 import * as R from "./rules.js";
+import { makeBadge, PICTURE } from "../badge.js";
 
 // each lane's left edge (0x86710C08) and its belt's shift from the middle (0x8670C084)
 export const LANE_X = [0, 1, 2, 3].map((p) => (p * 120 - 240) * 2.3);
@@ -37,8 +38,9 @@ const DIGLETT = 36 * 3.5; // its 36 x 36 pictures, 3.5x
 const SHADOW = { size: 90, y: 10, color: 0x0c1602 };
 const AURA = 0.55;
 const COIN = { w: 20 * 3.5, h: 16 * 3.5, y: 150, z: -50 }; // (half the game's size here: its quads may be smaller than the pictures)
-// the others' badges on each belt, where they are along the track (0x86706B88: 3.2x, alpha 0x8C)
-const GHOST = { w: 32 * 3.2, h: 16 * 3.2, y: 120, far: 600, alpha: 0x8c / 255 };
+// the others' badges on each belt, where they are along the track (0x86706B88, 0x86706D3C: pool
+// sprites, bank 434's 36 x 28 at 3.2x, pitched -0x3000; drawn by DL 0x86700418, alpha its prim's 0x64)
+const GHOST = { scale: 3.2, pitch: (-0x3000 / 0x10000) * 2 * Math.PI, y: 120, far: 600, alpha: 0x64 / 255 };
 // The camera: eye D away at an azimuth and elevation (binary angles), looking at
 // `at`, fov up and down (0x8670675C). The play's view, and the opening glide
 // to it during the count (0x8670A07C: from the side, low and near, round to
@@ -103,9 +105,8 @@ export class Game {
       coin.scale.set(COIN.w, COIN.h, 1);
       coin.renderOrder = 5;
       const ghosts = [0, 1, 2, 3].filter((q) => q !== p).map((q) => {
-        const s = add(new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, opacity: GHOST.alpha, depthTest: false })));
-        s.scale.set(GHOST.w, GHOST.h, 1);
-        s.renderOrder = 4;
+        const s = add(makeBadge({}, { size: PICTURE, scale: GHOST.scale, opacity: GHOST.alpha, depthTest: false, flat: true, renderOrder: 4 }));
+        s.rotation.x = GHOST.pitch;
         s.visible = false;
         return { q, s };
       });

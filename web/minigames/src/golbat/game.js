@@ -15,6 +15,7 @@ import * as THREE from "three";
 import { makeModel } from "./assets.js";
 import * as R from "./rules.js";
 import { leadFor } from "../lag.js";
+import { makeBadge } from "../badge.js";
 
 // the frame the play ends on (the cave's stopped), and how long the winners
 // cheer before the round's over (made for the remake: the game shows its
@@ -45,6 +46,11 @@ const JYNX = { y: -242.92343, z: -100, s: 0.2, yaw: -0xfff, len: 79, throwAt: [8
 // goes faster, 20 behind; its alpha 125 +- 25, 15 degrees a frame:
 // 0x86109AE0); fading out once the meadow's come
 const GLOW = { size: 64, s: 2.25, z: -20 };
+// the badge over each (module #64's label, 0x86107D7C: image bank 434, 1P-4P
+// or a CPU's COM in its colour), 28 x 1.9 over its middle, the object 1.75,
+// its env alpha 0xC8 (0x861047CC-0x861048F8); from the countdown on, gone
+// from a loser as it falls (0x86104370)
+const BADGE = { up: 28 * 1.9, scale: 1.75, alpha: 0xc8 / 255 };
 // the players' colours: a dashing Golbat's tint (0x8610362C)
 const DASH_TINT = [0xc8c8ff, 0x96dc96, 0xff9696, 0xffff64].map((c) => new THREE.Color(c));
 const WHITE = new THREE.Color(0xffffff), RED = new THREE.Color(0xff0000);
@@ -95,7 +101,8 @@ export class Game {
       add(model.root);
       const glow = add(new THREE.Sprite(new THREE.SpriteMaterial({ map: assets["glow" + z], transparent: true, depthWrite: false })));
       glow.renderOrder = -1;
-      return { model, glow, ox: 0, oy: 0, wing: 0, rate: 1, end: null };
+      const badge = add(makeBadge(assets.badges, { scale: BADGE.scale, opacity: BADGE.alpha }));
+      return { model, glow, badge, ox: 0, oy: 0, wing: 0, rate: 1, end: null };
     });
     // Jynx
     this.jynx = makeModel(assets.jynx, JYNX.s);
@@ -145,6 +152,7 @@ export class Game {
     this.jynxHearts = [];
     this.offsets = [0, 1, 2, 3].map(() => [0, 0]);
     for (const g of this.golbats) { g.end = null; g.wing = Math.random() * FLY_LEN; g.glowA = 125; g.glowN = Math.floor(Math.random() * 361); }
+    this.golbats.forEach((g, z) => g.badge.seat(z, this.cpus[z]));
     for (const [, s] of this.sprites) { s.visible = false; this.free[s.userData.kind].push(s); }
     this.sprites.clear();
     for (const s of this.sparks) s.sprite.visible = false;
@@ -418,6 +426,9 @@ export class Game {
       }
       m.root.position.set(x, y, zz);
       m.root.scale.setScalar(s);
+      // its badge (pushed up with it as it grows at the end)
+      v.badge.position.set(x, y + BADGE.up * s, zz);
+      v.badge.visible = this.state !== "idle" && !(v.end && !v.end.win && v.end.n > 15);
       m.root.rotation.y = v.end ? deg(0x3fff) : deg(g.yaw);
       m.pose(clip, f);
       // its colour: a dash's tint, red when knocked, flashing white when hurt

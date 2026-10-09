@@ -14,6 +14,7 @@
 import * as THREE from "three";
 import { makeModel, makeStrip } from "./assets.js";
 import { dress } from "../n64fx.js";
+import { faceOnRender } from "../facing.js";
 import * as R from "./rules.js";
 
 // the Pichus (0x86606DD4), 0.7x, facing the camera
@@ -70,6 +71,7 @@ export class Game {
     this.scene = scene;
     this.assets = assets;
     this.listeners = {};
+    faceOnRender(scene); // (the lamps' faces and the dizzy stars: their joints drawn facing the camera)
     this.frame3d = makeModel(assets.frame, 1);
     scene.add(this.frame3d.root);
     this.lamps = LAMPS.map((row) => row.map(([x, y], k) => {

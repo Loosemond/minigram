@@ -18,6 +18,7 @@ import { makeModel } from "./assets.js";
 import { combiner, dress } from "../n64fx.js";
 import * as R from "./rules.js";
 import { leadFor } from "../lag.js";
+import { faceOnRender } from "../facing.js";
 
 // frames after the play's over before the round is (the winners going to their spots)
 export const AFTER = 3 * R.FPS;
@@ -62,6 +63,7 @@ export class Game {
     this.assets = assets;
     this.listeners = {};
     const add = (o) => { scene.add(o); return o; };
+    faceOnRender(scene); // (the sparks, and bits of Hitmontop: their joints drawn facing the camera)
     // the ring: the game's picture, where the camera sees it (a quad 4:3 across the game's view, far
     // off), and its brick floor going on round it for a window wider or taller than the game's
     const dir = new THREE.Vector3(...CAMERA.at).sub(new THREE.Vector3(...CAMERA.eye)).normalize();
@@ -108,7 +110,7 @@ export class Game {
       return v;
     });
     // the sparks, one of each kind for each pair (0x86005B3C): object 199, six streaks flying out of
-    // where they bumped, and 200 with a RAPID SPIN, a flash; facing the camera (their joints' flag 2)
+    // where they bumped, and 200 with a RAPID SPIN, a flash; facing the camera (their joints' flag 2: src/facing.js)
     this.sparks = PAIRS.map(() => {
       const s = { spark: makeModel(assets.spark, SPARK_SCALE), flash: makeModel(assets.flash, SPARK_SCALE), t: 0, flashT: 0, at: new THREE.Vector3() };
       s.sparkMats = dress(assets.fx, s.spark.model, "spark");
@@ -116,7 +118,6 @@ export class Game {
       for (const m of [s.spark, s.flash]) { m.root.renderOrder = 4; m.root.visible = false; add(m.root); }
       return s;
     });
-    this.camQ = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(new THREE.Vector3(...CAMERA.eye), new THREE.Vector3(...CAMERA.at), new THREE.Vector3(0, 1, 0)));
     this.reset("normal");
     this.state = "idle";
   }
@@ -154,7 +155,7 @@ export class Game {
     this.lastSecond = null;
     this.before = null; // where things were before the last frame (to draw between)
     this.offsets = [0, 1, 2, 3].map(() => [0, 0, 0]);
-    if (this.loops) for (const name in this.loops) this.loop(name, false);
+    this.quiet();
     this.loops = {};
     this.hitAt = {}; // (each pair's last bump sound, so a long one doesn't drone)
     for (const s of this.sparks) { s.t = 0; s.flashT = 0; }
@@ -165,7 +166,7 @@ export class Game {
     this.draw(0);
   }
   start() { this.state = "play"; }
-  stop() { this.state = "over"; this.loop("hum", false); this.loop("humCharge", false); this.loop("humSpin", false); }
+  stop() { this.state = "over"; this.quiet(); }
   setControl(z, c) {
     if (c === "cpu" && !this.cpus[z]) return; // (a person who left: their Hitmontop spins on, unsteered)
     this.control[z] = c;
@@ -288,17 +289,21 @@ export class Game {
         if (n !== this.tempoN) { this.tempoN = n; this.emit("tempo", n); }
       }
     }
-    // the hum of this device's own Hitmontop spinning (0x4400 and 0x4401, asked for each frame: 0x860032DC)
-    const p = w.p[this.me], spinning = !w.over && [1, 2, 3, 6].includes(p.state);
-    this.loop("humSpin", spinning && p.spin > 0);
-    this.loop("humCharge", spinning && !(p.spin > 0) && p.cool > 0 && p.state === 3);
-    this.loop("hum", spinning && !(p.spin > 0) && !(p.cool > 0 && p.state === 3));
+    // every Hitmontop's hum while it spins (0x4000, 0x4401 in a RAPID SPIN: asked for each frame, 0x860032DC),
+    // each on its own channel, placed where it is
+    for (let z = 0; z < 4; z++) {
+      const p = w.p[z], spinning = !w.over && [1, 2, 3, 6].includes(p.state), pan = this.pan(p.pos[0]);
+      this.loop("humSpin", z, spinning && p.spin > 0, pan);
+      this.loop("humCharge", z, spinning && !(p.spin > 0) && p.cool > 0 && p.state === 3, pan);
+      this.loop("hum", z, spinning && !(p.spin > 0) && !(p.cool > 0 && p.state === 3), pan);
+    }
   }
-  loop(name, on) {
-    if (!!this.loops[name] === on) return;
-    this.loops[name] = on;
-    this.emit("loop", name, on);
+  loop(name, z, on, pan) {
+    if (!on && !this.loops[name + "/" + z]) return;
+    this.loops[name + "/" + z] = on;
+    this.emit("loop", name, z, on, pan);
   }
+  quiet() { for (const k in this.loops || {}) if (this.loops[k]) this.loop(k.split("/")[0], +k.split("/")[1], false); }
   // a sound's pan: where it is across the screen
   pan(x) { return Math.round(64 + Math.max(-63, Math.min(63, (x / 2300) * 63))); }
 
@@ -428,7 +433,6 @@ export class Game {
         if (t <= 0) continue;
         const f = 16 - (t * 16) / SPARK_TIME;
         m.root.position.copy(s.at);
-        m.root.quaternion.copy(this.camQ);
         m.pose(0, f, true);
         for (const mat of mats) mat.n64.frame(f);
       }

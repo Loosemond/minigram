@@ -76,6 +76,103 @@ Worth knowing:
 - Gutsy Golbat loads Jynx for its end: she stands in the meadow outside the
   cave and throws hearts (below).
 
+## The shared module (#64): the countdown and the results
+
+Every minigame runs its countdown and its results with module #64
+(`0x87F00000`), which also has the object pools, the labels over the players
+and the particles the games use. Its state is behind `*0x87F11768`.
+
+**The countdown.** `0x87F00030` (each game's set-up) makes the step 20 frames
+(`0x87F00050`) and loads image bank 360. `0x87F00020(a0)` sets another step:
+only Gutsy Golbat (`0x86107DF0`) and Streaming Stampede (`0x869055FC`) call it,
+both with 25, and no module writes it otherwise. `0x87F00688` (`0x87F005F0`
+at a place) starts it with 5 steps to go; `0x87F006BC`, each frame, counts one
+down and says what happened (`0x87F006AC` returns it): on a whole step, 1 (a
+count) with 4, 3 and 2 steps left, 2 (GO) with 1, and 3 (over) at 0 and every
+frame after. So "3", "2" and "1" come at frames 20, 40 and 60, GO at 80 (2.67 s
+at 30 a second), and the countdown is over a step after GO; with 25, at 25, 50,
+75 and 100. The module plays nothing: each game plays its own sounds on 1 and
+2, and starts its play and song on 2 (below).
+
+Its picture, an object of the module's (`0x87F00534`; updated by
+`0x87F00138`, drawn by `0x87F003F8`), is bank 360's image for the step number
+(`0x87F0F5EC`: steps 3, 2, 1, 0 show "3", "2", "1" and "GO", images 2, 1, 0
+and 3), from the frame after each count. With t going from 0 to 1 over a step,
+it's sin(min(560t, 90°)) of its size (up in the first sixth), its width and
+height 2 × that × (1 + 0.4 sin or cos(1080t) × (1 − sin(90t))): a pop with a
+wobble that dies away. Once the countdown's over GO is squeezed away, its width
+× 0.55 and its height + 0.2 a frame, till the width's under 0.1 (6 frames).
+`0x87F0085C` prints the seconds or "GO" as text, unless the countdown's over
+(a debug print, *by appearance*).
+
+| Minigame | Step | Count, GO (`0x800279B4`) | Its play and song |
+|---|---|---|---|
+| Gutsy Golbat | 25 | `0x0F06`, `0x0F07` | at GO, song 13 (`0x861095AC`) |
+| Topsy-Turvy | 20 | `0x2F00`, `0x2F01` | when the countdown's over, a step after GO (`0x8600674C`), song 33 then (`0x860075A8`) |
+| Clear Cut Challenge | 20 | `0x1F0D`, `0x1F0E` (and the crowd `0x1B06` for 140 frames at GO) | at GO (`0x86508B94`); song 18 30 frames into each log |
+| Furret's Frolic | 20 | `0x2F00`, `0x2F01` | at GO, song 47 (`0x86204FB4`) |
+| Barrier Ball | 20 | `0x2F00`, `0x2F01` | at GO, song 35 (`0x863036A4`) |
+| Pichu's Power Plant | 20 | `0x2F00`, `0x2F01` | at GO, song 21 (`0x866049B4`) |
+| Rampage Rollout | 20 | `0x5F07`, `0x5F08` | at GO; song 34 30 frames on (`0x86406994`: `0x86408CA0(34, 30)`) |
+| Streaming Stampede | 25 | none: neither module asks for one | at GO (`0x86901D24`) |
+| Tumbling Togepi | 20 | `0x5F07`, `0x5F08` | at GO, song 46 (`0x86709108`) |
+| Delibird's Delivery | 20 | `0x2F00`, `0x2F01` | at GO, song 52 (`0x86A0184C`) |
+| Egg Emergency | 20 | `0x7F03`, `0x7F04` (`0x868066B8`) | 31 frames after GO, song 45 with it (`0x86806E94`) |
+| Eager Eevee | 20 | `0x2F00`, no GO sound | at GO; song 53 at the countdown's frame 65 (`0x86B01BB0`-`0x86B01BEC`) |
+
+**The results.** `0x87F09EBC` loads UI layouts 93-96 and image banks 444
+and 445; `0x87F0A098(results, game, ·, 1P, 2P, 3P, 4P)` starts them with the
+game's winner flags; `0x87F0A3E8` runs them each frame. Every minigame calls
+`0x87F0A098` once its round is over (when, below).
+
+- The banner: layout 93, 94 or 95 for one, two or three winners, 96 for none
+  or four (the jump table at `0x87F116A8`). In 93-95 the winners' badges,
+  `PL_1`-`PL_3` (image bank 435, 48×39: image 5 + the player for a person, 1 +
+  the player for a COM, `0x87F0A0E0`; in seat order), stand 44 apart at y 69
+  of the 320 × 240 screen, and "WINS" (bank 442 image 1, 100×36) after them at
+  y 71, the lot centred; 96 is "DRAW" (442 image 0, 136×36) at (92, 71).
+- At once: with one to three winners, song 55 (`0x87F0A370`) and `0xCA0F`
+  (`0x80027764(0xCA0F, 36)`: held for 36 frames); else song 56 and the crowd,
+  `0x1E09`, for 40. For everyone, whoever's device it is.
+- The banner falls from a screen above (y −240): its speed goes up 58.8 /
+  tv_rate a frame (0.98 on NTSC), and when it reaches 0 it bounces back at 0.3
+  of it (`0x87F0A420`-`0x87F0A490`). It's first down at frame 22, still by 40.
+- From then on it counts: 60 frames on, A goes on (`0xCF02`, and song 80 if
+  it isn't on yet; the game then goes to its menu); at 120, song 80
+  (sequence 119) starts anyway.
+- The game's scene goes on under it: its winners cheering, the others not.
+- Neither the module nor any game shows a FINISH picture, and no game plays
+  the finish whistle (`0xCF0B`) at the end: each plays it once, with a 20-frame
+  fade of the screen and a 40-frame one of its song, as the player leaves the
+  instructions (e.g. `0x86B009CC`-`0x86B009F8`).
+- In a mode where `game+0x2180` is 1 (the Mini-Game Champion's, *by
+  context*) the winners are kept (`game+0x21A6` + 0x18 × player, bit 7), and
+  with no single winner "FACE OFF" (bank 445, with 444 at its end) rises from
+  the bottom (`0x87F0989C`: `0xCF11`, `0xCF10` as it stops, `0xCF17`).
+
+When each game hands over, and what its song does at the end (from the
+audits of each module; `0x87F0A098`'s callers):
+
+| Minigame | Hands over | Its song at the end |
+|---|---|---|
+| Gutsy Golbat | when the first loser lands, about 1 s after the scroll stops (`0x86100874`) | faded over 40 frames as it stops (`0x86109404`) |
+| Barrier Ball | 8 frames after the end (`0x863024A8`) | plays on |
+| Furret's Frolic | after the 40-frame fade at the time-up (`0x8620392C`, `0x86204A9C`) | faded |
+| Pichu's Power Plant | 130 frames after the finish (`0x8660429C`) | plays on |
+| Rampage Rollout | when the race's end is called (`0x8640633C`, `0x8640687C`) | plays on |
+| Streaming Stampede | 2 frames after the last points are in (`0x8690B89C`) | its own (songs 31, 32) |
+| Delibird's Delivery | as soon as the tally's counted (`0x86A07124`) | plays on (no fade, no whistle) |
+| Egg Emergency | 31 frames after the last drop is gone (`0x868058C0`, `0x86804C5C`; `0xCF06` at 5) | plays on |
+| Eager Eevee | after the tally (`0x86B09148`) | not faded (its fades are the instructions', its set-up's and the basket's) |
+| Clear Cut Challenge | after the last show (`0x86502B88`) | plays on |
+| Tumbling Togepi | `0x86706664` (*not traced*) | plays on (module #55 never fades it) |
+| Topsy-Turvy | `0x86006918`, `0x86006948` (*not traced*) | plays on |
+
+The remake's shell does the countdown and the results this way
+(`web/minigames/src/main.js`; `countdown` in `src/games.js`), the rooms
+server deals GO on the same steps (`tools/rooms.py`), and each game says when
+its round is over (its own show's length, as its code has it).
+
 ## Egg Emergency: Chansey's clips
 
 Chansey (object 144) has 16 unnamed clips. What each does was read from its
@@ -918,7 +1015,10 @@ end (`0x86709AD0`) it comes down over 40 frames to the winner (el 18.9°, D
 **The HUD** (sprites in the scene): each player's badge at both ends of its
 belt (bank 434, 4.2x, z 570 and −580), a rank coin over each Togepi (bank
 387, `0x86706A30`), and on each belt the other three's badges where they are
-along the track (`0x86706B88`, alpha 0x8C, hidden past ±600 units). The
+along the track (`0x86706B88`, `0x86706D3C`: pool sprites, bank 434's 36 × 28
+on the shared quad at 3.2x, 115 × 90, pitched −0x3000; drawn through DL
+`0x86700418`, alpha the prim's 0x64, the object's own 0x8C; hidden past ±600
+units). The
 others: a shadow under each Togepi (Eager Eevee's bank 307 picture 1, a 60 ×
 60 quad at 1.5x, in the environment colour 0x0C1602), the dust when one's
 knocked.
@@ -1052,7 +1152,11 @@ winners fly round the meadow cheering (clip 6) and the others drop to the
 floor (clips 8, 9), while Jynx throws hearts.
 
 **The HUD** (`0x86108018`): the badges (bank 434 at 0.8) at x 28, 97, 166 and
-235, y 16, each player's hearts beside them in its colour. The song is 13
+235, y 16, each player's hearts beside them in its colour. Over each Golbat
+its badge too, module #64's label (`0x86107D7C`; as Delibird's Delivery's):
+28 × 1.9 = 53.2 over its middle, the label at 1.75 (66.5 × 49), its env
+alpha 0xC8 (`0x861047CC`-`0x861048F8`), from the countdown on, gone from a
+loser as it falls (`0x86104370`). The song is 13
 (sequence 52), from GO; the count is 0x0F06 and GO 0x0F07 ([audio.md](audio.md)).
 
 **The states** (`0x861095EC`): 0-2 the instructions and the fade, 3 the
@@ -1643,7 +1747,8 @@ layout by its points, scale 0.6 × its size), rolling, and its shadow (image
 bank 307's dot, black at 128) on the field under it (`0x86201620`); each
 player's label (image bank 260: 1P-4P, or COM) above its Furret's tail
 (`0x86205500`); each player's badge (image bank 434) over its goal, on the
-field's attachments 1-4, tilted to the camera (`0x86207874`); at the top the
+field's attachments 1-4, tilted to the camera (`0x86207874`), at 0x96 alpha
+(its env's, `0x86207760`: layer 9); at the top the
 badges and points (`0x862040AC`: digits in each player's colours), and at the
 bottom right the seconds left (rounded up). The song is 47 (sequence 86), from
 GO (`0x86204F20`); in the last 30 s it speeds up (`0x80028108(11)`: a beat a
@@ -1655,7 +1760,7 @@ up, 1 standing, 2 a swing, 3 a cheer, 4 sulking, 5 a hop and 6 landing (5 and
 Furret in a bush (183) for each player.
 
 **The states** (`0x86204FEC`): 0 and 1 the instructions, 2 the fade in (the
-Furret pop up), 3 the countdown (`0x87F006BC`: 4 s, GO at its last), 4 the
+Furret pop up), 3 the countdown (`0x87F006BC`: GO at frame 80, 2.67 s, above), 4 the
 play, 5 the end, 6 and 7 the results and the menu after.
 
 The browser remake runs this world on every device and on the server, from
@@ -1797,8 +1902,14 @@ gifts; with four or five every frame the strain, `0x8F10`, `0x8F11`), 6
 cheering (round again from frame 9), 7 sulking (from 42), 8 picking up, 9
 handing over, 10 knocked over; the sack's 11 filling (to frame 0, 11, 22,
 33, 44 or 55 by how many are in it; back down as they go), 12 knocked over,
-13 and 14 at the end. Over each Delibird its label (module #64's, at 55; in
-its hop at the end, by `0x86A0D7B8`, and knocked over by `0x86A0D890`), FULL
+13 and 14 at the end. Over each Delibird its badge, module #64's label
+(`0x87F029EC` loads image bank 434; its draw, `0x87F02878`, takes 1P-4P for a
+person, `0x87F0F650`, or a CPU's COM in its colour, `0x87F0F640`): a 38 × 28
+quad round its place (`0x87F0F680`, the 36 × 28 picture across it) at 0.9,
+34.2 × 25.2, turned to the camera (model flag 8), in layer 6 (translucent,
+depth tested), T0 × ENV with the env's alpha 0xB4. It's at the Delibird's x
+and z, 55 up (`0x86A02550`; in its hop at the end, by `0x86A0D7B8`, and
+knocked over by `0x86A0D890`), on through the tally and the cheer. FULL
 (image bank 379, white through the player's colour, growing over 20 frames)
 over a full sack, a shadow (307's dot at 2.5, black at 128) under it and
 under each Swinub. A gift being picked up goes to Delibird and shrinks
