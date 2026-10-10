@@ -7,7 +7,7 @@ have a game picker; a game's code and files load the first time it's picked.
 
 | Minigame | Code | Its rules |
 |---|---|---|
-| Egg Emergency | [minigames/src/egg/](minigames/src/egg/) | made for the remake, from the game's text and Chansey's clips |
+| Egg Emergency | [minigames/src/egg/](minigames/src/egg/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#egg-emergency)) |
 | Clear Cut Challenge | [minigames/src/clearcut/](minigames/src/clearcut/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#clear-cut-challenge)) |
 | Eager Eevee | [minigames/src/eevee/](minigames/src/eevee/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#eager-eevee)) |
 | Streaming Stampede | [minigames/src/stampede/](minigames/src/stampede/) | the game's own, read from its code ([docs/minigames.md](../docs/minigames.md#streaming-stampede)) |
@@ -95,9 +95,46 @@ asked for every frame (a hum) can play for each player at once.
 Four Chansey stand on a bridge in front of a building, each under their own
 coloured roof (1P blue, 2P green, 3P red, 4P yellow), and catch falling
 eggs. Hold the left or right side of the screen (or ← →) to lean that way;
-let go to lean back. A missed egg falls past the bridge into the water and
-splashes. A Voltorb shocks you and knocks 5 eggs out. Each player gets 100
-eggs, and whoever catches the most wins. The CPUs come in three levels.
+let go (or hold both keys) to lean back. A missed egg falls past the bridge
+into the water and splashes. A Voltorb shocks you and knocks up to 5 eggs
+out. 100 eggs come down, the same for everyone; whoever catches the most
+wins. This one follows the game's own code (module #56, read from the ROM:
+[docs/minigames.md](../docs/minigames.md#egg-emergency) has where each number
+is):
+
+- **The drops** come from the game's 60 hand-made patterns, in three tiers,
+  picked by the level and the eggs still to come, in a shuffled order, each
+  mirrored half the time, with a break every few patterns. Everyone gets the
+  same drops in the same columns. The Voltorbs are rows of the patterns:
+  Normal leaves out a fifth of them and Easy three fifths (about 54 a round on
+  Hard, 37 on Normal, 17 on Easy).
+- **The fall** speeds up as it goes (y = 550 − a t², a 17, 13 or 10 by level);
+  a drop takes 1.1, 1.2 or 1.4 s to the hands, the same all round. Hard's
+  patterns also come quicker: its last drop's about 44 s in, Normal's 56, Easy's 61.
+- **Catching**: a drop counts on the frame it gets to the hands (or the one
+  after, if it only just got there) if Chansey leans its way, or idles in its
+  column. Leaning goes through the game's own lean clips (two frames), and a
+  catch clip. A Voltorb's shock stops all catching for 20 frames (a drop that
+  goes by meanwhile can still be caught as it ends), and Voltorbs pass
+  through for 50.
+- **The CPUs** are the game's: each looks for the lowest drop in a window
+  over the hands, decides once for it, dodges a Voltorb with a chance by level
+  (or goes under it), stays put for an egg with a Voltorb just over it, and
+  misses by a column now and then (more as the round goes on). On average the
+  best of three gets about 56 eggs on Easy, 66 on Normal, 86 on Hard.
+- **With no CPUs** (four people online) it plays at Easy's pace, and speeds up
+  a level when 70 and 40 eggs are left if everyone has caught at least 80 % so
+  far.
+- **The start and the end**: the song and the play start 31 frames after
+  GO!, the first egg about 2 s after it. 5 frames after the last drop's gone
+  `0xCF06` sounds, and 31 frames after the round's over: the winners cheer and
+  throw their eggs up (into the water), the others sit back, and over a
+  Chansey with all 100, PERFECT pulses in its colours.
+- **Effects**: a hurt Chansey turns red, with sparks round it (the shared
+  module's, image bank 224); the eggs it loses fly out see-through; a drop not
+  caught splashes in the water (bank 152, fading); Voltorb's sprite turns as
+  the game's does. The HUD shows each count in the big digits in the
+  player's colours, and "EGGS" with the eggs still to come.
 
 - **Landscape (PC, tablets):** one camera on all four players, framed like
   the game's screen, with a strip of the water under the bridge. Wider
@@ -129,17 +166,6 @@ then ends. It's merged into about 20 meshes, so every view draws it in a few
 calls. Because it's one 3D world, each camera, the CPU views included, lines
 up with its bay and bridge by itself.
 
-**Variety.** Everyone gets the same timeline: when something drops, what
-kind of pattern (single egg, two at once, a sweep across the columns, a
-Voltorb with an egg to go for elsewhere) and how fast, so the round stays
-fair. But each player's drops land in their own columns, with a little
-timing jitter and some eggs falling faster than others. Each CPU also rolls
-a personality around its level's skill every round: how quickly it notices a
-drop, whether it leans early or at the last moment, whether it goes back to
-the centre between drops, how much it fidgets, lapses of attention, and being
-slower for a moment after a shock. In a simulated round one CPU leaned 42
-times and another 135.
-
 **Sound.** The music and sound effects are the game's own, played the way
 the N64 plays them. There are no recordings in the ROM: a song is a sequence,
 a MIDI-like script of a few KB, whose notes play instruments made of short
@@ -153,16 +179,18 @@ the scripts 180 times a second like the console, and turns notes,
 envelopes, vibrato and pans into Web Audio events a little ahead. What plays
 ([docs/audio.md](../docs/audio.md) has how each was found):
 
-- Egg Emergency's song (song 45, a 23.6 s loop) from GO! until the finish,
-  when it fades out with the finish whistle.
+- Egg Emergency's song (song 45, a 23.6 s loop) from 31 frames after GO!,
+  playing on at the end.
 - The effects the minigame's code plays, with the game's volumes, reverbs
-  and pans (yours to your column): a catch, a Voltorb's shock and the eggs
-  it knocks out, a drop falling in the water, its own count and GO! (`0x7F03`,
-  `0x7F04`) and the whistle; and a menu sound for the buttons.
+  and pans, for everyone's Chansey (each once a frame, on the first one's
+  side): a catch, a Voltorb's shock and the eggs it knocks out, a drop
+  falling in the water (always on 3P's side, as the game has it), its own
+  count and GO! (`0x7F03`, `0x7F04`), `0xCF06` at the end, a winner's throw;
+  and a menu sound for the buttons.
 - The minigame results' fanfare (song 55) and cheer when someone won, or
   song 56 and the crowd when no one did, for everyone.
 
-Egg Emergency's file is 554 KB (483 KB gzipped): the song's samples are 138 KB, the
+Egg Emergency's file is 585 KB: the song's samples are 138 KB, the
 fanfare's another 97 and the draw's 104, the effects' 232, and the scripts 10 KB. It's fetched
 after the first tap with the sound on, so with the sound off it's never
 downloaded; until it's in, simple Web Audio tones stand in. For comparison,
@@ -175,23 +203,23 @@ each asset was found):
 
 | From the game | Made for the remake |
 |---|---|
-| Chansey (object 144) with its clips and face textures, the egg (145) | fall speeds, drop patterns and the CPU players (module #56's code isn't read yet) |
-| the stage's layout, sizes and colours (background picture 19), the window paintings' Pokémon, Voltorb's 6-frame sprite (bank 227) | the 3D stage itself and its textures, the bays beyond the players', the far bank |
-| the three-column lean-and-catch, read from Chansey's clips | where the HUD sits |
-| the rules: L/R, Voltorb costs 5 eggs and a stun, 100 eggs (text 50.11) | the reverb (the game's settings aren't known) |
-| HUD: player badges (434), "EGGS" and digits (404), "+1" / "−5" (429), countdown 3-2-1-GO! (360), the name banner (403), the winners' banner (435, 442), "The Champion!" (358) | the menus |
-| effects: the splash (152), explosion textures (object 185) | how the effects move |
-| the song, the results' songs and the sound effects (sequences 84, 94, 95 and 9; their fonts' samples) | when the song starts (at GO!) |
+| the rules, the patterns and their order, the fall, the catching, the stun, the CPUs, the speed-up with no CPUs, the start and the end (module #56's code); its random numbers' generators (seeded from the round, one for the deal and one for each CPU: the game's run on through everything) | online: each seat's leans and catches sent on, the server's copy of the rules, the others shown a little behind; the speed-up comes at the server's word |
+| Chansey (object 144) with its clips, how fast they play and what follows each, its face textures; the egg (145) and how it tumbles | the 3D stage itself and its textures, the bays beyond the players', the far bank |
+| the stage's layout, sizes and colours (background picture 19), the window paintings' Pokémon, the columns, the catch line and the drops' heights; Voltorb's 6-frame sprite (bank 227) and how it turns | where the HUD sits, the cards, the "you" arrow, the touch and keyboard controls, the portrait layout |
+| HUD: player badges (434), the counts in the big digits (429) in the players' colours, "EGGS" and the small digits (404), countdown 3-2-1-GO! (360), the name banner (403), the winners' banner (435, 442), "The Champion!" (358) | the menus |
+| effects: the splash (152) and its fade, the red of a hurt Chansey, its sparks (224, module #64's particle), the eggs knocked out (see-through) and a winner's throw, PERFECT (433, module #2) | PERFECT drawn over everything (the game's own depth for it isn't known); the red's blend (*assumed* as Rampage Rollout's) |
+| the song, the results' songs and the sound effects (sequences 84, 94, 95 and 9; their fonts' samples), and when each plays | the reverb (the game's settings aren't known) |
 
 Colours follow [docs/colours.md](../docs/colours.md): the textures are used
 without sRGB conversion, lighting is Lambert (ambient + one sun, no specular)
 on the display values, and the frame is written as it is. That is close to how
 the N64 shades.
 
-Code: `src/egg/game.js` has the rules, drop schedules, CPU players and
-Chansey's clip map, `src/egg/assets.js` loads the models and pictures,
-`src/egg/fx.js` has the effects, and `src/egg/index.js` the cameras, the lean
-controls and its HUD. Shared: `src/audio.js` the sounds (`src/n64audio.js` the
+Code: `src/egg/rules.js` has the rules (the deal, Chansey's frame, the CPUs;
+`tools/egg_rules.py` is the server's copy of the deal and the judging),
+`src/egg/game.js` the round on its clock and its scene (drawn between frames),
+`src/egg/assets.js` loads the models and pictures, `src/egg/fx.js` has the
+effects, and `src/egg/index.js` the cameras, the lean controls and its HUD. Shared: `src/audio.js` the sounds (`src/n64audio.js` the
 engine that plays them), `src/telegram.js` the Telegram glue, `src/net.js` the
 connection to the rooms server, `src/retry.js` tries failed loads again,
 `src/config.js` the online settings, `src/n64fx.js` the game's colour combiner
@@ -952,14 +980,17 @@ How it works:
 
 - **Each device plays its own player**, with no network delay; the host's
   device also plays the CPUs. In Egg Emergency (Clear Cut Challenge below): Devices send their players' leans (which
-  column, from which moment of the round), and the server passes them on
-  and **keeps the score itself** from them (`tools/egg_rules.py`): a drop
-  counts if the player leans its way when it reaches the hands, and isn't
-  still stunned from a shock. The game judges its own players the same way
-  from the same leans (`Game.takes()`), so it shows a catch at once and the
-  server agrees. Devices also report their catches and shocks as they
-  happen, so the others see them straight away; the server checks each one
-  and passes on its own verdict, with the egg count.
+  way, from which frame of the play; a CPU's as its code leaves it), and the
+  server passes them on and **keeps the score itself** from them
+  (`tools/egg_rules.py`): it runs each seat's Chansey frame by frame as the
+  game does (its clips, the stun, the Voltorbs it's immune to). Every device
+  runs every seat the same way from the same leans (`src/egg/rules.js`), so
+  it shows a catch at once and the server agrees. Devices also report their
+  catches and shocks as they happen; the server checks each one and passes
+  on its own verdict, with the egg count. With no CPUs, the server also says
+  when the game speeds up (`deal`): it runs the deal half a second behind, so
+  it knows everyone's eggs then; a device that has gone past that pattern's
+  end deals the rest again.
 - **Clear Cut Challenge**: devices send each cut, the frame their player
   pressed on after the log's drop, and the server judges it
   (`tools/clearcut_rules.py`, the same deal and judging as
@@ -1061,7 +1092,7 @@ How it works:
   the Eevee are still grabbing at it, and a device can't claim a quicker dash
   than its player made by more than that.
 - **Same round, same moment.** The server deals the drops (the game's own
-  schedule, from a seed; `egg_rules.py` has a copy of `makeSchedules()` that
+  patterns, from a seed; `egg_rules.py` has a copy of `rules.js`'s deal that
   matches it bit for bit) and a GO time on its own clock. Clients sync to it
   with ping/pong (the lowest-delay round trip of the last 12) and run the
   round on that clock, catching up in small steps after a hiccup.
@@ -1073,9 +1104,8 @@ How it works:
   s if they're not known), and then each seat's delay follows how old its
   leans and catches are when they get here: up quickly to cover a late one
   (the seat's clock runs at 3/4 speed meanwhile), and back down slowly, from
-  0.05 s to 0.6 s. Their catches come from the server, not from what this
-  device sees; if one is late, the egg falls on and the catch shows when it
-  arrives.
+  0.05 s to 0.6 s. Their Chansey run here on their leans; the server's word
+  on their catches sets their counts.
 - **Eager Eevee shows the others' dashes as they get here**, a little after
   they happened; who gets the prize is the server's word, and an Eevee that's
   got there grabs at it till then (as the game's do, for a second and a half).
@@ -1180,8 +1210,8 @@ Messages are JSON objects with their type in `t`. From the client:
 | `level` | `level` | host, in the lobby: `easy`, `normal` or `hard` |
 | `game` | `game` | host, in the lobby: `egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat`, `barrier`, `rollout`, `topsy` or `furret` |
 | `start` | | host, in the lobby |
-| `lean` | `r`, `s`, `g`, `l` | in round `r`, seat `s` leans `l` (−1, 0, 1) from round time `g` (s) |
-| `ev` | `r`, `s`, `g`, `n`, `k`, `e` | seat `s` caught its drop `n` (`k: "c"`) or was shocked by it (`"h"`), as this device judged it; `e` is its egg count after. The server answers only if it disagrees |
+| `lean` | `r`, `s`, `f`, `l` | in round `r`, seat `s` leans `l` (−1, 0, 1) from frame `f` of the play (Egg Emergency's: frame 1 is 32 frames after GO) |
+| `ev` | `r`, `s`, `g`, `n`, `k`, `e` | seat `s` caught its drop `n` (`k: "c"`) or was shocked by it (`"h"`) on frame `g`, as this device judged it; `e` is its egg count after. The server answers only if it disagrees |
 | `cut` | `r`, `s`, `n`, `f` | Clear Cut Challenge: seat `s` pressed `f` frames after log `n`'s drop (negative: while it hung) |
 | `dash` | `r`, `s`, `k`, `f` | Eager Eevee: seat `s` pressed A (`k: "a"`, a dash) or B (`"b"`, a feint) on frame `f` from GO |
 | `count` | `r`, `s`, `n`, `f` | Streaming Stampede: seat `s` pressed (counted one) on frame `f` of question `n`'s counting |
@@ -1198,10 +1228,11 @@ it); `start` (`game`, `round`, `seed`, `level`, `host`, `lineup`, `rtt`, the
 round trip of the device playing each seat, ms or null; `at` and
 `go` on the server's clock: the countdown starts at `at`, GO is at `go`, four of
 the game's countdown steps on. Egg
-Emergency: `drops`, each
-seat's `[t, col, "e" or "v", fall]`; and, to rejoin midway, `scores`, each
-seat's last lean `leans` `[g, l]`, last shock `hits` and how many of its
-drops are judged, `settled`, in the order they arrive. Clear Cut Challenge:
+Emergency: `c`, the level code the drops are dealt for (the devices deal them
+from the seed), `human` (no CPUs: the speed-up rule), `ups`, the frames of the
+speed-ups so far, and to rejoin, `scores`, each seat's leans so far, `leans`
+`[[f, l], ...]`, and `f`, the frame of the play now (a device runs the round
+again from them up to there). Clear Cut Challenge:
 `c`, the level code the logs are dealt for (the devices deal them from the
 seed), and to rejoin, `scores` and `cuts`, each seat's `[f, points]` by log, `[f, points, 1]` for a miss it may still follow up.
 Eager Eevee: `ee`, with `level` (the level code the rounds are dealt for) and,
@@ -1241,10 +1272,11 @@ Barrier Ball's end: the frame the play ended on and each seat's points;
 `won` (`r`, `f`, `fin`, `p`), Rampage Rollout's end: the frame the race ended
 on, the frame each seat came in on (null: not in) and each one's place;
 `won` (`r`, `f`, `s`), Topsy-Turvy's, Furret's Frolic's and Delibird's Delivery's end: the frame the play ended on and
-each seat's points; `lean` as above (with the time the server kept: never before the seat's last
-lean); `ev` (`r`, `s`, `n`, `k`, `e`, `g`), the server's verdict on a drop:
+each seat's points; `lean` as above (with the frame the server kept: never before the seat's last
+lean, nor before the frame it's judged the seat to); `ev` (`r`, `s`, `n`, `k`, `e`, `g`), the server's verdict on a drop:
 `c` caught, `h` a shock, or `m`, not a catch after all, with the egg count
-`e`; `left` (`seat`); `results` (`round`, `scores`, `lineup`); `notice`
+`e` (its count then, on frame `g`); `deal` (`r`, `ups`), Egg Emergency with no
+CPUs: the frames of the pattern ends it sped up at; `left` (`seat`); `results` (`round`, `scores`, `lineup`); `notice`
 (`code: "name"`, `name`: a name turned down); and `error` (`no-room`, `full`,
 `bad-code`, `busy`).
 

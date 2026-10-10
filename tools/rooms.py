@@ -70,6 +70,7 @@ COUNT_STEP = 20
 COUNT_STEPS = dict(golbat=25, stampede=25)
 GO_DELAY = 4 * COUNT_STEP * 1000 / FPS  # ms of countdown before GO (2.67 s), and longer for those
 SETTLE_LAG = 3  # s after a drop reaches the hands, it's judged even if its device hasn't reported it
+DECIDE_LAG = 0.5  # s: Egg Emergency's speed-ups (no CPUs) are decided this long after, from the leans then
 SLACK = 2  # s a device's clock may be off from the server's
 END_WAIT = 5  # s after the last drop: the round ends even if a device hasn't finished (one in the background)
 # Eager Eevee, Streaming Stampede and Pichu's Power Plant: how old a press may
@@ -258,9 +259,8 @@ class Room:
         if self.minigame in ("clearcut", "eevee", "stampede", "pichu", "togepi", "golbat", "barrier", "rollout", "topsy",
                              "furret", "delibird"):
             msg.update(g.wire())
-        else:
-            msg.update(drops=g.wire(), scores=g.scores, leans=[g.last_lean(s) for s in range(SEATS)], settled=g.next,
-                       hits=[h if h > -math.inf else None for h in g.hit])
+        else:  # Egg Emergency: its level code, each seat's leans so far, the speed-ups, and the frame it's at
+            msg.update(g.wire(), f=egg_frame(self.now()))
         return msg
 
 
@@ -457,7 +457,7 @@ def start(room):
     elif room.minigame == "delibird":
         room.game = delibird_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
     else:
-        room.game = egg_rules.Round(room.seed)
+        room.game = egg_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
     room.started = time.monotonic()
     for m in room.members.values():
         m.done = False
@@ -465,22 +465,38 @@ def start(room):
     room.broadcast(room.snapshot())
 
 
+def egg_frame(t):
+    """Egg Emergency: the frame of its play at round time t (s from GO; frame 1
+    32 frames on: egg_rules.PLAY_AT)."""
+    return math.floor(t * FPS + 1e-6) - (egg_rules.PLAY_AT - 1)
+
+
 def judge(room, s, upto, claim=None):
-    """Judge seat s's drops that reached the hands by round time upto, and pass
-    on the catches and shocks. claim: (member, n, k, e), what a device reported
-    for its drop n; it only hears back what's different."""
+    """Egg Emergency: run seat s's Chansey to frame upto of the play, and pass on
+    the catches and shocks. claim: (member, n, k, e), what a device reported for
+    its drop n; it only hears back what's different."""
     g = room.game
     judged = set()
     for n, k, e, a in g.settle(s, upto):
         judged.add(n)
+        if k == "m":
+            continue  # (the misses aren't said: the count's the same)
         same = claim is not None and claim[1:] == (n, k, e)
         room.broadcast(dict(t="ev", r=room.round, s=s, n=n, k=k, e=e, g=a), skip=claim[0] if same else None)
     if claim:
         m, n, k, e = claim
         res = g.results[s].get(n)
-        if g.settled(s, n) and (res is None or res[0] != k or n not in judged and res[1] != e):
-            # not what it counted: its player didn't catch that (or the count's off)
-            m.send(dict(t="ev", r=room.round, s=s, n=n, k=res[0] if res else "m", e=g.scores[s], g=g.arrive[s][n]))
+        if res is None or res[0] != k or n not in judged and res[1] != e:
+            # not what it counted: its player didn't catch that by then (or the count's off)
+            m.send(dict(t="ev", r=room.round, s=s, n=n, k=res[0] if res else "m", e=g.scores[s], g=g.seats[s].f))
+    speedups(room)
+
+
+def speedups(room):
+    """Egg Emergency with no CPUs: the speed-ups, to everyone, once they're decided."""
+    ups = room.game.new_ups()
+    if ups is not None:
+        room.broadcast(dict(t="deal", r=room.round, ups=ups))
 
 
 def relay(room, m, t, msg):
@@ -550,15 +566,31 @@ def relay(room, m, t, msg):
         return
     if t in ("cut", "dash", "count", "press", "stick", "pad"):
         return
+    now = egg_frame(room.now())
     if t == "lean":
-        l = max(-1, min(1, int(_number(msg.get("l")))))
-        at = g.lean(s, float(_number(msg.get("g"))), l)
-        room.broadcast(dict(t="lean", r=room.round, s=s, g=at, l=l), skip=m)
-    else:  # "ev": its device says drop n was caught or a shock; the server judges it now
-        n = msg.get("n")
-        if type(n) is not int or not 0 <= n < len(g.drops[s]) or g.arrive[s][n] > room.now() + SLACK:
+        f, l = msg.get("f"), msg.get("l")
+        if type(f) is not int or l not in (-1, 0, 1):
             return
-        judge(room, s, g.arrive[s][n], (m, n, msg.get("k"), msg.get("e")))
+        at = g.lean(s, f, l)
+        room.broadcast(dict(t="lean", r=room.round, s=s, f=at, l=l), skip=m)
+    else:  # "ev": its device says drop n was caught or a shock (on frame f); the server judges it now
+        n, f = msg.get("n"), msg.get("g")
+        g.deal_to(now + SLACK * FPS)
+        reach = g.reach(n) if type(n) is int else None
+        if reach is None or reach > now + SLACK * FPS:
+            return
+        upto = min(max(reach, f if type(f) is int else reach), now + SLACK * FPS)
+        judge(room, s, upto, (m, n, msg.get("k"), msg.get("e")))
+    advance(room)
+
+
+def advance(room):
+    """Egg Emergency with no CPUs: the deal run on to half a second ago, so its
+    speed-ups are known in time (each player's eggs up to then)."""
+    g = room.game
+    if room.state == "playing" and isinstance(g, egg_rules.Round) and g.all_human:
+        g.deal_to(egg_frame(room.now() - DECIDE_LAG))
+        speedups(room)
 
 
 def tell_cuts(room, s, results):
@@ -662,7 +694,7 @@ def settle(room, s, upto):
     elif room.minigame in ("pichu", "togepi", "golbat", "barrier", "rollout", "topsy", "furret", "delibird"):
         finishes(room, 1e9 if upto == math.inf else None)
     else:
-        judge(room, s, upto)
+        judge(room, s, egg_frame(min(upto, room.game.end)))
 
 
 def check_end(room):
@@ -747,6 +779,7 @@ def _reap():
                         p = room.player(s)
                         if p and p.ws:  # (not while its device is reconnecting)
                             settle(room, s, room.now() - SETTLE_LAG)
+                    advance(room)
                     check_end(room)
 
 

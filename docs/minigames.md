@@ -173,28 +173,234 @@ The remake's shell does the countdown and the results this way
 server deals GO on the same steps (`tools/rooms.py`), and each game says when
 its round is over (its own show's length, as its code has it).
 
-## Egg Emergency: Chansey's clips
+## Egg Emergency
 
-Chansey (object 144) has 16 unnamed clips. What each does was read from its
-bone tracks: the body bone (`bone_02`) sits at x = 0, −1.4 or +1.4, and the
-held egg (`bone_01`) appears at x = 0, −5 or +5 (5 up, 4 in front) and shrinks
-to nothing. So Chansey doesn't walk. It stays on its spot and catches in three
-columns, 5 model units apart: the game's "use the L and R Buttons" means hold
-L to lean left, hold R to lean right, and let go to come back to the centre.
-That explains the six transition clips, including left ↔ right.
+Module #56 (ROM `0x2B18C0`, linked at `0x86800000`; code to `0x74C0`, data to
+`0x8080`, constants to `0x84D0`, then BSS) was read with spimdisasm and m2c and
+checked against the raw listing, so the remake (`web/minigames/src/egg/`)
+plays by its rules. Addresses below are the module's (EU). Its round state is
+at `0x8682F2A8`; the players are records of 0x124 at `0x8682EE18` (+0x8 the
+CPU's level code, 0 for a person; +0x10 the clip it's in; +0x14 the eggs;
++0x1C the lean; +0x24 a CPU's target; +0x30 the Voltorb immunity).
 
-| Clip | Length | What it does |
+**Frames.** The logic runs once a frame, 30 a second (`0x8680729C`: on a PAL
+console 25, with the fall and the gaps × 1.4: the same in real time). Units
+below are the game's: Chansey's feet at y −285, its unit U = 3.2 / 0.17 =
+18.82 (`0x8682F2FC`).
+
+**The stage** (`0x86802740`). The camera is at (0, 0, 1900) looking straight
+on (fov 30, `0x868003E4`), over background picture 19. The four Chansey
+(object 144, ×0.17) stand at x = (−24, −8, 8, 24) U, y −285. Each catches in
+three columns: the centre and ±5 U. The drops come in at y 550, z 4.39 U, and
+are caught at the line y = −285 + 7 U = −153.24 (`0x8682F304`); they go at −470.
+
+### The deal
+
+**The level code** c = 4 − the COM level (Easy 3, Normal 2, Hard 1), the same
+for every CPU. With no CPUs, c = 3 and the speed-up rule (below) is on. By c
+(`0x86800B98`, `0x86807E18`, `0x86807E28`):
+
+| | Hard (1) | Normal (2) | Easy (3) |
+|---|---|---|---|
+| the fall's acceleration a | 17 | 13 | 10 |
+| the interval I | 4.5 | 5.1 | 5.4 |
+| Voltorb rows erased (of 101) | 0 | 20 | 60 |
+| a CPU's dodge (of 101) | 96 | 80 | 50 |
+
+**The patterns** (`0x86807A74` → `0x86807518`–`0x86807A73`): 62 lists of rows,
+three bytes each: the column (0 the centre, 1 and 2 the sides), 1 for a
+Voltorb, and the gap before the row in intervals; each ends with `3, 2, 6`. 0–19,
+20–39 and 40–59 are three tiers, harder and harder (the later ones full of
+Voltorbs); 60 and 61 (empty) only a debug order uses. The first pattern of a
+round is always 0, a single egg in the centre. `web/minigames/src/egg/rules.js`
+has them all.
+
+**The scheduler** (`0x8680537C`), each frame while fewer than 100 eggs have
+come:
+- The clock T (1829, down one a frame) waits for the next row's due time N
+  (1800 at the start; the first egg comes on the play's frame 29).
+- The phase (0–5) is the last whose threshold (by c, `0x86807F88`: Hard 100,
+  95, 85, 75, 65, 40; Normal 100, 90, 80, 65, 50, 35; Easy 100, 90, 80, 65, 50,
+  30) is at least the eggs still to come.
+- At a pattern's end: the next one's N is 50 frames on (a break) every b-th
+  pattern (by c and phase, `0x86807FD0`: Hard 1, 1, 2, 2, 3, 4; Normal 1, 1, 2,
+  1, 2, 4; Easy 1, 1, 2, 1, 2, 3; 4 means never), else 2 × trunc(I). The pattern
+  is `perm[k] + 20 × tier`: perm is 0–19 shuffled (`0x86800A7C`: swaps of two
+  slots by rand2, 50 plus one for each frame the instructions were up), k
+  goes round 0–18; the tier by c and phase (`0x86807F10`: Hard 0, 1, "1/2 by
+  turns", 2, random, 2; Normal 0, 1, 1, 2, 2, random; Easy 0, 1, "0/1 by turns",
+  2, "1/2 by turns", "0/1/2 by turns"; random is rand2 % 100 ≥ 67 → 0, ≥ 34 →
+  1, else 2). It's mirrored left to right with chance 50 in 101 (`0x86805858`).
+- Otherwise the rows come (`0x86804EE0`), on in the same frame while the next
+  row's gap is 0; each takes the next of 40 slots (shared by all four players)
+  and a roll r = LCG % 101. **Every player gets the same row in the same
+  column.** A Voltorb row is erased (nothing comes) unless erase % < r. An egg
+  takes one off the eggs to come and spins r × 32 (s16) about all three axes a
+  frame, turned back so it's square on reaching the hands. The next row's due
+  at trunc(N − gap × I) (floats): 5, 9, 14 frames for 1, 2, 3 on Hard; 6, 11,
+  16 on Normal.
+- The chain doesn't look at the count, so a round can end on 101 eggs.
+
+Simulated over 300 seeds (`web/minigames/tests.js` checks the order): a round
+deals about 54 Voltorbs on Hard, 37 on Normal, 17 on Easy, and the last drop
+comes at about 44, 56 and 61 s.
+
+**The speed-up** (no CPUs, `0x868053BC`–`0x8680546C`, `0x868054FC`). Each frame
+the eggs still to come are 70 or 40, if every player's caught at least 80 % of
+the eggs come so far ((100 − left) × 0.8 ≤ the least of their counts), the next
+pattern's end makes c one less (to 1 at the least) and its a and I with it;
+the erase and dodge stay.
+
+### The fall and the catch
+
+**The fall** (`0x868044D4`). A drop's t goes up 0.2 a frame from the frame it
+comes in, and y = 550 − t (a t) (floats), with the a it came in with. It
+reaches the line 33, 37 and 42 steps in (Hard, Normal, Easy): 1.07, 1.23 and
+1.40 s.
+
+**The judging**, each frame for each player's slots in order, once a drop's y
+is at or under the line and the player isn't in the hurt clip (13):
+- It's caught (or it hits) if it hasn't been judged and its column is the
+  idle clip's (1 centre, 2 left, 3 right) or the lean's (`0x868040EC`, which
+  then puts the player in that idle clip).
+- An egg: 0x7F01 (once a frame, for the first player who caught one), the egg
+  hidden, the clip idle + 9 (10–12), one more egg.
+- A Voltorb, if the immunity is 0: 0x7F00 (once a frame, if that player had
+  eggs) and 0x7F02, the Voltorb hidden, immunity 1, the hurt clip from its
+  start, the lean set to 1, and min(eggs, 5) eggs knocked out (`0x8680422C`). An
+  immune player lets it fall on.
+- Once it's 25 under the line (`0x86807C78`) it's closed. A drop moves 30-38 a
+  frame there, so one that crosses the line by less than 25 can be caught on
+  the next frame too. In the hurt nothing's judged or closed: a drop that
+  crossed meanwhile can still be caught on the frame the hurt ends.
+- Drops at or under −470 go (`0x868048C8`); one not caught or hit (a Voltorb that
+  passed too) splashes in the water at (x, −420), image bank 152 at ×5, with
+  0x7F05 once a frame, always on player 3's side (`addiu a1, zero, 2`).
+
+**Chansey** (its callback `0x86801E8C`, every frame of the play, before the
+logic). The held buttons (`0x800CE1C6`): R alone leans right (lean 1), L alone
+left (3); nothing, both together, the D-pad or the C buttons, the centre (2).
+A CPU's think sets the lean instead. Then, if the clip is 12 or less, the lean
+moves the clip (`0x86807C80` = 1: through the lean clips):
+
+| Lean | From clip | To |
 |---|---|---|
-| 00 | 0.77 s | waiting, centre |
-| 01 | 0.50 s | idle, centre |
-| 02, 03 | 0.50 s | idle, leaning left / right |
-| 04, 06 | 0.23 s | centre → right / left |
-| 05, 07 | 0.23 s | right / left → centre |
-| 08, 09 | 0.23 s | left → right / right → left |
-| 10, 11, 12 | 0.30 s | catch in the centre / left / right column: an egg in the hands shrinks into the pouch |
-| 13 | 0.63 s | hurt: jumps with the pained face (face 3) and a dust cloud; the Voltorb hit |
-| 14 | 2.37 s | big jump (celebrating, *by appearance*) |
-| 15 | 3.20 s | sits back with face 4 (disappointed, *by appearance*) |
+| centre | 0, 2, 3, 11, 12 | 1, 7, 5, 1, 1 |
+| right | 0, 1, 2, 10, 11 | 3, 4, 8, 3, 3 |
+| left | 0, 1, 3, 10, 12 | 2, 6, 9, 2, 2 |
+
+Any other pair waits. When a clip ends (`0x8003ED14`: its frame at its last):
+5, 7, 10 → 1; 4, 8, 12 → 3; 6, 9, 11 → 2; 13 → the centre, clip 1. The clips
+play at ×4 (the lean clips, 2 frames), ×2 (the catches, 5 frames) or ×1
+(`0x868026E4`). A clip set to the one playing doesn't start again
+(`0x8003EBDC`). The immunity goes up one a frame once a Voltorb's hit and is
+back to 0 after 50: the hurt clip (20 frames) stops all catching for 20
+frames, and Voltorbs pass through for 49.
+
+**The eggs knocked out** (`0x8680422C`, `0x86801160`): n = min(eggs, 5) fly from
+Chansey's feet, egg i at (180 / (n + 1))(i + 1)° in the floor's plane (out and
+towards the camera): t += 0.5 a frame, x += cos(a) t / 3, z += sin(a) t / 2,
+y = −285 + 4.9 × 10² − 4.9 (t − 10)², each spinning (LCG % 17) << 8 a frame.
+They're see-through (alpha 100, `0x86807CAC`) and go below −470 with no splash.
+
+### The CPUs (`0x868014C0`, `0x86800594`)
+
+Each CPU picks two numbers at the start: F4 (how far under the line its
+target must be before it looks again, × 25) and F8 (how close over an egg a
+Voltorb puts it off, × 200): Hard rand × 0.2 + 0.2 and rand × 0.3 + 0.3;
+Normal rand × 0.5 + 0.5 for both; Easy rand + 1 for both. The CPU with the
+highest rand2 % 100 at the set-up is "special": on Hard its F4 is 0.01. Its
+window F0 is 20 to begin with.
+- With a target: once it's under the line by 25 F4, the window becomes 200,
+  150 or 120 (Hard, Normal, Easy) less (LCG % 21 × the drops about) / 4
+  (unsigned: below 0 it wraps to huge), and the target's let go.
+- Without: it looks over the slots in order, within F0 over the line and over
+  the line − 125, for the lowest drop (any it's caught or hidden too). That's
+  its target, one decision a drop.
+- An egg: if a Voltorb (that was the lowest before it) is in its column and
+  under its y + 200 F8, it stays where it is.
+- A Voltorb: with chance dodge in 101 it moves a column over (the row's other
+  drops at the same height decide which: an egg's column, or the one left
+  free by two Voltorbs); otherwise it goes under the Voltorb.
+- Then it misses by a column (one on, round) when LCG % 11 + accuracy <
+  LCG % 101 (accuracy by c and phase, `0x86807BDC`: Hard 93, 90, 90, 85, 85,
+  75; Normal 93, 90, 85, 80, 80, 80; Easy 90, 90, 85, 70, 65, 60), skipping the
+  Voltorb's column; with no Voltorb seen the code reads slot −1 (`volt != 0`
+  where it meant −1): the previous player's slot 39's column.
+
+Simulated with the game's own generators: eggs per CPU, the median (10th–90th
+percentile), Easy 49 (34–64), Normal 60 (44–74), Hard 77 (65–88); the best of
+three CPUs averages 56, 66 and 86 (the browser tests' targets).
+
+### The round's flow (`0x86806E94`)
+
+- The instructions (state 3): A plays 0xCF0B (the whistle), fades the song
+  over 40 frames and the screen over 20 (`0x868063CC`); the Chansey then idle
+  (clip 1, from frame rand2 % 10, `0x8680649C`) through the countdown.
+- The countdown (module #64, a step of 20): 0x7F03 on each count, 0x7F04 (pitch
+  1.19) on GO (`0x868066B8`).
+- 31 frames after GO: song 45 and the play (`0x86806E94` case 2).
+- Once all the eggs have come and every drop and knocked-out egg is gone, a
+  count goes up a frame: at 5, 0xCF06; at 31 the end (`0x868058C0`). The song
+  plays on.
+- The end (`0x86804C5C`): the most eggs cheer (clip 14), the rest sit back (15);
+  if all four are level, all sit back. Module #64's results get the four
+  winner flags. A Chansey with exactly 100 eggs gets "PERFECT" (image bank 433,
+  module #2: `0x81900164`) 30 over its feet, ×4.6 (|sin a| + 1) / 2 with a up
+  0x800 a frame, coloured (prim − env) × its grey + env in the player's colours
+  (`0x81900784`: 1P (200, 200, 255) / (0, 80, 200), 2P (200, 255, 200) / (0, 80, 0),
+  3P (255, 200, 200) / (200, 0, 70), 4P (255, 240, 190) / (230, 90, 0)).
+- Then (`0x86806CD8`): a winner's clip goes back to its frame 14 at its end or
+  70 frames on (a 56-frame loop); at its frame 37 it throws min(eggs, 5) eggs
+  (solid, none taken off) with 0x7F00, which splash below −455 with 0x7F05. A
+  loser's goes back to frame 49 at its end.
+
+**A hurt Chansey** (`0x8680105C`, `0x86802610`) is laid over with red
+(`+0xA0` (255, 0, 0), alpha 0x80 while clip 13 plays; *assumed* towards red by
+its alpha, as Rampage Rollout's) and gets a spark each frame: module #64's
+particle (`0x87F03884`, type 0), a ±32 quad turned to the camera, ×rand 7.2,
+rolled (LCG % 31) << 9, at its x + 20 and 30 over its attachment point (bone 3,
+the head: object +0xB0, recorded as it's drawn, `0x8003C3B8`), bank 224's first
+picture through prim + (env − prim) × its grey with prim yellow and env white,
+its alpha the grey (`0x87F039F0`); it's drawn the one frame.
+
+**The Voltorb sprite** (`0x86800298`): a count that goes up for each Voltorb
+drawn, round 0–20; the picture is the count / 4 (4, 4, 4, 4, 4 and 1 counts). With
+the same Voltorb in four lanes it turns about a picture a frame.
+
+**The HUD** (`0x868039F8`): each player's badge (bank 434, ×0.62, y 189) and
+its count in the big digits (bank 429, ×0.57, y 206) coloured (prim − env) ×
+grey + env in its colours (`0x86807E40`: 1P (0, 0, 155) / (170, 245, 255), 2P
+(0, 100, 0) / (200, 255, 155), 3P (120, 0, 0) / (255, 160, 190), 4P (210, 90, 0)
+/ (255, 255, 140)); and at the top, "EGGS" (bank 404) with the eggs still to
+come in its small digits, in (255, 255, 155) / (255, 100, 0) at 200 of 255. Bank
+429's "+" and "−" aren't drawn: there are no "+1" / "−5".
+
+**Left over from development**: a debug menu (`0x8680671C`) and a linear fall
+(`0x86807C8C`), "always catch" (`0x86807C7C`), a debug pattern order
+(`0x86807C88`), and fields of the CPUs that are written but never read
+(+0xFC, +0x100, +0x10C–+0x11C, and a random lean, +0x110, that nothing sets).
+Object 185 is loaded (`0x868027EC`) but nothing draws it.
+
+### Chansey's clips
+
+Chansey (object 144) has 16 clips. What each does was read from its bone
+tracks: the body bone (`bone_02`) sits at x = 0, −1.4 or +1.4, and the held egg
+(`bone_01`) appears at x = 0, −5 or +5 (5 up, 4 in front) and shrinks to
+nothing; the code's table above names them.
+
+| Clip | Frames | What it does |
+|---|---|---|
+| 00 | 24 | waiting, centre (the instructions' small Chansey, `0x86805AA4`) |
+| 01 | 16 | idle, centre |
+| 02, 03 | 16 | idle, leaning left / right |
+| 04, 06 | 8 | centre → right / left |
+| 05, 07 | 8 | right / left → centre |
+| 08, 09 | 8 | left → right / right → left |
+| 10, 11, 12 | 10 | catch in the centre / left / right column: an egg in the hands shrinks into the pouch |
+| 13 | 20 | hurt: jumps with the pained face (face 3) and a dust cloud |
+| 14 | 72 | the winners' cheer |
+| 15 | 97 | the losers': sits back with face 4 |
 
 ### What else module #56 loads
 
@@ -207,28 +413,21 @@ the minigame:
 | `0x8004D770` (show background picture) | 19 | the backdrop: a building on a bridge, with blue, green, red and yellow roofs and one column of windows per player (lamp poles at x = 13, 86, 159, 233, 306 of 320). The Chansey stand on the grass along the top of the bridge (rows 188–193), each under its colour; below the bridge's arches is the water |
 | `0x8004CA70` (load image bank) | 227 | **Voltorb**, a 24×24 sprite in 6 frames: in this minigame it isn't a 3D model |
 | | 434 | player badges: blank, "COM" in grey / blue / green / red / yellow, "1P"–"4P" (blue, green, red, yellow: the player colours) |
-| | 404 | small digits 0–9 and "EGGS": each player's counter |
-| | 429 | big digits 0–9, "−" and "+": presumably the "+1" / "−5" that show on a catch and a Voltorb hit (*by appearance*) |
-| | 152 | the splash, 12 frames of 32×32: a missed egg falls past the bridge into the water |
-| `0x8004DED4` (load object) | 145, 185 | the egg and the effect object |
+| | 404 | small digits 0–9 and "EGGS": the eggs still to come |
+| | 429 | big digits 0–9, "−" and "+": each player's count (the signs aren't used) |
+| | 152 | the splash, 12 frames of 32×32: a drop not caught falls past the bridge into the water |
+| `0x8004DED4` (load object) | 145, 185 | the egg, and the effect object nothing draws |
 
-Object 185 carries three effect textures (a smoke noise, a flame burst and
-sparkles). Its own mesh is a four-triangle strip with a 12-frame clip, and
-what it's drawn as is *unknown*. The countdown "1", "2", "3", "GO!" is image
-bank 360, and the minigame's name banner is bank 403; both are loaded outside
-the module. Other sources agree on the rules: a Voltorb costs five eggs and
-stuns you long enough to miss the next one.
+The countdown "1", "2", "3", "GO!" is image bank 360, and the minigame's name
+banner is bank 403; both are loaded outside the module. Only Clear Cut
+Challenge (15), Egg Emergency (19) and Eager Eevee (44) call `0x8004D770`, so
+the others build their scene from objects. The module calls `0x80021EC8` once
+with 45: the song, which the game plays as sequence 45 + 39 = 84
+([audio.md](audio.md), with the sound effects the module plays).
 
-Only Clear Cut Challenge (15), Egg Emergency (19) and Eager Eevee (44) call
-`0x8004D770`, so the others build their scene from objects. The module also
-calls `0x80021EC8` once with 45; every minigame calls it with a different
-number (Topsy-Turvy 33, Gutsy Golbat 13, …): the song, which the game plays as
-sequence 45 + 39 = 84 ([audio.md](audio.md), with the sound effects the
-module plays).
-
-The browser remake in `web/minigames/src/egg/` is built on these findings,
-with the backdrop rebuilt in 3D to the picture's measurements
-([web/README.md](../web/README.md)).
+The browser remake in `web/minigames/src/egg/` plays by these rules
+(`rules.js`, and `tools/egg_rules.py` for the rooms server), with the backdrop
+rebuilt in 3D to the picture's measurements ([web/README.md](../web/README.md)).
 
 ## Clear Cut Challenge
 

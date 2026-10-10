@@ -8,9 +8,20 @@ const $ = (s) => document.querySelector(s);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = (window.results = []);
 
-// makeSchedules() digests: the same as JS_SCHEDULES in tools/test_rooms.py,
-// which checks the server's copy of the drops against them
-const SCHEDULES = { 1: "ba64e35664b2591f", 12345: "36b3b248013c25c9", 2147483647: "9812a4cb6c5a99c7" };
+// Egg Emergency's deals (src/egg/rules.js Deal: c 1-3, and 3 with no CPUs and
+// everyone always over 80 %, the patterns' order and the falls), and a round on
+// one of them with eggScript()'s leans (what came of every seat's drops): the
+// same as JS_EGG_DEALS and JS_EGG_ROUNDS in tools/test_rooms.py, which checks
+// the server's copy against them
+const EGG_DEALS = { 1: "9485f9543049d735", 12345: "db9cf57a6206a50a", 2147483647: "2d5f99435a6e52fc" };
+const EGG_ROUNDS = { 1: "b18f7fd09f89d7e1", 12345: "bc1c8b3550f4dcb3", 2147483647: "84e70798d4fdfd23" };
+// (seat 0 goes for the next drop to come, Voltorbs too; seat 1 for the next egg; seats 2 and 3 a pattern)
+function eggScript(z, g, d) {
+  if (z >= 2) return [-1, 0, 1][((g >> (z + 2)) + z) % 3];
+  let best = null;
+  for (const r of d.drops) if (r.reach >= g && (z === 0 || r.kind === "e") && (!best || r.reach < best.reach)) best = r;
+  return best ? best.side : 0;
+}
 // Clear Cut Challenge's deal() for every level code: the same as JS_DEALS in tools/test_rooms.py
 const DEALS = { 1: "845261658a294406", 12345: "dcaad7cc4c79a603", 2147483647: "8c853818348d493e" };
 // Eager Eevee's deal() for levels 1-3: the same as JS_EEVEE in tools/test_rooms.py
@@ -100,14 +111,14 @@ const COUNT_TARGETS = { easy: [54, 62], normal: [56, 65], hard: [67, 76] };
 // how soon after the basket comes up the CPUs dash (frames, on average), by level (rules.js cpuPlan)
 const DASH_TARGETS = { easy: [23.5, 26.5], normal: [18.5, 21.5], hard: [15.5, 18.5] };
 // what it takes to win a solo round: the best of the three CPUs, on average
-// over simulated rounds (Egg Emergency: the tuning in LEVELS in its game.js;
-// Clear Cut Challenge: the game's own CPUs, rules.js cpuPlan)
-const LEVEL_TARGETS = { easy: [42, 58], normal: [59, 73], hard: [92, 99] };
+// over simulated rounds (Egg Emergency: the game's own CPUs, rules.js Brain:
+// 56, 66 and 86 on these 20 rounds; Clear Cut Challenge: the game's own CPUs, rules.js cpuPlan)
+const LEVEL_TARGETS = { easy: [50, 62], normal: [60, 72], hard: [80, 92] };
 const CUT_TARGETS = { easy: [15, 26], normal: [35, 47], hard: [53, 65] };
-// a short round, the same one tools/test_rooms.py plays on the server: they
-// reach the hands at 0.5, 0.8, 1.1 (the Voltorb), 1.4 and 2.1
-const SHORT = [[0.0, 0, "egg", 0.5], [0.3, 1, "egg", 0.5], [0.6, 1, "voltorb", 0.5], [0.9, 1, "egg", 0.5], [1.6, -1, "egg", 0.5]]
-  .map(([t, col, kind, fall]) => ({ t, col, kind, fall }));
+// a short round, the same one tools/test_rooms.py plays on the server: [frame it
+// comes in, side, kind], falling fast (17); they get to the hands on frames 33,
+// 42, 51 (the Voltorb), 60 (in the hurt after it: it goes by at 66) and 82
+const SHORT = [[1, 0, "e"], [10, 1, "e"], [19, 1, "v"], [28, 1, "e"], [50, -1, "e"]];
 
 function assert(ok, msg) { if (!ok) throw new Error(msg); }
 
@@ -241,10 +252,10 @@ function autoplay(w) {
   const id = w.setInterval(() => {
     const e = w.mg;
     if (e?.phase() !== "play") return;
-    const g = e.game, z = e.me(), t = g.time;
-    let next = -1;
-    g.drops[z].forEach((d, n) => { if (d.kind === "egg" && g.arrive[z][n] > t && (next < 0 || g.arrive[z][n] < g.arrive[z][next])) next = n; });
-    e.lean(next < 0 ? 0 : g.drops[z][next].col);
+    const g = e.game, f = g.frame;
+    let next = null;
+    for (const d of g.drops) if (d.kind === "e" && d.reach >= f && (!next || d.reach < next.reach)) next = d;
+    e.lean(next ? next.side : 0);
   }, 50);
   return () => { w.clearInterval(id); w.mg?.lean(0); };
 }
@@ -434,32 +445,86 @@ const ranking = (w) => [...w.document.querySelectorAll("#ranking li")].map((li) 
 
 const solo = await frame("game=egg");
 
-await test("Egg Emergency: the drops are the same as the server's copy of them", async () => {
-  const { makeSchedules } = await moduleOf(solo, "./src/egg/game.js");
-  const dv = new DataView(new ArrayBuffer(8));
-  const hex = (x) => { dv.setFloat64(0, x); return dv.getBigUint64(0).toString(16).padStart(16, "0"); };
-  for (const [seed, want] of Object.entries(SCHEDULES)) {
-    const got = await sha16(makeSchedules(+seed).flat().map((d) => `${hex(d.t)},${d.col},${d.kind[0]},${hex(d.fall)};`).join(""));
+await test("Egg Emergency: the deal and the judging are the same as the server's copy of them", async () => {
+  const R = await moduleOf(solo, "./src/egg/rules.js");
+  const dv = new DataView(new ArrayBuffer(4));
+  const hex = (x) => { dv.setFloat32(0, x); return dv.getUint32(0).toString(16).padStart(8, "0"); };
+  for (const [seed, want] of Object.entries(EGG_DEALS)) {
+    let s = "";
+    for (const [c, human] of [[1, false], [2, false], [3, false], [3, true]]) {
+      const d = new R.Deal(+seed, c, { allHuman: human, want: () => true });
+      while (!d.over) d.step();
+      for (const r of d.rows) s += `${r.f},${r.slot},${r.code},${r.kind ?? "-"},${r.spin},${r.a};`;
+      s += `|${d.ups.join(",")}|${d.perm.join(",")}|`;
+    }
+    for (const a of [17, 13, 10, 8]) s += R.fall(a).map(hex).join("") + "/";
+    const got = await sha16(s);
     assert(got === want, `seed ${seed}: ${got}; tools/egg_rules.py expects ${want} (update both, and the digests)`);
   }
+  const K = { catch: "c", hit: "h", pass: "m", miss: "m" };
+  for (const [seed, want] of Object.entries(EGG_ROUNDS)) {
+    const d = new R.Deal(+seed, [2, 1, 3][seed % 3]), out = [[], [], [], []];
+    const seats = [0, 1, 2, 3].map((z) => new R.Seat(z, (what, row) => { if (K[what]) out[z].push(`${row.n}:${K[what]}:${seats[z].eggs}:${seats[z].f}`); }));
+    for (let g = 1; ; g++) {
+      d.step();
+      seats.forEach((st, z) => st.step(g, d, R.LEAN[eggScript(z, g, d)]));
+      if (d.clear(g)) break;
+    }
+    const got = await sha16(out.map((o) => o.join(";")).join("|"));
+    assert(got === want, `round ${seed}: ${got}; tools/egg_rules.py expects ${want} (update both, and the digests)`);
+  }
+  // the patterns' numbers, as the audit and docs/minigames.md have them: Voltorbs and the last drop by level
+  const stats = [1, 2, 3].map((c) => {
+    const v = [], last = [];
+    for (let s = 0; s < 40; s++) {
+      const d = new R.Deal(s * 7919 + 1, c);
+      while (!d.over) d.step();
+      v.push(d.drops.filter((r) => r.kind === "v").length);
+      last.push(d.rows.at(-1).f);
+    }
+    const med = (a) => a.sort((x, y) => x - y)[a.length >> 1];
+    return [med(v), med(last)];
+  });
+  assert(stats[0][0] > stats[1][0] && stats[1][0] > stats[2][0] && stats[0][1] < stats[1][1] && stats[1][1] < stats[2][1], "by level: " + JSON.stringify(stats));
+  return stats.map(([v, f], c) => `${["hard", "normal", "easy"][c]} ${v} Voltorbs, ${(f / 30).toFixed(0)} s`).join(", ");
 });
 
 await test("Egg Emergency: a drop lands by the lean when it reaches the hands, as the server judges it", async () => {
   const got = [];
   const end = headless(solo, (g) => {
-    g.reset("normal", 1, { me: 0, control: ["local", "cpu", "cpu", "cpu"], drops: [SHORT, SHORT, SHORT, SHORT] });
+    g.reset("normal", 1, { me: 0, control: ["local", "cpu", "cpu", "cpu"], fixed: SHORT, a: 17 });
     g.on("result", (r) => { if (r.s === 0) got.push([r.n, r.k, r.e].join()); });
     g.start();
-    const script = [[0, 0], [0.6, 1], [1.5, -1]]; // right for the second egg, stays for the Voltorb, left for the last
-    while (g.state === "play" && g.time < 8) {
-      g.players[0].want = script.filter(([t]) => t <= g.time).at(-1)[1];
+    const script = [[0, 0], [35, 1], [60, -1]]; // right for the second egg, stays for the Voltorb, left for the last
+    while (g.state === "play" && g.time < 10) {
+      g.held = script.filter(([f]) => f <= g.frame + 1).at(-1)[1];
       g.update(1 / 60);
     }
-    return { state: g.state, eggs: g.players[0].eggs };
+    return { state: g.state, eggs: g.seats[0].eggs, frame: g.frame };
   });
   // the same verdicts as the server's in tools/test_rooms.py: the stunned egg (3) doesn't count
   assert(got.join(" ") === "0,c,1 1,c,2 2,h,0 4,c,1", "got " + got.join(" "));
   assert(end.state === "over" && end.eggs === 1, JSON.stringify(end));
+});
+
+await test("Egg Emergency: with no CPUs, it speeds up at the server's word, dealt again from there", async () => {
+  const R = await moduleOf(solo, "./src/egg/rules.js");
+  // the server's deal when everyone's over 80 % (rules.js Deal with want, as tools/egg_rules.py runs it)
+  const ref = new R.Deal(77, 3, { allHuman: true, want: () => true });
+  while (ref.f < 1500) ref.step();
+  assert(ref.ups.length === 2 && ref.cs.at(-1) === 1, "the speed-ups: " + ref.ups);
+  const got = headless(solo, (g) => {
+    g.reset("easy", 77, { me: 0, control: ["local", "remote", "remote", "remote"], start: { c: 3, human: true, leans: [[], [], [], []], ups: [] } });
+    g.start();
+    while (g.frame < ref.ups[1] + 40) g.update(1 / 30); // (the word comes late: it's gone by both)
+    const before = g.deal.ups.length;
+    g.serverUps(ref.ups);
+    while (g.frame < 1500) g.update(1 / 30);
+    const same = g.deal.rows.length === ref.rows.length && g.deal.rows.every((r, i) => r.f === ref.rows[i].f && r.code === ref.rows[i].code && r.kind === ref.rows[i].kind);
+    return { before, ups: g.deal.ups.join(), same, c: g.deal.c };
+  });
+  assert(got.before === 0 && got.ups === ref.ups.join() && got.same && got.c === 1, JSON.stringify(got));
+  return `faster at frames ${ref.ups.join(" and ")}`;
 });
 
 await test("Egg Emergency: CPU levels, what it takes to win a solo round", async () => {
@@ -470,8 +535,8 @@ await test("Egg Emergency: CPU levels, what it takes to win a solo round", async
       for (let s = 1; s <= 20; s++) {
         g.reset(level, s * 7717 + 3, { me: 0, control: ["cpu", "cpu", "cpu", "cpu"] });
         g.start();
-        for (let n = 0; g.state === "play" && n < 60 * 400; n++) g.update(1 / 60);
-        const e = g.players.map((p) => p.eggs);
+        for (let n = 0; g.state === "play" && n < 30 * 120; n++) g.update(1 / 30);
+        const e = g.seats.map((p) => p.eggs);
         all.push(...e);
         best.push(Math.max(e[1], e[2], e[3]));
       }
@@ -1841,7 +1906,7 @@ await test("online: rejoining a round, a seat whose player is away is still thei
                   lineup: [{ seat: 0, here: true }, { seat: 1, here: false }, { seat: 2, here: true }] };
   const out = [];
   try {
-    for (const id of ["stampede", "pichu", "togepi", "golbat", "barrier", "rollout", "topsy", "furret", "delibird"]) {
+    for (const id of ["egg", "stampede", "pichu", "togepi", "golbat", "barrier", "rollout", "topsy", "furret", "delibird"]) {
       await solo.mg.show(id);
       solo.mg.mini.reset(round);
       out.push(`${id}: ${solo.mg.mini.game.cpus.join()}`);
@@ -1866,13 +1931,13 @@ await test("online: another device's player is shown as far behind as its moves 
   const end = headless(solo, (g) => {
     g.reset("normal", 1, { me: 0, control: ["local", "remote", "cpu", "cpu"], delay: [0, 0.1, 0, 0] });
     g.start();
-    for (let k = 0; k < 60; k++) g.update(1 / 60);
-    g.remoteLean(1, g.time - 0.3, 1); // 0.3 s old when it gets here
-    const early = g.players[1].want;
     for (let k = 0; k < 120; k++) g.update(1 / 60);
-    return { early, want: g.players[1].want, behind: g.time - g.zoneTime(1) };
+    g.remoteLean(1, Math.floor((g.time - 0.3) * 30) - 31, 1); // 0.3 s old when it gets here (in frames of the play)
+    const early = g.seats[1].lean;
+    for (let k = 0; k < 120; k++) g.update(1 / 60);
+    return { early, want: g.seats[1].lean, behind: g.delay[1] };
   });
-  assert(end.early === 0 && end.want === 1, `the lean: ${end.early}, then ${end.want}`);
+  assert(end.early !== 1 && end.want === 1, `the lean: ${end.early}, then ${end.want}`);
   assert(end.behind > 0.28 && end.behind < 0.36, `the seat's ${end.behind.toFixed(3)} s behind`);
   return `${up.toFixed(2)} s for a move 0.35 s late`;
 });
@@ -1970,22 +2035,23 @@ lane(2, async (f) => {
       // few seconds), then says he caught it, with a made-up count
       stop[1]();
       const gb = bob.mg.game;
-      const missedEgg = () => gb.drops[1].findIndex((d, n) => d.kind === "egg" && d.col !== 0 && gb.arrive[1][n] < gb.time - 0.5 && !gb.settled[1].has(n));
+      const missedEgg = () => gb.drops.find((d) => d.kind === "e" && d.side !== 0 && d.reach < gb.seats[1].f - 15
+        && gb.seats[1].judged.get(d.i) === -1 && !gb.seats[1].caught.has(d.i))?.n ?? -1;
       await until(() => missedEgg() >= 0, "Bob to miss an egg", 12000);
-      const t = gb.time, missed = missedEgg();
+      const f = gb.frame, missed = missedEgg();
       assert(missed >= 0, "Bob didn't miss an egg");
-      gb.players[1].eggs = 99;
-      net.send("ev", { r, s: 1, n: missed, k: "c", e: 99 });
+      gb.seats[1].eggs = 99;
+      net.send("ev", { r, s: 1, n: missed, k: "c", e: 99, g: f });
       await sleep(800);
       assert(eggs(bob)[1] < 90 && Math.abs(eggs(bob)[1] - eggs(ann)[1]) <= 2, `the server didn't correct Bob: ${eggs(bob)} / ${eggs(ann)}`);
       assert(recB.off.some((m) => m.n === missed && m.k === "m"), "no correction for the egg Bob missed");
       recB.off = [];
       // ...claims a catch for Ann, leans for her, a drop still to come, says he's done, and tries to start
       const annCaught = [...recA.judged.values()].find((x) => x.s === 0 && x.k === "c");
-      net.send("ev", { r, s: 0, n: annCaught.n, k: "c", e: 99 });
-      for (let k = 1; k <= 10; k++) net.send("lean", { r, s: 0, g: t + 0.3 * k, l: k % 2 ? 1 : -1 });
-      const ahead = gb.arrive[1].findIndex((a, n) => gb.drops[1][n].kind === "egg" && a > t + 5);
-      net.send("ev", { r, s: 1, n: ahead, k: "c", e: 99 });
+      net.send("ev", { r, s: 0, n: annCaught.n, k: "c", e: 99, g: f });
+      for (let k = 1; k <= 10; k++) net.send("lean", { r, s: 0, f: f + 9 * k, l: k % 2 ? 1 : -1 });
+      const ahead = gb.drops.length + 10; // (one not even dealt yet)
+      net.send("ev", { r, s: 1, n: ahead, k: "c", e: 99, g: f + 150 });
       net.send("done", { r });
       net.send("start");
       stop[1] = autoplay(bob);
@@ -1994,8 +2060,9 @@ lane(2, async (f) => {
       assert(ann.mg.phase() === "play" && ann.mg.room().state === "playing", "the round ended early");
 
       // Bob reloads mid-round: back in the same round, with the same counts
+      const before = bob.mg;
       bob.location.reload();
-      await until(() => bob.mg?.phase() === "play" && Math.abs(bob.mg.game.time - ann.mg.game.time) < 0.5, "Bob back in the round", 20000);
+      await until(() => bob.mg !== before && bob.mg?.phase() === "play" && Math.abs(bob.mg.game.time - ann.mg.game.time) < 0.5, "Bob back in the round", 20000);
       const lost = recB.off;
       recB = watch(bob);
       recB.off = lost;

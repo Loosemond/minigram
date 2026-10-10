@@ -22,7 +22,7 @@ export const GAMES = {
     unit: (n) => `<i class="egg"></i>${n}`, // a score in the results
     invite: "Catch eggs with me in Egg Emergency!",
     store: "", // Telegram / local storage keys: Egg Emergency's are the old unprefixed ones
-    messages: ["lean", "ev"], // its messages about a round, through the rooms server
+    messages: ["lean", "ev", "deal"], // its messages about a round, through the rooms server
     load: () => import("./egg/index.js"),
   },
   clearcut: {

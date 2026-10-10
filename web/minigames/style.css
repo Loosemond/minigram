@@ -64,17 +64,22 @@ input { -webkit-user-select: text; user-select: text; }
 }
 .card.bump .num { animation: bump 0.25s; }
 .card.hurt { animation: shake 0.45s; }
-.egg {
+i.egg {
   display: inline-block; width: 0.72em; height: 0.92em; flex: none;
   background: #fffdf4; border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
   box-shadow: inset -2px -2px 0 rgba(0, 0, 0, 0.12);
 }
+/* Egg Emergency: "EGGS" and the eggs still to come, as the game draws them over
+   its screen (image bank 404, 0x868039F8), and each player's count in the big
+   digits (bank 429 at 0.57, a little overlapped) */
 #left {
-  position: absolute; display: flex; align-items: center; gap: 6px;
-  padding: 3px 10px 3px 6px; border-radius: 999px; font-size: 14px; font-weight: 700;
-  color: #fff; background: rgba(20, 14, 10, 0.55); white-space: nowrap;
+  position: absolute; display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 4px 8px; border-radius: 10px; background: rgba(20, 14, 10, 0.45); white-space: nowrap;
 }
-#left .num img { width: 15px; height: 20px; object-fit: cover; }
+#left .eggs { width: 72px; height: 16.5px; }
+#left .eggs:not([src]) { visibility: hidden; }
+#left .num img { width: 24px; height: 24px; margin: 0 -2px; }
+.card .num img.eg-big { width: calc(var(--k) * 13.7px); height: calc(var(--k) * 18.2px); margin-left: calc(var(--k) * -1px); object-fit: fill; }
 #pads { position: absolute; left: 0; right: 0; bottom: calc(var(--safe-b) + 14px); display: flex; justify-content: space-between; padding: 0 calc(var(--safe-l) + 14px) 0 calc(var(--safe-r) + 14px); }
 .pad {
   width: 58px; height: 40px; border-radius: 14px; display: grid; place-items: center;

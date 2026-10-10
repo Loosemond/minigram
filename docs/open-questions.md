@@ -116,13 +116,19 @@ What isn't known yet, roughly by how useful it would be.
 - **Battle contexts 255–267, 269, 270** of the battle motion table
   ([animation.md](animation.md)).
 - **Attachment labels** (geo `0x18` / `0x24`): what the game attaches at each.
+  As an object is drawn, each one's place in the world is kept on it
+  (`0x8003C3B8`: +0xA7 how many, from +0xA8 16 bytes each, the label and x, y,
+  z), for code to read: Egg Emergency's sparks go 30 over the first one's y
+  (+0xB0; Chansey's is on bone 3, its head).
 - **Room decoration names** are matched to models by appearance; the table
   that links decoration items to object records hasn't been found.
-- **Egg Emergency's numbers:** fall speeds, how the drops are patterned, how
-  long a Voltorb stuns, what the CPU players do, where the HUD sits. They're
-  in module #56's code, which hasn't been read beyond its calls; the browser
-  remake guesses them ([web/README.md](../web/README.md)). Also what image
-  bank 429 (big digits with ±) is used for exactly.
+- **Egg Emergency's loose ends** (its rules are read: [minigames.md](minigames.md#egg-emergency)):
+  how the overlay colour (a hurt Chansey's red, object +0xA0 with its alpha)
+  blends in the material code (the remake lays it on as Rampage Rollout's);
+  whether "PERFECT" (module #2's object list `0x81900DE0`, render layer 6, z 0)
+  is depth-tested against Chansey (the remake draws it over everything); and the Game Pak's
+  Chansey variants (`0x87F0AD50(…, 0xA, p)`, a shiny one presumably), which
+  the remake leaves out.
 - **Clear Cut Challenge's loose ends** (its rules are read: [minigames.md](minigames.md#clear-cut-challenge)):
   the game's frame rate (30 a second is assumed: the scheduler's retrace
   count wasn't traced), how objects 130 and 131 (the cut's effects) are

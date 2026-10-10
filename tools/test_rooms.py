@@ -44,9 +44,14 @@ import rooms  # noqa: E402
 import stampede_rules  # noqa: E402
 import togepi_rules  # noqa: E402
 
-# makeSchedules() in web/minigames/src/egg/game.js, run in a browser: the
-# first 16 hex digits of the SHA-256 of every drop (the bits of t and fall)
-JS_SCHEDULES = {1: "ba64e35664b2591f", 12345: "36b3b248013c25c9", 2 ** 31 - 1: "9812a4cb6c5a99c7"}
+# Deal in web/minigames/src/egg/rules.js, run in a browser: the first 16 hex
+# digits of the SHA-256 of every row of its deals for c 1-3 (and c 3 with no
+# CPUs, everyone always over 80 %: the speed-ups), the patterns' order and
+# each fall's heights (web/minigames/tests.js has the same)
+JS_EGG_DEALS = {1: "9485f9543049d735", 12345: "db9cf57a6206a50a", 2 ** 31 - 1: "2d5f99435a6e52fc"}
+# and a round on one of them (c 2, 1 or 3 by the seed mod 3) with egg_script()'s
+# leans: what came of every seat's drops, as Seat has them
+JS_EGG_ROUNDS = {1: "b18f7fd09f89d7e1", 12345: "bc1c8b3550f4dcb3", 2 ** 31 - 1: "84e70798d4fdfd23"}
 # deal() in web/minigames/src/clearcut/rules.js, for every level code: each log's
 # target, wait and the bits of its line (web/minigames/tests.js has the same)
 JS_DEALS = {1: "845261658a294406", 12345: "dcaad7cc4c79a603", 2 ** 31 - 1: "8c853818348d493e"}
@@ -169,17 +174,35 @@ def topsy_pad(z, t, w):
     x, y = [(64, 0), (0, 64), (-45, -45), (0, 0)][t // 60 % 4]
     return [x, y, t % 71 == 13]
 
-# a short round, the same for every seat: (t, col, kind, fall); they reach the
-# hands at 0.5, 0.8, 1.1 (the Voltorb), 1.4 and 2.1
-SHORT = [(0.0, 0, "egg", 0.5), (0.3, 1, "egg", 0.5), (0.6, 1, "voltorb", 0.5), (0.9, 1, "egg", 0.5), (1.6, -1, "egg", 0.5)]
+# a short round: (frame it comes in, side, kind), falling fast (17): they get to
+# the hands on frames 33, 42, 51 (the Voltorb), 60 (in the hurt that follows it:
+# it goes by at 66) and 82 (the same in web/minigames/tests.js)
+SHORT = [(1, 0, "e"), (10, 1, "e"), (19, 1, "v"), (28, 1, "e"), (50, -1, "e")]
+
+
+def egg_time(f):
+    """Round time (s from GO) of frame f of Egg Emergency's play."""
+    return (f + egg_rules.PLAY_AT - 1) / egg_rules.FPS
+
+
+def egg_script(z, g, d):
+    """JS_EGG_ROUNDS' leans: seat 0 goes for the next drop to come (Voltorbs
+    too), seat 1 for the next egg, seats 2 and 3 a pattern."""
+    if z >= 2:
+        return [-1, 0, 1][((g >> (z + 2)) + z) % 3]
+    best = None
+    for r in d.drops:
+        if r.reach >= g and (z == 0 or r.kind == "e") and (best is None or r.reach < best.reach):
+            best = r
+    return best.side if best else 0
 TOKEN = "12345:TEST-TOKEN"
 
 rooms.LEAD, rooms.GO_DELAY = 0, 300
 rooms.GRACE, rooms.SETTLE_LAG, rooms.SLACK, rooms.END_WAIT = 1.5, 5, 0.3, 1
 rooms.BOT_TOKEN = TOKEN
 rooms.checker = None  # no calls to TypeSafe from the tests
-real_schedules = egg_rules.schedules
-egg_rules.schedules = lambda seed: [list(SHORT) for _ in range(egg_rules.SEATS)]
+real_make_deal = egg_rules.make_deal
+egg_rules.make_deal = lambda seed, c, all_human=False, **kw: egg_rules.Deal(seed, c, all_human, fixed=SHORT, a=17, **kw)
 REAL_WAITS = clearcut_rules.WAITS
 # Clear Cut Challenge's rounds, short: no hauling up, no waits, a 30-frame fall and no show
 clearcut_rules.RISE, clearcut_rules.SHOW, clearcut_rules.FALL_FRAMES = 3, 3, 30
@@ -314,14 +337,39 @@ def check(name, together=None):
     return add
 
 
-@check("the drops match the game's, bit for bit")
+@check("Egg Emergency: the deal and the judging match the game's, bit for bit")
 def _():
-    for seed, want in JS_SCHEDULES.items():
-        s = "".join("%s,%d,%s,%s;" % (struct.pack(">d", t).hex(), col, kind[0], struct.pack(">d", fall).hex())
-                    for seat in real_schedules(seed) for t, col, kind, fall in seat)
+    for seed, want in JS_EGG_DEALS.items():
+        s = ""
+        for c, human in ((1, False), (2, False), (3, False), (3, True)):
+            d = egg_rules.Deal(seed, c, human, want=lambda f, eggs: True)
+            while not d.over:
+                d.step()
+            s += "".join("%d,%d,%d,%s,%d,%d;" % (r.f, r.slot, r.code, r.kind or "-", r.spin, r.a) for r in d.rows)
+            s += "|%s|%s|" % (",".join(map(str, d.ups)), ",".join(map(str, d.perm)))
+        s += "".join("".join(struct.pack(">f", y).hex() for y in egg_rules.fall(a)) + "/" for a in (17, 13, 10, 8))
         assert hashlib.sha256(s.encode()).hexdigest()[:16] == want, seed
-    eggs = [sum(d[2] == "egg" for d in seat) for seat in real_schedules(7)]
-    assert eggs == [egg_rules.EGGS] * 4, eggs
+        d = egg_rules.Deal(seed, 2)
+        while not d.over:
+            d.step()
+        assert sum(r.kind == "e" for r in d.rows) in (egg_rules.EGGS, egg_rules.EGGS + 1)
+    for seed, want in JS_EGG_ROUNDS.items():
+        d, seats, g = egg_rules.Deal(seed, [2, 1, 3][seed % 3]), [egg_rules.Seat(z) for z in range(4)], 0
+        while True:
+            g += 1
+            d.step()
+            for z, seat in enumerate(seats):
+                seat.step(g, d, egg_rules.LEAN[egg_script(z, g, d)])
+            if d.clear(g):
+                break
+        s = "|".join(";".join("%d:%s:%d:%d" % (r.n, k, e, f) for r, k, e, f in seat.out) for seat in seats)
+        assert hashlib.sha256(s.encode()).hexdigest()[:16] == want, seed
+    # with no CPUs, everyone over 80 % when 70 are left: faster from the next pattern's end
+    rd = egg_rules.Round(5, "easy", [False] * 4)
+    assert rd.c == 3 and rd.all_human
+    rd.deal = real_make_deal(5, rd.c, True, want=lambda f, eggs: True)  # (as if everyone had caught everything)
+    rd.deal_to(2000)
+    assert rd.deal.ups and rd.deal.cs[-1] == 1 and rd.new_ups() == rd.deal.ups and rd.new_ups() is None, rd.deal.ups
 
 
 @check("Clear Cut Challenge: the logs match the game's, bit for bit")
@@ -527,33 +575,32 @@ def _():
     A.send("start")
     sa, sb = A.wait("start"), B.wait("start")
     assert sa["seed"] == sb["seed"] and sa["round"] == 1 and sa["go"] > rooms.clock() - 2000  # (GO's this round's: the others' checks keep the CPU busy)
-    assert sa["drops"][0][2] == [0.6, 1, "v", 0.5] and sa["settled"] == [0] * 4 and sa["leans"] == [None] * 4
+    assert sa["c"] == egg_rules.level_code(sa["level"], True) and sa["human"] is False and sa["ups"] == [] and sa["leans"] == [[]] * 4 and sa["f"] < 0, sa
     assert sa["rtt"] == [42, None, 42, 42], sa["rtt"]  # each seat's device: Ann plays the CPUs
     go, r = sa["go"], sa["round"]
     # Ann (seat 0) plays well: leans right for the second egg, stays for the Voltorb, left for the last one
-    A.send("lean", r=r, s=0, g=0.6, l=1)
-    A.send("lean", r=r, s=0, g=1.5, l=-1)
-    A.send("lean", r=r, s=2, g=0.1, l=1)  # the host plays the CPUs; seat 3 stays in the middle
-    A.send("lean", r=99, s=0, g=0.7, l=0)  # another round's: ignored
-    B.send("lean", r=r, s=0, g=0.7, l=0)  # someone else's player: ignored
-    B.send("lean", r=r, s=3, g=0.7, l=1)  # a CPU, not the host: ignored
-    B.send("lean", r=r, s=1, g=0.9, l=1)  # Bob moves right, under the Voltorb
-    assert B.wait("lean") == dict(t="lean", r=r, s=0, g=0.6, l=1)
-    B.send("ev", r=r, s=1, n=4, k="c", e=9)  # a drop that hasn't arrived yet: ignored
-    at(go, 0.55)
-    A.send("ev", r=r, s=0, n=0, k="c", e=1)
-    B.send("ev", r=r, s=1, n=0, k="c", e=1)
-    at(go, 0.62)
+    A.send("lean", r=r, s=0, f=35, l=1)
+    A.send("lean", r=r, s=0, f=60, l=-1)
+    A.send("lean", r=r, s=2, f=2, l=1)  # the host plays the CPUs; seat 3 stays in the middle
+    A.send("lean", r=99, s=0, f=36, l=0)  # another round's: ignored
+    B.send("lean", r=r, s=0, f=36, l=0)  # someone else's player: ignored
+    B.send("lean", r=r, s=3, f=36, l=1)  # a CPU, not the host: ignored
+    B.send("lean", r=r, s=1, f=45, l=1)  # Bob moves right, under the Voltorb
+    assert B.wait("lean") == dict(t="lean", r=r, s=0, f=35, l=1)
+    B.send("ev", r=r, s=1, n=4, k="c", e=9, g=82)  # a drop that hasn't arrived yet: ignored
+    at(go, egg_time(34))
+    A.send("ev", r=r, s=0, n=0, k="c", e=1, g=33)
+    B.send("ev", r=r, s=1, n=0, k="c", e=1, g=33)
     A.send("done", r=r)  # "done" before the end doesn't end the round
     B.send("done", r=r)
-    at(go, 0.85)
-    A.send("ev", r=r, s=0, n=1, k="c", e=2)
-    B.send("ev", r=r, s=1, n=1, k="c", e=2)  # Bob wasn't there
-    at(go, 1.15)
-    A.send("ev", r=r, s=0, n=2, k="h", e=0)
-    B.send("ev", r=r, s=0, n=2, k="c", e=50)  # not his seat: ignored
-    at(go, 1.45)
-    B.send("ev", r=r, s=1, n=3, k="c", e=50)  # stunned, and the count's made up
+    at(go, egg_time(43))
+    A.send("ev", r=r, s=0, n=1, k="c", e=2, g=42)
+    B.send("ev", r=r, s=1, n=1, k="c", e=2, g=42)  # Bob wasn't there
+    at(go, egg_time(52))
+    A.send("ev", r=r, s=0, n=2, k="h", e=0, g=51)
+    B.send("ev", r=r, s=0, n=2, k="c", e=50, g=51)  # not his seat: ignored
+    at(go, egg_time(61))
+    B.send("ev", r=r, s=1, n=3, k="c", e=50, g=60)  # stunned, and the count's made up
     res = A.wait("results", timeout=5)
     got_at = (rooms.clock() - go) / 1000
     assert got_at > egg_rules.Round(0).end - rooms.SLACK - 0.05, got_at
@@ -578,9 +625,9 @@ def _():
     s = A.wait("start")
     B.wait("start")
     go, r = s["go"], s["round"]
-    B.send("lean", r=r, s=1, g=0.2, l=1)
-    at(go, 0.85)
-    B.send("ev", r=r, s=1, n=1, k="c", e=1)  # missed the first (leaning right), caught the second
+    B.send("lean", r=r, s=1, f=2, l=1)
+    at(go, egg_time(43))
+    B.send("ev", r=r, s=1, n=1, k="c", e=1, g=42)  # missed the first (leaning right), caught the second
     time.sleep(0.1)
     B.close()
     snap = [m for m in A.drain() if m["t"] == "room"][-1]
@@ -589,10 +636,11 @@ def _():
     B2.send("hello", id="b1", name="Bob", room=code)
     assert B2.wait("welcome")["seat"] == 1
     st = B2.wait("start")
-    assert st["round"] == r and st["go"] == go and st["drops"] == s["drops"], st
-    assert st["scores"][1] == 1 and st["leans"][1] == [0.2, 1] and st["settled"][1] == 2 and st["hits"][1] is None, st
+    assert st["round"] == r and st["go"] == go and st["c"] == s["c"] and st["f"] >= 43, st
+    assert st["scores"][1] == 1 and st["leans"][1] == [[2, 1]], st
     B2.send("done", r=r)
     A.send("done", r=r)
+    at(go, egg_rules.Round(0).end - 1)
     assert A.wait("results", timeout=5)["round"] == r
     globals()["B"] = B2
 
@@ -603,17 +651,19 @@ def _():
     B.drain()
     time.sleep(rooms.CHANGE_GAP)
     A.send("start")
-    r = A.wait("start")["round"]
+    st = A.wait("start")
+    r, go = st["round"], st["go"]
     B.wait("start")
     B.send("leave")
     assert A.wait("left")["seat"] == 1
     time.sleep(0.1)
     snap = [m for m in A.drain() if m["t"] == "room"][-1]
     assert snap["state"] == "playing" and snap["lineup"][1]["here"] is False
-    A.send("lean", r=r, s=1, g=0.3, l=-1)  # now the host's
+    A.send("lean", r=r, s=1, f=9, l=-1)  # now the host's
     time.sleep(0.1)
-    assert rooms.rooms[code].game.cols[1] == [-1]
+    assert rooms.rooms[code].game.leans[1] == [-1]
     A.send("done", r=r)
+    at(go, egg_rules.Round(0).end - 1)  # (the short round's over 5.3 s from GO)
     assert A.wait("results", timeout=5)["round"] == r
 
 

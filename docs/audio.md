@@ -163,14 +163,17 @@ uses:
 
 | Id | Sound | Effects of font 12 | When (from the code) |
 |---|---|---|---|
-| `0x7F01` | `0x4E` | 37 | an egg is caught |
-| `0x7F02` | `0x4F` | 38, 6, 18 | a Voltorb goes off (Chansey plays clip 13, hurt) |
-| `0x7F00` | `0x4D` | 36, twice | with it, if Chansey had eggs to lose (*by context*) |
-| `0x7F05` | `0x2F` | 81, instrument 35 | a drop falls in the water (*by context*) |
+| `0x7F01` | `0x4E` | 37 | an egg is caught: once a frame, for every player, on the first catcher's side (`0x868047F4`) |
+| `0x7F02` | `0x4F` | 38, 6, 18 | a Voltorb goes off (Chansey plays clip 13, hurt), once a frame (`0x86804748`) |
+| `0x7F00` | `0x4D` | 36, twice | with it, if Chansey had eggs to lose (`0x8680472C`); a winner's throw at the end (`0x86806CD8`) |
+| `0x7F05` | `0x2F` | 81, instrument 35 | a drop not caught falls in the water, once a frame, always on player 3's side (`0x86804A7C`); a winner's thrown egg, on its side |
 | `0x7F03`, `0x7F04` | `0x66`, `0x67` (pitch 1.19) | 79, 80 | each count of module #64's countdown; GO (`0x868066B8`) |
 | `0xCF00` | `0x7C` | 96 | a count's 3, 2 and 1 (in Topsy-Turvy's code) |
-| `0xCF06` | `0x28` | 33, three times | the same count's 0 (the remake plays it for GO!) |
-| `0xCF0B` | `0x86` | 86 | the finish whistle (the song fades out for 40 frames with it) |
+| `0xCF06` | `0x28` | 33, three times | the same count's 0; Egg Emergency's end, 5 frames after the last drop's gone (`0x868059CC`) |
+| `0xCF0B` | `0x86` | 86 | the finish whistle: as the player leaves the instructions, with a 40-frame fade of the song (`0x868063CC`); not at the end |
+
+Song 45 starts 31 frames after GO, with the play (`0x86806E94`), and plays on
+at the end.
 
 The finish whistle's script is shared by sounds `0x85`, `0x86`…: it writes
 its note (21 + the sound number − 133) into itself before playing it.

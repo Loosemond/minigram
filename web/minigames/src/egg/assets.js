@@ -9,7 +9,6 @@ import { retry, attemptURL, fetchRetry } from "../retry.js";
 THREE.ColorManagement.enabled = false; // colours are the game's own values
 
 const FPS = 30; // the game's animation rate
-const OBJECT_SCALE = 1 / 11.5; // objects table units -> Chansey is 1 unit tall
 
 const gltfLoader = new GLTFLoader();
 const texLoader = new THREE.TextureLoader();
@@ -65,28 +64,22 @@ function image(url) {
   }, url);
 }
 
-// base: Egg Emergency's own files (assets/egg/), ui: the HUD's pictures
-// shared by the minigames (assets/ui/)
-export async function loadAssets(base, ui, onProgress = () => {}) {
+// base: Egg Emergency's own files (assets/egg/)
+export async function loadAssets(base, onProgress = () => {}) {
   const jobs = [];
   let done = 0;
   const job = (p) => { jobs.push(p); return p.then((x) => { onProgress(++done / jobs.length); return x; }); };
   const frames = (name, n, pad) => Promise.all([...Array(n)].map((_, i) =>
     job(spriteTexture(base + name + String(i).padStart(pad, "0") + ".png"))));
-  const big = Promise.all([...Array(10)].map((_, i) => job(image(ui + "big" + i + ".png"))));
-  const [chansey, info, egg, voltorb, splash, smoke, burst, sparks, backdrop, digits, plus, minus] = await Promise.all([
+  const [chansey, info, egg, voltorb, splash, spark, perfect, backdrop] = await Promise.all([
     job(gltf(base + "chansey.glb")),
     job(fetchRetry(base + "chansey.json").then((r) => r.json())),
     job(gltf(base + "egg.glb")),
     frames("voltorb", 6, 1),
     frames("splash", 12, 2),
-    job(spriteTexture(base + "fx_smoke.png")),
-    job(spriteTexture(base + "fx_burst.png")),
-    job(spriteTexture(base + "fx_sparks.png")),
+    job(spriteTexture(base + "spark.png")),
+    job(image(base + "perfect.png")),
     job(spriteTexture(base + "backdrop.jpg")),
-    big,
-    job(image(ui + "plus.png")),
-    job(image(ui + "minus.png")),
   ]);
   prepare(chansey.scene);
   prepare(egg.scene);
@@ -111,62 +104,90 @@ export async function loadAssets(base, ui, onProgress = () => {}) {
     egg: egg.scene,
     voltorb, // 6 frames, 24x24
     backdrop,
-    fx: { smoke, burst, sparks, splash },
-    digits: { big: digits, plus, minus },
+    fx: { splash, spark },
+    perfect, // "PERFECT" (image bank 433), grey: coloured per player as it's drawn
   };
 }
 
-// One Chansey: its own mixer and its own face material.
-export function makeChansey(assets) {
+// One Chansey at scale s: its own mixer and its own face material, a clip posed
+// at a frame of the game's (pose), a colour laid over it (tint), and where its
+// attachment point (bone 3, the head) is.
+export function makeChansey(assets, s) {
   const a = assets.chansey;
   const model = cloneSkinned(a.scene);
-  model.scale.setScalar(OBJECT_SCALE);
+  model.scale.setScalar(s);
   const root = new THREE.Group();
   root.add(model);
-  let face = null;
+  let face = null, head = null;
+  const mats = [];
   model.traverse((o) => {
-    if (o.isMesh && o.material.userData.ps2_face) { o.material = o.material.clone(); face = o.material; }
+    if (o.name === "bone_03") head = o;
+    if (!o.isMesh) return;
+    o.material = [o.material].flat().map((m) => {
+      const c = m.clone();
+      c.userData = { ...m.userData, base: c.color.clone() };
+      if (m.userData.ps2_face) face = c;
+      mats.push(c);
+      return c;
+    });
+    if (o.material.length === 1) o.material = o.material[0];
   });
   const mixer = new THREE.AnimationMixer(model);
   const actions = a.clips.map((c) => mixer.clipAction(c));
-  let current = -1, currentAction = null;
+  let current = -1, action = null;
   const setFace = (k) => { if (face && a.faces[k] && face.map !== a.faces[k]) face.map = a.faces[k]; };
+  const at = new THREE.Vector3();
 
-  const api = {
+  return {
     root, mixer,
     get clip() { return current; },
-    // play clip i; {loop, fade, speed, restart}
-    play(i, { loop = true, fade = 0.12, speed = 1, restart = false } = {}) {
-      if (i === current && !restart) { currentAction.timeScale = speed; return; }
+    // clip i at frame f of the game's (0 to its last)
+    pose(i, f) {
       const next = actions[i];
-      next.reset();
-      next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
-      next.clampWhenFinished = !loop;
-      next.timeScale = speed;
-      next.play();
-      if (currentAction && fade > 0) currentAction.crossFadeTo(next, fade, false);
-      else if (currentAction) currentAction.stop();
-      current = i; currentAction = next;
-    },
-    get done() { return !currentAction || (!currentAction.isRunning() && currentAction.loop === THREE.LoopOnce); },
-    update(dt) {
-      mixer.update(dt);
-      const track = a.faceTracks[current];
-      if (track) setFace(track[Math.min(track.length - 1, Math.floor(currentAction.time * FPS))]);
+      if (!next) return;
+      if (i !== current) {
+        if (action) action.stop();
+        next.reset();
+        next.setLoop(THREE.LoopRepeat, Infinity);
+        next.play();
+        next.paused = true;
+        current = i;
+        action = next;
+      }
+      const d = a.clips[i].duration;
+      action.time = Math.min(Math.max(0, f) / FPS, d - 1e-4);
+      mixer.update(0);
+      const track = a.faceTracks[i];
+      if (track) setFace(track[Math.min(track.length - 1, Math.max(0, Math.floor(f)))]);
       else setFace(a.faceDefault);
     },
-    seek(t) { mixer.setTime(t); api.update(0); },
+    // a colour laid over it: towards rgb by k (0 none)
+    tint(rgb, k) {
+      for (const m of mats) {
+        m.color.copy(m.userData.base).lerp(rgb, k);
+        if (m.emissive) m.emissive.copy(rgb).multiplyScalar(k * 0.6);
+      }
+    },
+    // its head's height, in the scene (where the game's attachment point is)
+    headY() { root.updateMatrixWorld(true); return head ? head.getWorldPosition(at).y : root.position.y; },
   };
-  return api;
 }
 
 // objects of player i's area are on layer i + 1, so each player's own view
 // can leave the others out (layer 0 is shared)
 export function setLayer(obj, n) { obj.traverse((o) => o.layers.set(n)); }
 
-export function makeEgg(assets) {
+// the egg at scale s; see-through (an egg knocked out) at opacity
+export function makeEgg(assets, s, opacity = 1) {
   const m = cloneSkinned(assets.egg);
-  m.scale.setScalar(OBJECT_SCALE);
+  m.scale.setScalar(s);
+  if (opacity < 1) {
+    m.traverse((o) => {
+      if (!o.isMesh) return;
+      o.material = [o.material].flat().map((x) => { const c = x.clone(); c.transparent = true; c.opacity = opacity; c.depthWrite = false; return c; });
+      if (o.material.length === 1) o.material = o.material[0];
+    });
+  }
   return m;
 }
 

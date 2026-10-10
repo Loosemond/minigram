@@ -65,10 +65,11 @@ for _i, _name in enumerate(["com", "com_blue", "com_green", "com_red", "com_yell
     UI["winner_%s.png" % _name] = bank(435, _i)
 UI.update({"draw.png": bank(442, 0), "wins.png": bank(442, 1)})
 
-# Egg Emergency is code module #56. Besides objects 144 (Chansey), 145 (egg)
-# and 185 (effect textures) it loads background picture 19 (0x8004D770) and
-# image banks 152, 227, 404, 429 and 434 (0x8004CA70). The countdown is the
-# shared bank 360. See docs/minigames.md.
+# Egg Emergency is code module #56. Besides objects 144 (Chansey) and 145
+# (egg) it loads 185 (effect textures it never draws), background picture 19
+# (0x8004D770) and image banks 152, 227, 404, 429 and 434 (0x8004CA70). The
+# countdown is the shared bank 360; a hurt Chansey's sparks are module #64's
+# (bank 224, below) and "PERFECT" module #2's (bank 433). See docs/minigames.md.
 EGG = {
     "chansey.glb": "objects/144_chansey/144_chansey.glb",
     "chansey.json": "objects/144_chansey/144_chansey.json",  # clip lengths, face frames
@@ -76,10 +77,8 @@ EGG = {
     "chansey_face3.png": "objects/144_chansey/textures/face/tex03.png",
     "chansey_face4.png": "objects/144_chansey/textures/face/tex04.png",
     "egg.glb": "objects/145_egg/145_egg.glb",
-    "fx_smoke.png": "objects/185_object_185/textures/tex01.png",
-    "fx_burst.png": "objects/185_object_185/textures/tex02.png",
-    "fx_sparks.png": "objects/185_object_185/textures/tex03.png",
     "backdrop.jpg": "images/backgrounds/19.jpg",  # the building, one column per player
+    "perfect.png": bank(433, 0),  # over a Chansey with all 100 eggs at the end (grey: coloured per player)
 }
 EGG.update({"voltorb%d.png" % i: bank(227, i) for i in range(6)})  # Voltorb is a sprite here
 EGG.update({"splash%02d.png" % i: bank(152, i) for i in range(12)})  # a missed egg hits the water
@@ -517,6 +516,7 @@ SOUNDS = {
         # 0x7F03 and 0x7F04, the minigame's own count and GO (0x868066B8)
         "count": _sound(0x66, 105, 1, 0x0010),
         "go": dict(_sound(0x67, 105, 1, 0x0010), pitch=1.19),
+        "end": SHARED["go"],  # 0xCF06, 5 frames after the last drop's gone (0x868059CC)
     }),
     # Clear Cut Challenge asks for song 18 (sequence 57) 30 frames into each
     # log, while Spinarak hauls it up, and song 19 (sequence 58) when the cut
@@ -1047,6 +1047,17 @@ def build():
             with open(os.path.join(site, "pichu", name + ".png"), "wb") as fh:
                 fh.write(png.encode_rgba(1, fh_, b"".join(px[y * fw * 4:y * fw * 4 + 4] for y in range(fh_))))
         print("pichu: the sparks, the lightning and the gauge (image banks 224, 225, 409, 410)")
+        # Egg Emergency's sparks round a hurt Chansey: module #64's particle (0x87F03884,
+        # drawn by 0x87F039F0), bank 224's first picture through prim + (env - prim) x
+        # its grey, prim yellow and env white; its alpha the grey
+        (_, sw, sh, grey), = images.bank_images(rom, 224)[:1]
+        px = bytearray()
+        for o in range(0, sw * sh * 4, 4):
+            i = grey[o]
+            px += bytes((255, 255, i, i))
+        with open(os.path.join(site, "egg", "spark.png"), "wb") as fh:
+            fh.write(png.encode_rgba(sw, sh, bytes(px)))
+        print("egg: the hurt sparks (image bank 224)")
         # Tumbling Togepi's Diglett (bank 205: its hole, then coming up), side by
         # side; and its art for the title and the lobby: the track (bank 226),
         # its eight 256 px lengths side by side, START to GOAL
