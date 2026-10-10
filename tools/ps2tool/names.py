@@ -118,7 +118,7 @@ MINIGAMES = {
 BANKS = {
     152: "Egg Emergency splash", 227: "Egg Emergency Voltorb", 307: "Eager Eevee effects",
     358: "Mini-game Champion", 360: "countdown", 404: "small digits", 429: "big digits",
-    430: "Eager Eevee points", 434: "player badges",
+    430: "Eager Eevee points", 434: "player badges",  # (430's image 1 is Delibird's Delivery's "Points"; 404 its clock)
     # the minigames' name banners
     383: "banner Rampage Rollout", 388: "banner Eager Eevee", 395: "banner Gutsy Golbat",
     396: "banner Clear Cut Challenge", 400: "banner Topsy-Turvy", 403: "banner Egg Emergency",

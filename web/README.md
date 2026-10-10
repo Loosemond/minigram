@@ -918,14 +918,18 @@ where each number is):
 - **One stage for all four.** As in Furret's Frolic, every device runs the
   whole world from everyone's sticks, and the server too: the gifts coming in
   and who picks each up, the sacks, the belts, the Swinub and the CPUs, in
-  doubles, + − × / and square roots only, the same way in both copies.
+  doubles, + − × / and square roots only, the same way in both copies (a
+  Swinub's speed rounded to a single, as the game's), with the game's own
+  random numbers.
 - **The CPUs** are the game's: Easy goes for the closest gift, Normal for the
   one worth most and Hard for one worth what its last was (for the points in
   a row); they take their gifts up once they have three (Hard four) or after
   a while, and look ahead for the Swinub, Hard 130 frames.
-- **The sack's reach.** How near a Swinub has to come to hit a sack, the game
-  looks up by the player (1P's the least, 4P's twice as far) where its table
-  goes by how full the sack is; the remake goes by the sack.
+- **Drawn between frames.** The world runs 30 frames a second, as the game's;
+  the scene's drawn between its last two (a frame behind), so the Delibird,
+  their turns and clips, the gifts, boxes and Swinub, a gift's jump to
+  Delibird's hand, the belts and the badges' hops move smoothly however often
+  the screen's drawn.
 
 The stage is objects 148 and 147, seen from the game's camera, with the field
 of view that shows the field, both belts and the doors' feet; in portrait the
@@ -934,8 +938,9 @@ badge (1P-4P, or COM in its colour), and FULL over a full sack; under each Delib
 a shadow. On a phone: a finger anywhere is the Control Stick (the way and how
 far it slides from where it went down). With a keyboard: the arrows (or W A S
 D), as the game takes the D-pad (64 one way, 45 each way on a diagonal). At
-the end the points count up on a board in the middle (the winners' rows going
-round the colours), then the winners cheer and the others sulk. A save's
+the end the points count up in the middle (the winners' going round the
+colours), and as they're all in the winners cheer, the others sulk and the
+results come on. A save's
 flags in the game swap the Game Boy and the Nintendo 64 for a Game Boy Advance
 and a GameCube; the remake plays without them.
 
@@ -950,8 +955,8 @@ What comes from the ROM and what is made up:
 
 | From the game | Made for the remake |
 |---|---|
-| the gifts and their points, weights and sizes, the belts, the sacks, the doors, the Swinub, the knocks and spins, the combos, the CPUs, the end and its tally, the camera (module #60's code) | the field of view that fits the window, the portrait layout, the stick on a phone, the tally's layout, where a gift being picked up goes, the sack's reach (above) |
-| Delibird and its sack (127) and their clips, the Swinub (82, 103), the gift boxes (92, 96), the gifts (169-184), the stage (147, 148), the shadow's dot (307), FULL (379), the HUD's box, gift and digits (376, 381, 380), the combo's flash and x2-x5 (398, 377), "Points" (430), the badges (434: over each Delibird as module #64's labels, and in the tally), the gifts and the Swinub turned to the camera (their joints' flag), the colours of x2-x5, the big digits (429) | the title's art (the doors, flat) |
+| the gifts and their points, weights and sizes, the belts, the sacks and how near a Swinub has to come to one (by player), the doors, the Swinub, the knocks and spins, the combos, the CPUs, the end and its tally, the camera, the lights, the clips' speed and how each plays, a picked-up gift's jump to Delibird's hand, the belts' scroll (module #60's code) | the field of view that fits the window, the portrait layout, the stick on a phone, the HUD's and the tally's layout, drawing between frames |
+| Delibird and its sack (127) and their clips, the Swinub (82, 103), the gift boxes (92, 96), the gifts (169-184), the stage (147, 148), the shadow's dot (307), FULL (379), the HUD's box, gift and digits (376, 381, 380), the combo's flash and x2-x5 (398, 377), the clock's digits (404), "Points" (430), the badges (434: over each Delibird as module #64's labels, and in the tally), the gifts and the Swinub turned to the camera (their joints' flag), the HUD's colours (the combiner's: the clock, the cards' boxes and counts, x2-x5 and the flash, the tally's rows), the big digits (429) | the title's art (the doors, flat) |
 | song 52, bank 8's effects, the count | |
 
 Code: `src/delibird/rules.js` has the world (and `tools/delibird_rules.py`,
@@ -1060,7 +1065,8 @@ How it works:
   Topsy-Turvy's), with `tools/delibird_rules.py`; the play's over when the
   minute's up and nothing's on its way (a second after, at the most), and the
   server says that frame and each one's points (`won`); the round's over
-  once the tally (which the devices count up themselves) and the cheering are.
+  once the tally (which the devices count up themselves) is, as the game hands
+  over to its results then.
   A minute of it is about 0.1-0.4 s of the server's time (Hard's CPUs look
   ahead).
 - **Sent ahead** (Gutsy Golbat, Barrier Ball, Rampage Rollout, Topsy-Turvy, Furret's Frolic, Delibird's Delivery): a device's player's pad counts

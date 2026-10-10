@@ -70,14 +70,14 @@ What isn't known yet, roughly by how useful it would be.
 - **Delibird's Delivery's loose ends** (its rules are read: [minigames.md](minigames.md#delibirds-delivery)):
   how the save's flags that swap in the Game Boy Advance and the GameCube
   get set (module #63's `0x87E07CB0` and `0x87E07C90` set them, reached
-  through pointers not followed; the remake plays without); where a gift being
-  picked up goes (to a point of Delibird's model, `+0xBC` of its object, read
-  as it's drawn: the remake takes it to the sack); the sack's reach, looked up
-  by the player where its table goes by the fill (the remake goes by the
-  fill); the labels' size (module #64's); the lights' ways (by eye, as in
-  Furret's Frolic); what image banks 378 and 382 (the gifts and their points,
-  by appearance) are for; and the instructions' show (state 2: the
-  Delibird walk in), which the remake leaves out.
+  through pointers not followed; the remake plays without); what image banks
+  378 and 382 (the gifts and their points, by appearance) are for; whether a
+  gift knocked out of a sack fades by its `+0x41` (`0x86A03D0C` takes 7 a
+  frame off it; the remake fades it so); and the instructions' show (states
+  1 and 2: four small Delibird walk, then pick up, as the screen fades), which
+  the remake leaves out with the instructions. Where a picked-up gift goes is
+  read (Delibird's hand, the second label its draw records: `0x8003C3B8`),
+  taking the matrix stack there as the world's, as the game does.
 - **Pichu's Power Plant's loose ends** (its rules are read: [minigames.md](minigames.md#pichus-power-plant)):
   the lights' ways (`0x866026B8` and `0x86602720` turn the two lights by the
   camera's angles, + `0x2000` and the like, but how a light node's angles

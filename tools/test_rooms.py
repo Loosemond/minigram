@@ -130,9 +130,9 @@ FURRET_LEVEL = {1: "normal", 157: "hard", 2 ** 31 - 1: "easy"}
 # web/minigames/src/delibird/rules.js: a round with seats 0 and 2 on
 # delibird_pad() and two CPUs (normal, hard, easy), the world's digest() every
 # 100 frames: the hard one to its end, the tally and a second of the show
-# (1968 frames), the others 600; then the end, the points and the places
+# (1903 frames), the others 600; then the end, the points and the places
 # (web/minigames/tests.js has the same)
-JS_DELIBIRD = {1: "58a899646c2d1eaa", 157: "1ec6dc9cb71bb3f7", 2 ** 31 - 1: "3a78ef0b5a26067c"}
+JS_DELIBIRD = {1: "ed072f802be05f26", 157: "1172bf54263dbb00", 2 ** 31 - 1: "093aaa33d9bd2928"}
 DELIBIRD_LEVEL = {1: "normal", 157: "hard", 2 ** 31 - 1: "easy"}
 
 
@@ -1551,7 +1551,7 @@ def _():
         a.send("pad", r=r, s=0, f=won["f"] + 5, x=down, a=0)  # after the end: nothing
         a.send("done", r=r)
         b.send("done", r=r)
-        a.s.settimeout(8)  # (the round's over 3 s after the play: the tally and the show)
+        a.s.settimeout(8)  # (the round's over once the tally's counted: the results come on as the winners cheer)
         res = a.wait("results", timeout=10)
         assert res["scores"] == said["s"], res
         b.close()

@@ -21,7 +21,7 @@ HURRY = 30 * FPS
 LAST = 3 * FPS
 FIRST = TIME - FPS
 WAIT = 60
-SHOW = 90
+SHOW = 0  # (the results come on the frame the tally's done: 0x86A07124)
 
 
 class Kind:
@@ -64,7 +64,7 @@ SWINUB, AVOID_X = 19.19999885559082, 36.19999694824219
 SACK = [[0, -27.733333587646484], [-1.426285743713379, -30.585905075073242], [-2.852571487426758, -32.646095275878906],
         [-4.595809459686279, -34.38933181762695], [-6.180571556091309, -37.241905212402344],
         [-7.92380952835083, -39.619049072265625]]
-SACK_R2 = [799.0242919921875, 1420.4876708984375, 2219.511962890625, 3196.09716796875, 4602.3798828125, 5681.95068359375]
+SACK_R2 = [799.0242919921875, 1420.4876708984375, 2219.511962890625, 3196.09716796875]  # (by player: 0x86A0F2BC)
 
 STAND, WALK1, WALK5, CHEER, SULK, PICK, HAND, KNOCKED = 0, 1, 5, 6, 7, 8, 9, 10
 PICK_TIME, PICK_IN, PICK_DONE = 27, 12, 26
@@ -322,7 +322,8 @@ class World:
         self.p = [Player(z, bool(cpus[z])) for z in range(SEATS)]
 
     def rnd(self):
-        self.seed = (self.seed * 1664525 + 1013904223) & 0xFFFFFFFF
+        """The game's random numbers (0x8007B100: x = (4x + 2)(4x + 3) >> 2, in 32 bits)."""
+        self.seed = ((((self.seed << 2) + 2) & 0xFFFFFFFF) * (((self.seed << 2) + 3) & 0xFFFFFFFF) & 0xFFFFFFFF) >> 2
         return self.seed
 
     # ---- a frame ----
@@ -560,7 +561,7 @@ class World:
         i = ((p.sack_yaw + angle(ox, oz)) & 0xFFFF) >> 4
         r = math.sqrt(ox * ox + oz * oz)
         dx, dz = (p.x + -cosine(i) * r) - x, (p.zz + sine(i) * r) - z
-        return dx * dx + dz * dz < SACK_R2[p.load]
+        return dx * dx + dz * dz < SACK_R2[p.z]
 
     # ---- the CPUs ----
     def think(self, p):
@@ -713,7 +714,7 @@ class World:
         v = 5 + (self.rnd() % 3) if self.rnd() % 97 >= 11 else 8 + (self.rnd() % 3)
         if right:
             v = -v
-        v = v * [0.800000011920929, 0.8999999761581421, 1, 1.2000000476837158][self.level]
+        v = _single(v * [0.800000011920929, 0.8999999761581421, 1, 1.2000000476837158][self.level])  # (mul.s: 0x86A04A9C)
         self.lanes[lane] = 1
         self.ids += 1
         self.swinub.append(Swinub(self.ids, lane, SWINUB_X if right else -SWINUB_X, LANES[lane], v, right))
@@ -934,6 +935,11 @@ class World:
         for s in self.swinub:
             parts += [s.id, s.lane, _hex(s.x), _hex(s.vx)]
         return ",".join(str(v) for v in parts)
+
+
+def _single(v):
+    """v rounded to a single (JS's Math.fround)."""
+    return struct.unpack("f", struct.pack("f", v))[0]
 
 
 def _hex(v):

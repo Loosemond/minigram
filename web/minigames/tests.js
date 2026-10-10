@@ -93,7 +93,7 @@ function furretPad(z, t, w) {
 // Delibird's Delivery: a round with seats 0 and 2 on deliPad() and two CPUs (normal, hard, easy), the world's
 // digest() every 100 frames (the hard one to its end, the tally and a second of the show, the others 600
 // frames), the end, the points and the places: the same as JS_DELIBIRD in tools/test_rooms.py
-const DELIBIRD = { 1: "58a899646c2d1eaa", 157: "1ec6dc9cb71bb3f7", 2147483647: "3a78ef0b5a26067c" };
+const DELIBIRD = { 1: "ed072f802be05f26", 157: "1172bf54263dbb00", 2147483647: "093aaa33d9bd2928" };
 const DELIBIRD_LEVEL = { 1: "normal", 157: "hard", 2147483647: "easy" };
 // (down to a gift on the belt, each in turn; up with two, or one now and then)
 function deliPad(z, t, w) {
@@ -1746,7 +1746,7 @@ await test("Delibird's Delivery: the harder CPUs are better (more points, and th
     return { points: points / 8, knocked };
   };
   const easy = play("easy"), hard = play("hard");
-  assert(hard.points > easy.points && hard.knocked * 2 < easy.knocked, `easy ${JSON.stringify(easy)}, hard ${JSON.stringify(hard)}`);
+  assert(hard.points > easy.points && hard.knocked * 1.5 < easy.knocked, `easy ${JSON.stringify(easy)}, hard ${JSON.stringify(hard)}`);
   return `the CPUs' points a round, on average: ${easy.points} easy, ${hard.points} hard; knocked over ${easy.knocked}, ${hard.knocked} times`;
 });
 

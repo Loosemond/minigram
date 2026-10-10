@@ -2207,17 +2207,25 @@ belt along the front (z 135-235), the walls round the sides (their tops black)
 and the counter. The Delibird start under their doors (x ±141.7, ±47.2, z
 −140: `0x86A0D924`). The camera (`0x86A00020`) looks at (0, 130, 50) from 550
 back from 400 above it, 0.36 rad up: from (0, 723.7, 564.7), fov 24.69, near
-100; two lights, white and grey, at angles from the camera's (`0x86A000DC`,
-`0x86A00144`), 0x646464 all round; the frame is cleared to white (`0xFFFF`,
-out of sight).
+100. Its lights (the layout `0x86A0F184`): 0x646464 all round and two light
+nodes (geo `0x14`: white, `FFFFFF`, and grey, `808080`) that the game turns
+by the camera each frame (`0x86A000DC`, `0x86A00144`): from the eye's pitch
+over where it looks and its yaw (`0x80037200`), the white one at pitch +
+0x2000 and yaw − 0x2000, the grey one at −0x2000 − pitch and yaw + 0x6000. A
+light node's way (`0x8003AE84`, a node of type 0x0B) is 120 × (sin yaw ×
+cos pitch, sin pitch, cos yaw × cos pitch), towards the light: with this
+camera (pitch 49°) the white one's from above, the grey one from below. The
+shade is the ambient and the lights' N·L, held to 1. The frame is cleared to
+white (`0xFFFF`, out of sight).
 
 **The gifts** (`0x86A0D560`, 0x18 each: points, places in the sack, weight,
 half width, depth): the ring (175) 1000 points, weighing 1; the grand piano
 (176) 600, 3; Snorlax (181) 350, 3; the Pikachu Nintendo 64 (169) 250, 2; the
 Game Boy (180) 100, 1; the stocking (174) 50, 1; candy (184) 20, 0.5; the Game
 Boy Advance (177) 100, 1 and the GameCube (170) 250, 1. Each takes one of the
-sack's five places. From 3 s in to 3 s before the end (`0x86A06D04`), one
-tries to come each frame (`0x86A03234`): by a random number % 100, under 3 a
+sack's five places. From the first frame to 3 s before the end
+(`0x86A06D04`: while the clock's over 90), one tries to come each frame
+(`0x86A03234`): by a random number % 100, under 3 a
 ring, 16 a piano, 32 Snorlax, 46 a Nintendo 64 (a GameCube with the save's
 bit 1), 62 a Game Boy (a Game Boy Advance with bit 0), 80 a stocking, else
 candy (none while two are on the belt), at a random place along the belt (in
@@ -2263,7 +2271,9 @@ or a Snorlax). Up to 99999.
 `0x86A0F29C`) that hasn't one, if fewer than 2 are out (Easy; 3 with four
 people) or 3; from the side the Swinub in the lanes next to it aren't
 heading for (`0x86A04C04`), else either; at 5-7 a frame (8-10 one time in 9),
-× 0.9 on Easy and × 1.2 on Hard (× 6/5 at 50 Hz); 82 running right, 103
+× 0.9 on Easy and × 1.2 on Hard (× 6/5 at 50 Hz), a single (`mul.s`,
+`0x86A04A9C`: 10 × 0.9 is 9.0 exactly, so that one spins a Delibird 9 frames);
+82 running right, 103
 left, each with a shadow, turned to the camera. One within 19.2 of a Delibird
 that isn't picking up or handing over, or just knocked over, knocks it over
 (`0x86A041D8`, state 10): it slides off the Swinub's way for 16 frames and
@@ -2272,9 +2282,9 @@ lies 37 in all, its gifts fly out of the sack and are lost (`0x8F03`;
 that hits its sack spins it round, for as many frames as the Swinub's speed
 (`0x8F01`). Where its sack is (`0x86A0588C`): behind it at its sack's angle
 (`0x86A0F2D4`, further by how full), and how near a Swinub has to come to it
-(`0x86A0F2BC`: radius 28, 38, 47, 57, 68 or 75): the game looks that up by
-the player, 1P's the least and 4P's twice as far, where its table has one
-for each of the sack's six fills; the remake goes by the fill.
+(`0x86A0F2BC`, by the player: radius 28.3, 37.7, 47.1 and 56.5, 1P's the
+least and 4P's twice as far, whatever the fill; the two more the table has,
+67.8 and 75.4, aren't read).
 
 **The CPUs** (`0x86A0BD34`) each frame they're free: with gifts, they go up
 (Easy once they have 3, or 1 in 10 a frame with fewer; Normal once they have
@@ -2294,16 +2304,38 @@ gift's being picked up or going to its door or a Delibird's handing over (the
 clock below 0, 60 frames at the most); then the points count up
 (`0x86A07124`), by 0, 1, 2... a frame (`0x8012` each frame, `0x8F13` as each
 player's are in); and the most points win (`0x86A0B49C`; all four level,
-nobody): the winners cheer (clip 6), the others sulk (7), facing the camera.
+nobody): the frame after they're all in, the winners cheer (clip 6), the
+others sulk (7), facing the camera, and module #64's results come on at once
+(`0x86A07124` calls `0x87F0A098`: the winners' banner, song 55 or 56). There's
+no whistle or FINISH at the time's up (`0xCF06` only, `0x86A014D0`; state 4's
+draw, `0x86A06E0C`, is empty), and song 52 isn't faded (`0x800225B4` is only
+called leaving the instructions and in the set-up).
 
 **What's drawn**: Delibird (127, at 0.0792) and its sack (layout 1, at its
-own angle), their clips 1.5 frames a frame: Delibird's 0 standing, 1-5
-walking (a footstep, `0x8F0C`, at two frames of each with fewer than four
-gifts; with four or five every frame the strain, `0x8F10`, `0x8F11`), 6
-cheering (round again from frame 9), 7 sulking (from 42), 8 picking up, 9
-handing over, 10 knocked over; the sack's 11 filling (to frame 0, 11, 22,
-33, 44 or 55 by how many are in it; back down as they go), 12 knocked over,
-13 and 14 at the end. Over each Delibird its badge, module #64's label
+own angle), their clips a frame a frame: the set-up gives them 1.5
+(`0x86A00ED8`, `0x86A00F90`: `0x18000`), but the draw (`0x86A01EF0`) asks for
+its clip with `0x8003F2F0` every frame, and `0x8003EBDC` sets the speed to 1
+even when the clip's on already. A clip starts at 0 the frame it's asked for
+and moves a frame each drawing (`0x8003E7BC`: past its end, a clip with flag
+2 holds its last frame and one with flag 1 goes back to its loop frame, 0;
+below 0 the same the other way); `0x8003ED34` is the frame it's on to.
+Delibird's 0 standing (the play's four from a random frame of it,
+`0x86A00EC8`: % 24), 1-5 walking (a footstep, `0x8F0C`, at two frames of each
+with fewer than four gifts), 3 also turning where it stands, 6 cheering
+(round again from frame 9), 7 sulking (from 42), 8 picking up, 9 handing
+over, 10 knocked over (those three back to 0 as they end: `0x8003ED14`,
+`0x8003EC64`). Clips 0-7, 13 and 14 have flag 1, 8-12 flag 2. The sack, in
+states 0-5 and 8, plays 11 (filling) on to its fill's frame, 1, 12, 23, 34, 45
+or 56 by how many are in it, and back one if it'd go past (`0x86A026F4`,
+`0x86A027C0`: so it rocks between that and the one before, frames the clip
+holds the same); with four or five every frame it asks for the strain
+(`0x8F10`, `0x8F11`), for every Delibird, by where it is. Handing over
+(`0x86A028D0`) it plays 11 backwards at 1.5714 a frame (`0x86A02974`:
+`0xFFFE6DB7`), back to its fill's frame less one if it gets 11 below it: it
+goes down a gift's worth every 7 frames, as they go, and holds at 0 (its flag
+2). 12 knocked over, 13 and 14 at the end, from their start and round (flag
+1). The Swinub's clip 0 from the frame each comes in (`0x86A04BB4`). Over
+each Delibird its badge, module #64's label
 (`0x87F029EC` loads image bank 434; its draw, `0x87F02878`, takes 1P-4P for a
 person, `0x87F0F650`, or a CPU's COM in its colour, `0x87F0F640`): a 38 × 28
 quad round its place (`0x87F0F680`, the 36 × 28 picture across it) at 0.9,
@@ -2311,25 +2343,54 @@ quad round its place (`0x87F0F680`, the 36 × 28 picture across it) at 0.9,
 depth tested), T0 × ENV with the env's alpha 0xB4. It's at the Delibird's x
 and z, 55 up (`0x86A02550`; in its hop at the end, by `0x86A0D7B8`, and
 knocked over by `0x86A0D890`), on through the tally and the cheer. FULL
-(image bank 379, white through the player's colour, growing over 20 frames)
-over a full sack, a shadow (307's dot at 2.5, black at 128) under it and
-under each Swinub. A gift being picked up goes to Delibird and shrinks
-(`0x86A0F278`); gifts out of a sack fly off in gift boxes (`0x86A03DDC`) and
-fade. The HUD (`0x86A095A0`): along the top each player's badge and, in a box
-(376) in its colour, the gift (381) and how many gifts it's got through its
-door (380's digits; the points show only at the end); a combo's "x2"-"x5"
-(377) on a flash (398) in its colour; the seconds left (rounded up, 404's
-digits) below them. At the end the tally (`0x86A07334`): each player's badge,
-points (429's digits) and "Points" (430) in rows in the middle, the winners'
-going round six colours. The song is 52 (sequence 91), from GO; in the last
+(image bank 379, white through the player's colour, growing over 20 frames;
+layer 6, `0x86A0D52C`: translucent, depth tested) over a full sack, a shadow
+(307's dot at 2.5, black at 128) under it and under each Swinub. A gift being
+picked up (`0x86A02A9C`) stays on the belt for its first 9 frames; for the
+next 9 it's at Delibird's hand, lower by its shrink × 100 / 9 and at its
+shrink × 2 / 9 (`0x86A0F278`: 1, 1, 0.875 ... 0.125); then it stays there,
+at the last, till it's gone at 26. The hand is the object's `+0xBC`: as a
+model's drawn, each geo `0x24` it passes (a node of type 0x1B, `0x8003C424`)
+records its label and where the matrix is (`0x8003C3B8`: 16 bytes each from
+`+0xA8`, up to 12), and Delibird's second is label 1, on bone 11, an arm's
+end (the first is label 2, on bone 8), as of the frame before. Gifts out of a sack
+fly off in gift boxes (`0x86A03DDC`) and fade. The belts: 147's and 148's
+material callbacks (`0x81000178`) scroll their textures a texel a frame (147,
+the front, +1; 148, the back, −1): the front one's slats move up the field,
+the back one's to the doors. The HUD (`0x86A095A0`, every frame from the
+countdown on), its grey pictures through the combiner: along the top each
+player's badge (434 at 0.7) and, in a box (376: `FC30B261 5566FF7F`, white
+through the player's 0x000858, 0x0D3817, 0x580808, 0x683800) the gift (381)
+and how many gifts it's got through its door (380's digits, an I picture:
+`FC61FEC3 FFFFF3F9`, white with its grey for alpha; one digit 1.2 times as
+wide; the points show only at the end); a combo's "x2"-"x5" (377: 0xDCE6FF on
+0x283278, 0xE6FFC8 on 0x3C7800, 0xFFDCF0 on 0xC81E50, 0xFFFFC8 on 0xC85A00,
+growing 0.283, 0.567, 0.85: `0x86A0F390`) on a flash (398: white through
+0x508CC8, 0x64AA00, 0xDC50A0, 0xF0AA00, its size 0.193 and 0.387 for its first
+two frames, then round 0.58-0.72: `0x86A0F344`) for 30 frames; the seconds
+left (rounded up, 404's digits: 0x3C3C3C on 0xDCDCDC at 200 of 255, one digit
+1.2 times as wide), and 0 on through the tally and the results. At the end
+the tally (`0x86A07334`): each player's badge (at 0.8), points (429's digits
+at 0.57) and "Points" (430), 0x00009B on 0xAAF5FF, in rows in the middle,
+with nothing behind; the winners' going round six colours (`0x86A464C0`, from
+one to the next over 10 frames: W + 0xE5C) on white. The song is 52
+(sequence 91), from GO; in the last
 30 s it speeds up (`0x80028108(8)`: a beat a minute faster every 5 frames,
 90 in all); the count is Pichu's Power Plant's (0x2F00, 0x2F01), the last
 three seconds the shared one (0xCF00, 0xCF06 at 0). Its name banner is image
 bank 375.
 
-**The states** (`0x86A0167C`): 0 and 1 the instructions, 2 the fade in (the
-instructions' Delibird walk in: `0x86A06E14`), 3 the countdown, 4 the play,
-5 the tally, 6 and 7 the results and the menu after.
+**The states** (`0x86A0167C`): 0 and 1 the instructions (the panel,
+`0x87F07FE8`, over four small Delibird with their sacks, 0.0667, placed by
+`0x87F06430`); leaving them plays the whistle (`0xCF0B`) and fades the song
+over 40 frames (`0x86A003A8`). 2 the fade (`0x86A06E14`): for 10 frames the
+small Delibird walk (clip 1; x + 2.5 + 0.3 × (1 − n), y − 3.3, z + 30 a frame),
+then pick up (clip 8 at 2 a frame) till it's done; then the play's Delibird
+come on standing under their doors, with their badges and shadows, and the
+screen fades in over 20 frames (`0x80007ACC(0x14)`). 3 the countdown, 4 the
+play, 5 the tally, 6 and 7 the results and the menu after. Every random
+number module #60 draws is the main program's `0x8007B100` (x = (4x + 2)(4x +
+3) >> 2, in 32 bits), as the remake's.
 
 **The save's flags**: bits 0 and 1 of a halfword the main program keeps in
 the save (`0x80054A1C`) swap the Game Boy for the Game Boy Advance and the
@@ -2340,7 +2401,10 @@ without them. Unused: each player's (x, 455, −2300) / 9 at `0x86A0F124`
 which nothing here loads.
 
 The browser remake runs this world on every device and on the server, from
-everyone's sticks (the CPUs think in it) ([web/README.md](../web/README.md#delibirds-delivery)).
+everyone's sticks (the CPUs think in it) ([web/README.md](../web/README.md#delibirds-delivery)),
+and draws it between its frames. It leaves out the instructions and their
+show (states 0-2), as the other games' are: the shell's title is the
+instructions.
 
 ## How this was found
 

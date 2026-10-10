@@ -366,30 +366,40 @@ i.egg {
 .fu-dpad i.on { background: rgba(255, 255, 255, 0.55); border-color: #fff; }
 .fu-dpad.rest { opacity: 0.55; }
 .game-hud.off .fu-pads, .game-hud.off .fu-hint { display: none; }
-/* Delibird's Delivery: the clock at the top, the combos by the cards (the
-   flash in the combo's colour, x2-x5 on it), the points counting up at the
-   end, the hint; on a touch screen the stick (where a finger went down) */
-.dd-time { position: absolute; display: flex; flex-direction: column; align-items: center; padding: 4px 12px 6px;
-  border-radius: 12px; background: rgba(60, 60, 60, 0.6); color: #fff; line-height: 1; pointer-events: none;
-  text-shadow: 0 0 2px #222, 1px 1px 0 #222, -1px -1px 0 #222, 1px -1px 0 #222, -1px 1px 0 #222; }
-.dd-time small { font-size: 10px; font-weight: 700; letter-spacing: 1px; opacity: 0.85; }
-.dd-time b { font-size: 26px; font-weight: 900; font-variant-numeric: tabular-nums; min-width: 2ch; text-align: center; }
-.dd-time.low b { color: #ffe08a; }
+/* Delibird's Delivery: the clock at the top (bank 404's digits as the game's
+   combiner colours them, a lone digit 1.2 times as wide), the combos by the
+   cards (x2-x5 on the flash in the combo's colour), each card's count on the
+   game's box in the player's colour (376, and 380's digits), the points
+   counting up at the end (429's digits and "Points", each a layer of the
+   rim's colour through the picture and one of the fill's through its grey,
+   to colour them as they go: index.js), the hint; on a touch screen the
+   stick (where a finger went down) */
+.dd-time { position: absolute; display: flex; pointer-events: none; }
+.dd-time img { display: block; width: 32px; height: 32px; }
+.dd-time img + img { margin-left: -4px; }
+.dd-time img.one { width: 38.4px; }
 .card .label[src$="delibird/gift.png"] { width: calc(var(--k) * 18px); height: calc(var(--k) * 12px); image-rendering: pixelated; }
+#app[data-game="delibird"] .card .count { display: block; position: relative; width: calc(var(--k) * 36px); height: calc(var(--k) * 37.5px);
+  margin-right: calc(var(--k) * -6px); background: var(--dd-panel) 0 0 / 100% 100% no-repeat; }
+#app[data-game="delibird"] .card .count .label { position: absolute; left: calc(var(--k) * 9px); top: calc(var(--k) * 4.5px); }
+#app[data-game="delibird"] .card .count .num { position: absolute; left: calc(var(--k) * 4.5px); top: calc(var(--k) * 19.5px); }
+.card .num img.dd-c { width: calc(var(--k) * 12px); height: calc(var(--k) * 15px); object-fit: fill; }
+.card .num img.dd-c + img.dd-c { margin-left: calc(var(--k) * -1.5px); }
+.card .num img.dd-c.one { width: calc(var(--k) * 14.4px); margin-left: calc(var(--k) * 4.5px); }
 .dd-combo { position: absolute; width: 84px; height: 63px; pointer-events: none; display: grid; place-items: center; }
-.dd-combo i { position: absolute; inset: 0; -webkit-mask: url(assets/delibird/flash.png) center / contain no-repeat;
-  mask: url(assets/delibird/flash.png) center / contain no-repeat; }
-.dd-combo img { position: relative; width: 48px; height: 32px; image-rendering: pixelated; }
-.dd-tally { position: absolute; display: flex; flex-direction: column; gap: 6px; padding: 12px 18px; border-radius: 14px;
-  background: rgba(0, 0, 0, 0.55); pointer-events: none; }
-.dd-row { display: flex; align-items: center; gap: 10px; padding: 2px 8px; border-radius: 8px; }
+.dd-combo img { grid-area: 1 / 1; display: block; }
+.dd-combo .dd-flash { width: 84px; height: 63px; }
+.dd-combo .dd-x { width: 48px; height: 32px; image-rendering: pixelated; }
+.dd-tally { position: absolute; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+.dd-row { display: flex; align-items: center; gap: 10px; }
 .dd-row .dd-badge { width: 43px; height: 34px; display: block; }
 .dd-row .dd-num { display: flex; justify-content: flex-end; min-width: 120px; }
-.dd-row .dd-num img { height: 30px; width: 24px; display: block; }
-.dd-row .dd-pts { height: 25px; width: 40px; display: block; image-rendering: pixelated; }
-.dd-row.won { animation: dd-won 2s steps(6) infinite; }
-@keyframes dd-won { 0% { background: #b43c3c; } 17% { background: #b48c28; } 33% { background: #28a028; }
-  50% { background: #289696; } 67% { background: #5050c8; } 83% { background: #963c96; } }
+.dd-d { position: relative; display: block; width: 24px; height: 32px; background: var(--env);
+  -webkit-mask: var(--a) 0 0 / 100% 100% no-repeat; mask: var(--a) 0 0 / 100% 100% no-repeat; }
+.dd-d::after { content: ""; position: absolute; inset: 0; background: var(--prim);
+  -webkit-mask: var(--i) 0 0 / 100% 100% no-repeat; mask: var(--i) 0 0 / 100% 100% no-repeat; }
+.dd-num .dd-d + .dd-d { margin-left: -1.2px; }
+.dd-row .dd-pts { width: 40px; height: 25px; }
 .dd-hint { position: absolute; left: 50%; bottom: calc(var(--safe-b) + 14%); transform: translateX(-50%);
   padding: 6px 14px; border-radius: 16px; background: rgba(0, 0, 0, 0.5); color: #fff; font-weight: 700;
   font-size: 15px; white-space: nowrap; text-shadow: 0 1px 2px #000; }

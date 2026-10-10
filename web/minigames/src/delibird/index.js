@@ -2,11 +2,12 @@
 // camera, the controls (on a phone: a finger anywhere is a stick, the way and
 // how far it slides from where it went down; or the keys), its HUD (each
 // player's gifts through its door on its card, as the game's, the clock, the
-// combo as it scores, and the points counting up at the end) and its online
-// messages ("pad", "won"). The rules are in rules.js, the game in game.js.
+// combo as it scores, and the points counting up at the end, all in the
+// game's pictures and colours) and its online messages ("pad", "won"). The
+// rules are in rules.js, the game in game.js.
 import * as THREE from "three";
 import { loadAssets } from "./assets.js";
-import { Game, CAMERA, COLOURS } from "./game.js";
+import { Game, CAMERA, lights } from "./game.js";
 import * as R from "./rules.js";
 import { meMark } from "../mark.js";
 import { tintURL } from "../tint.js";
@@ -38,28 +39,44 @@ for (const x of [-195, 195]) {
   FIT.push([x, 0, 210], [x, 0, -200], [x, 70, 135]);
   FIT.push([x * 0.8, 40, -256]);
 }
-// the combo's colours (0x86A095A0: the flash by how many in a row; x2-x5 light and dark,
-// prim and env: their grey pictures (bank 377) as the combiner colours them)
-const FLASH = ["#508cc8", "#64aa00", "#dc50a0", "#f0aa00"];
+// The HUD (0x86A095A0), its grey pictures as the combiner colours them
+// (FC30B261 5566FF7F: env to prim by the texel's grey, the alpha its times
+// prim's; FC61FEC3 FFFFF3F9: prim, the I texel's grey its alpha; src/tint.js):
+// the clock (bank 404's digits) 0x3C3C3C on 0xDCDCDC at 200 of 255; each card's
+// box (376) white on the player's dark colour, the count in white (380, an I
+// picture); a combo's x2-x5 (377) light on dark, on its flash (398) its
+// colour on white
+const CLOCK = [0x3c3c3c, 0xdcdcdc, { times: 0xc8 / 255 }];
+const PANEL = [0x000858, 0x0d3817, 0x580808, 0x683800];
+const FLASH = [0x508cc8, 0x64aa00, 0xdc50a0, 0xf0aa00];
 const COMBO = [[0xdce6ff, 0x283278], [0xe6ffc8, 0x3c7800], [0xffdcf0, 0xc81e50], [0xffffc8, 0xc85a00]];
-const POP = [0.58, 0.626666, 0.673333, 0.72, 0.696666, 0.673333, 0.65, 0.626666, 0.603333]; // (its pulse: 0x86A0F344)
-const GROW = [0.283333, 0.566666, 0.85]; // (and the x2's: 0x86A0F390)
+// the flash's size a frame (0x86A0F344: its first two frames 9 and 10, then round 0-8), and x2-x5's (0x86A0F390)
+const POP = [0.58, 0.626666, 0.673333, 0.72, 0.696666, 0.673333, 0.65, 0.626666, 0.603333, 0.193333, 0.386666];
+const popAt = (f) => POP[f < 2 ? 9 + f : (f - 2) % 9];
+const GROW = [0.283333, 0.566666, 0.85];
+// the tally (0x86A07334): the big digits (429) and "Points" (430) dark blue
+// on light cyan, a winner's going round six colours on white, a 10th of the
+// way a frame (0x86A464C0, W + 0xE5C)
+const TALLY = ["#00009b", "#aaf5ff"];
+const ROUND = [0xb43c3c, 0xb48c28, 0x28a028, 0x289696, 0x5050c8, 0x963c96];
 // the arrow over your Delibird: just over its badge, or over the FULL that
 // shows above that when its sack's full; riding with the badge as it hops
 const OVER_LABEL = 4;
+const hex = (c) => "#" + Math.round(c).toString(16).padStart(6, "0");
+const mix = (a, b, k) => [16, 8, 0].reduce((s, sh) => s + (Math.round((((a >> sh) & 255) * (1 - k)) + (((b >> sh) & 255) * k)) << sh), 0);
 
 export async function create(shell, onProgress) {
   const assets = await loadAssets("assets/delibird/", onProgress);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xffffff); // (the game's clear colour: 0xFFFF)
-  // the scene's lights (its layout, 0x86A0F184: white and grey, at angles from the camera's; 0x646464 all round)
-  scene.add(new THREE.AmbientLight(0xffffff, 0.55 * Math.PI));
-  const sun = new THREE.DirectionalLight(0xffffff, 0.6 * Math.PI);
-  sun.position.set(-0.4, 1, 0.7);
-  scene.add(sun);
-  const fill = new THREE.DirectionalLight(0xffffff, 0.25 * Math.PI);
-  fill.position.set(0.6, 0.5, -0.4);
-  scene.add(fill);
+  // the scene's lights, the game's (game.js lights()): x PI, three's lights being physical
+  const L = lights();
+  scene.add(new THREE.AmbientLight(L.ambient, Math.PI));
+  for (const { colour, way } of L.lights) {
+    const d = new THREE.DirectionalLight(colour, Math.PI);
+    d.position.set(...way);
+    scene.add(d);
+  }
   const game = new Game(scene, assets);
 
   // ---- its HUD: the clock (0x86A095A0), the combos, the tally at the end, the hint, the stick ----
@@ -67,46 +84,66 @@ export async function create(shell, onProgress) {
   hud.className = "game-hud dd";
   const A = "assets/delibird/", UI = "assets/ui/";
   hud.innerHTML = `
-    <div class="dd-time"><small>TIME</small><b>60</b></div>
-    ${[0, 1, 2, 3].map((z) => `<div class="dd-combo" data-z="${z}" hidden><i></i><img alt=""></div>`).join("")}
+    <div class="dd-time" aria-label="Time"></div>
+    ${[0, 1, 2, 3].map((z) => `<div class="dd-combo" data-z="${z}" hidden><img class="dd-flash" alt=""><img class="dd-x" alt=""></div>`).join("")}
     <div class="dd-tally" hidden>${[0, 1, 2, 3].map((z) => `<div class="dd-row" data-z="${z}"><img class="dd-badge" alt="">
-      <span class="dd-num"></span><img class="dd-pts" src="${A}points.png" alt="Points"></div>`).join("")}</div>
+      <span class="dd-num"></span><span class="dd-d dd-pts" role="img" aria-label="Points"></span></div>`).join("")}</div>
     <div class="dd-hint" hidden></div>
     <div class="dd-pads" hidden><div class="dd-stick rest"><i class="dd-knob"></i></div></div>`;
   shell.hud.append(hud);
-  const timeEl = hud.querySelector(".dd-time"), timeNum = timeEl.querySelector("b");
+  const timeEl = hud.querySelector(".dd-time");
   const combos = [...hud.querySelectorAll(".dd-combo")], tallyEl = hud.querySelector(".dd-tally");
   const rows = [...hud.querySelectorAll(".dd-row")], hint = hud.querySelector(".dd-hint"), pads = hud.querySelector(".dd-pads");
   const stickEl = hud.querySelector(".dd-stick"), knob = hud.querySelector(".dd-knob");
   const mark = meMark(hud, shell.me), over = new THREE.Vector3();
-  const comboPics = []; // x2-x5 coloured (src/tint.js), as they're made
-  COMBO.forEach(([prim, env], i) => tintURL(`${A}x${i + 2}.png`, prim, env).then((url) => { comboPics[i] = url; }));
+  // the pictures coloured (src/tint.js), as they're made
+  const pics = {};
+  const coloured = (key, url, prim, env, opts) => {
+    if (!(key in pics)) { pics[key] = null; tintURL(url, prim, env, opts).then((u) => { pics[key] = u; }); }
+    return pics[key];
+  };
+  for (let d = 0; d < 10; d++) {
+    coloured("n" + d, `${UI}n${d}.png`, ...CLOCK);
+    coloured("d" + d, `${A}d${d}.png`, 0xffffff, 0xffffff, { alpha: "grey" });
+    coloured("i" + d, `${UI}big${d}.png`, 0xffffff, 0xffffff, { alpha: "grey" }); // (its grey, a mask for the prim colour)
+  }
+  coloured("ipts", `${A}points.png`, 0xffffff, 0xffffff, { alpha: "grey" });
+  PANEL.forEach((env, z) => coloured("panel" + z, `${A}panel.png`, 0xffffff, env));
+  FLASH.forEach((c, i) => coloured("flash" + i, `${A}flash.png`, c, 0xffffff));
+  COMBO.forEach(([prim, env], i) => coloured("x" + i, `${A}x${i + 2}.png`, prim, env));
+  // a number in pictures: html, or null till they're all made; one digit drawn 1.2 times as wide (0x86A0B19C)
+  const digitsOf = (n, name, cls) => {
+    const s = String(Math.max(0, n)), urls = s.split("").map((d) => pics[name + d]);
+    return urls.every(Boolean) ? urls.map((u) => `<img class="${cls}${s.length === 1 ? " one" : ""}" src="${u}" alt="">`).join("") : null;
+  };
+  // the tally's: two layers, the env colour through the picture and the prim through its grey, to colour as it goes
+  const masked = (pic, grey) => `<span class="dd-d" style="--a: url('${pic}'); --i: url('${grey}')"></span>`;
 
-  // ---- sounds and the like, from the game ----
+  // ---- sounds and the like, from the game: a Delibird's on its player's channel, by its x (0x8002780C) ----
   const mine = (z) => z === shell.me();
   game.on("send", (m) => shell.send("pad", m));
   game.on("tempo", (n) => shell.tempo(n)); // (the last 30 s: the tune speeds up)
   game.on("sound", (name) => shell.sound(name));
-  game.on("loop", (name, on) => (on ? shell.sound(name) : shell.stopSound(name)));
-  game.on("step", (z, pan) => shell.sound("step", { pan })); // (0x8F0C)
-  game.on("sack", (z, n, pan) => { shell.sound("sack" + Math.max(1, Math.min(5, n)), { pan }); if (mine(z)) shell.haptic("light"); }); // (0x8F05-0x8F09)
-  game.on("hand", (z, pan) => shell.sound("hand", { pan })); // (0x8F0B)
-  game.on("in", (z, kind) => { // (0x8F00, 0x8F04 for a piano or a Snorlax: its player's)
+  game.on("strain", (z, name, on, x) => shell.hold(name, z, on, { x })); // (0x8F10, 0x8F11: each one's own, while asked for)
+  game.on("step", (z, x) => shell.sound("step", z, { x })); // (0x8F0C)
+  game.on("sack", (z, n, x) => { shell.sound("sack" + Math.max(1, Math.min(5, n)), z, { x }); if (mine(z)) shell.haptic("light"); }); // (0x8F05-0x8F09)
+  game.on("hand", (z, x) => shell.sound("hand", z, { x })); // (0x8F0B)
+  game.on("in", (z, kind) => { // (0x8F00, 0x8F04 for a piano or a Snorlax: its player's column, 0x80027A18)
     shell.sound(kind === 1 || kind === 2 ? "inBig" : "in", z);
     shell.flash(z, "bump");
     if (mine(z)) shell.haptic("medium");
   });
-  game.on("combo", (z, n) => { // (0x8F16-0x8F19)
-    shell.sound("combo" + n, z);
+  game.on("combo", (z, n, x) => { // (0x8F16-0x8F19, by its Delibird: 0x86A036F4)
+    shell.sound("combo" + n, z, { x });
     shell.flash(z, "bump");
     if (mine(z)) shell.haptic("success");
   });
-  game.on("knocked", (z, n, pan) => { // (0x8F02; 0x8F03 if it had gifts)
-    shell.sound(n ? "spill" : "knocked", { pan });
+  game.on("knocked", (z, n, x) => { // (0x8F02; 0x8F03 if it had gifts)
+    shell.sound(n ? "spill" : "knocked", z, { x });
     shell.flash(z, "hurt");
     if (mine(z)) shell.haptic("heavy");
   });
-  game.on("spun", (z, pan) => { shell.sound("spun", { pan }); if (mine(z)) shell.haptic("medium"); }); // (0x8F01)
+  game.on("spun", (z, x) => { shell.sound("spun", z, { x }); if (mine(z)) shell.haptic("medium"); }); // (0x8F01)
   game.on("counted", () => shell.sound("counted")); // (0x8F13)
 
   // ---- the controls ----
@@ -187,7 +224,7 @@ export async function create(shell, onProgress) {
         }
       });
       shell.place(timeEl, portrait ? { left: W / 2 + "px", top: safe.top + 56 + "px", transform: "translateX(-50%)" }
-        : { left: W / 2 + "px", top: safe.top + 6 + "px", transform: "translateX(-50%)" });
+        : { left: W / 2 + "px", top: safe.top + 10 + "px", transform: "translateX(-50%)" });
       api.cards = cards;
       // the tally: in the middle of the field
       const mid = box.y + box.h * 0.42;
@@ -222,7 +259,7 @@ export async function create(shell, onProgress) {
       shell.stopSound();
     },
     go() { game.start(); shell.music("main"); }, // (song 52, at GO: 0x86A0167C)
-    finish() { shell.music(null, 40); },
+    finish() {}, // (no whistle, and song 52 plays on till the results' own: nothing fades it, 0x86A014D0)
     stop() { game.stop(); },
     setControl(z, c) { game.setControl(z, c); },
     get state() { return game.state; },
@@ -275,44 +312,69 @@ export async function create(shell, onProgress) {
 
   // ---- the HUD, each frame ----
   const shownTally = [-1, -1, -1, -1];
+  let shownClock = null;
   function drawHud(on) {
     hud.classList.toggle("off", !on);
     const playing = game.state === "play" || game.state === "ready";
     pads.hidden = !playing || !coarse?.matches;
     const ended = game.endAt !== null;
-    timeEl.hidden = !(playing || game.state === "over") || ended;
-    // the clock: seconds left, rounded up (0x86A095A0: 60 at GO)
+    // the clock: seconds left, rounded up (0x86A095A0: 60 at GO, and 0 on through the tally and the results)
+    timeEl.hidden = !(playing || game.state === "over");
     const s = game.state === "ready" ? R.TIME / R.FPS : game.secondsLeft();
-    if (timeNum.textContent !== String(s)) timeNum.textContent = s;
-    timeEl.classList.toggle("low", game.state === "play" && s <= 10);
+    if (s !== shownClock) {
+      const html = digitsOf(s, "n", "dd-n");
+      if (html) { timeEl.innerHTML = html; shownClock = s; }
+    }
     hint.hidden = !(game.state === "ready" || (game.state === "play" && game.lastFrame < SHOW_HINT));
     hint.textContent = coarse?.matches ? "Slide a finger to walk · take gifts up to your door" : "Arrows to walk · take gifts up to your door";
-    // a combo, by its player's card: the flash in its colour, x2-x5 growing (for a second: 0x86A095A0)
+    // each card: its count in the HUD's digits (380), on its box (376) in the player's colour
+    (api.cards || []).forEach((card, z) => {
+      const num = card.querySelector(".num"), n = game.delivered()[z];
+      if (!(num.firstElementChild?.classList.contains("dd-c") && num.dataset.dd === String(n))) {
+        const html = digitsOf(n, "d", "dd-c");
+        if (html) { num.innerHTML = html; num.dataset.dd = n; }
+      }
+      const panel = pics["panel" + z], box = card.querySelector(".count");
+      if (panel && box.dataset.dd !== "panel" + z) { box.style.setProperty("--dd-panel", `url('${panel}')`); box.dataset.dd = "panel" + z; }
+    });
+    // a combo, by its player's card: x2-x5 growing on the flash in its colour (for a second: 0x86A095A0),
+    // between the game's frames
     combos.forEach((el, z) => {
       const c = game.combos[z], f = c ? (game.time - c.at) * R.FPS : 99;
       el.hidden = !(c && f < 30) || !api.cards;
       if (el.hidden) return;
       const card = api.cards[z].getBoundingClientRect();
       shell.place(el, { left: card.left + card.width / 2 + "px", top: card.bottom + 2 + "px", transform: "translateX(-50%)" });
-      el.querySelector("i").style.background = FLASH[c.n - 1];
-      el.querySelector("i").style.transform = `scale(${POP[Math.max(0, Math.floor(f) - 2) % 9] / 0.72})`;
-      const img = el.querySelector("img");
-      const src = comboPics[c.n - 1] || `${A}x${c.n + 1}.png`;
-      if (img.getAttribute("src") !== src) img.src = src;
-      img.style.transform = `scale(${GROW[Math.min(2, Math.floor(f))] / 0.85})`;
+      const k = Math.floor(f), t = f - k;
+      const flash = el.querySelector(".dd-flash"), x = el.querySelector(".dd-x");
+      const fsrc = pics["flash" + (c.n - 1)], xsrc = pics["x" + (c.n - 1)] || `${A}x${c.n + 1}.png`;
+      if (fsrc && flash.getAttribute("src") !== fsrc) flash.src = fsrc;
+      if (x.getAttribute("src") !== xsrc) x.src = xsrc;
+      flash.style.transform = `scale(${(popAt(k) + (popAt(k + 1) - popAt(k)) * t) / 0.72})`;
+      x.style.transform = `scale(${(GROW[Math.min(2, k)] + (GROW[Math.min(2, k + 1)] - GROW[Math.min(2, k)]) * t) / 0.85})`;
     });
-    // the tally at the end: each one's points counting up, the winners' rows going round the colours
+    // the tally at the end: each one's points counting up, the winners' going round the colours
     tallyEl.hidden = !ended;
     if (ended) {
       const t = game.tally(), wins = game.winners || [];
+      const c = t.frames % 60, from = Math.floor(c / 10), round = hex(mix(ROUND[from], ROUND[(from + 1) % 6], (c % 10) / 10));
       rows.forEach((r, z) => {
         const n = game.result && t.counted ? game.result.s[z] : t.shown[z];
         if (n !== shownTally[z]) {
-          r.querySelector(".dd-num").innerHTML = String(n).split("").map((d) => `<img src="${UI}big${d}.png" alt="${d}">`).join("");
-          shownTally[z] = n;
+          const urls = String(n).split("").map((d) => [`${UI}big${d}.png`, pics["i" + d]]);
+          if (urls.every(([, i]) => i)) {
+            r.querySelector(".dd-num").innerHTML = urls.map(([a, i]) => masked(a, i)).join("");
+            shownTally[z] = n;
+          }
         }
-        r.classList.toggle("won", t.counted && !!wins[z]);
-        r.style.setProperty("--c", "#" + COLOURS[z].toString(16).padStart(6, "0"));
+        const pts = r.querySelector(".dd-pts");
+        if (!pts.style.getPropertyValue("--i") && pics.ipts) {
+          pts.style.setProperty("--a", `url('${A}points.png')`);
+          pts.style.setProperty("--i", `url('${pics.ipts}')`);
+        }
+        const won = t.counted && !!wins[z];
+        r.style.setProperty("--prim", won ? round : TALLY[0]);
+        r.style.setProperty("--env", won ? "#ffffff" : TALLY[1]);
       });
     } else shownTally.fill(-1);
     // which Delibird is yours (the four look the same)

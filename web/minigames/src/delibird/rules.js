@@ -20,8 +20,9 @@
 // world from the same sticks (online, devices run it again from a saved frame
 // when someone's stick comes in late: game.js). So it only ever uses + - * /
 // and square roots, in the game's order (in doubles: the game's floats are
-// single, but each side's sums come out the same). tools/delibird_rules.py is
-// the rooms server's copy: keep the two the same.
+// single, but each side's sums come out the same; a Swinub's speed is rounded
+// to a single, as its spin's length depends on it). tools/delibird_rules.py
+// is the rooms server's copy: keep the two the same.
 
 export const FPS = 30;
 export const LEVELS = { easy: 1, normal: 2, hard: 3 };
@@ -31,7 +32,9 @@ export const HURRY = 30 * FPS; // the last 30 s: the tune speeds up (0x86A014D0)
 const LAST = 3 * FPS; // no gifts or Swinub come in the last 3 s (0x86A06D04)...
 const FIRST = TIME - FPS; // ...and no Swinub in the first second
 const WAIT = 60; // after the time's up, at most this long for gifts on their way (0x86A014D0)
-export const SHOW = 90; // the end: the winners cheer this long before the results (the remake's)
+// the end: the frame the tally's done the winners cheer and module #64's
+// results come on (0x86A07124 calls 0x87F0A098 then): no wait after it
+export const SHOW = 0;
 
 // The gifts (0x86A0D560): points, how much they weigh in the sack, and how
 // big they are on the belt (half their width and their depth); the objects
@@ -71,10 +74,12 @@ const GIFT_W = 8.333333015441895, GIFT_K = 0.800000011920929;
 const APART = 31.19999885559082, SQRT2 = 1.4142135381698608, PUSH = 0.10999999940395355, PUSH_D = 62.39999771118164;
 const SWINUB = 19.19999885559082, AVOID_X = 36.19999694824219;
 // the sack behind it (0x86A0F2D4: by how full it is, at its own angle) and how
-// near a Swinub has to come to hit it (0x86A0F2BC; see sackHit)
+// near a Swinub has to come to hit it, squared, by player: 1P's the least, 4P's
+// twice as far (0x86A0F2BC: two more follow it, 4602.38 and 5681.95, which
+// nothing reads; see sackHit)
 const SACK = [[0, -27.733333587646484], [-1.426285743713379, -30.585905075073242], [-2.852571487426758, -32.646095275878906],
   [-4.595809459686279, -34.38933181762695], [-6.180571556091309, -37.241905212402344], [-7.92380952835083, -39.619049072265625]];
-const SACK_R2 = [799.0242919921875, 1420.4876708984375, 2219.511962890625, 3196.09716796875, 4602.3798828125, 5681.95068359375];
+const SACK_R2 = [799.0242919921875, 1420.4876708984375, 2219.511962890625, 3196.09716796875];
 
 // A Delibird's states (W + 0x24 + 4 x player; its clip is the same number):
 // standing, walking (1 the fastest, 5 the slowest), picking a gift up,
@@ -217,8 +222,9 @@ export class World {
       pushA: [0, 0], pushB: [0, 0], pushed: false, won: false,
     }));
   }
-  // the game's random numbers (0x800357EC: x * 1664525 + 1013904223)
-  rnd() { return (this.seed = (Math.imul(this.seed, 1664525) + 1013904223) >>> 0); }
+  // the game's random numbers, as every draw in module #60 takes them
+  // (0x8007B100: x = (4x + 2)(4x + 3) >> 2, in 32 bits; never negative, under 2^30)
+  rnd() { return (this.seed = Math.imul(((this.seed << 2) + 2) | 0, ((this.seed << 2) + 3) | 0) >>> 2); }
 
   // ---- a frame (the play, 0x86A014D0; the tally, 0x86A07124) ----
   // pads: each person's stick [x, y], -64 to 64 each (null: none)
@@ -432,15 +438,14 @@ export class World {
     p.weight = p.weight - KINDS[k].weight;
     return k;
   }
-  // does a Swinub at (x, z) hit its sack? (0x86A0588C: the game looks the
-  // reach up by the player, 1P's the least and 4P's the most, where its table
-  // is by how full the sack is, as the remake does)
+  // does a Swinub at (x, z) hit its sack? (0x86A0588C: where the sack is goes
+  // by how full it is, how near it has to come by the player: 0x86A0F2BC[p])
   sackHit(p, x, z) {
     const [ox, oz] = SACK[p.load];
     const i = ((p.sackYaw + angle(ox, oz)) & 0xffff) >> 4;
     const r = Math.sqrt(ox * ox + oz * oz);
     const dx = (p.x + -cosine(i) * r) - x, dz = (p.zz + sine(i) * r) - z;
-    return dx * dx + dz * dz < SACK_R2[p.load];
+    return dx * dx + dz * dz < SACK_R2[p.z];
   }
 
   // ---- the CPUs (0x86A0BD34): go for a gift; with enough, take them up to the top ----
@@ -566,7 +571,8 @@ export class World {
     right = side === 1;
     let v = this.rnd() % 97 >= 11 ? 5 + (this.rnd() % 3) : 8 + (this.rnd() % 3);
     if (right) v = -v;
-    v = v * [0.800000011920929, 0.8999999761581421, 1, 1.2000000476837158][this.level];
+    // (by the level, as a single: 0x86A04A9C, mul.s; 10 x 0.9 is 9 then, and spins a Delibird 9 frames)
+    v = Math.fround(v * [0.800000011920929, 0.8999999761581421, 1, 1.2000000476837158][this.level]);
     this.lanes[lane] = 1;
     this.swinub.push({ id: ++this.ids, lane, x: right ? SWINUB_X : -SWINUB_X, z: LANES[lane], vx: v, right });
   }
