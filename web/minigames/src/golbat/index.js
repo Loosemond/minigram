@@ -1,12 +1,13 @@
 // Gutsy Golbat in the minigames shell (main.js): the cave and its camera, the
 // controls (on a phone: slide a finger on the left half to fly left and
 // right, tap the right half to flap; or the keys), its HUD (the hint, the
-// stick and the A button) and its online messages ("pad", "won"). The rules
-// are in rules.js, the game in game.js.
+// stick and the A button, each one's hearts on its card) and its online
+// messages ("pad", "won"). The rules are in rules.js, the game in game.js.
 import * as THREE from "three";
 import { loadAssets } from "./assets.js";
 import { Game, CAMERA } from "./game.js";
 import { meMark } from "../mark.js";
+import { tintURL } from "../tint.js";
 
 export const SOUNDS = {
   url: "assets/golbat/sound.bin",
@@ -27,6 +28,10 @@ export const SOUNDS = {
 const ASPECT = 4 / 3;
 // its badges (0x86108018: bank 434 at 0.8, the hearts beside them), on the 320 x 240 screen
 const BADGE = [[28, 16], [97, 16], [166, 16], [235, 16]];
+// each one's hearts in module #64's big digits (image bank 429, 0x87F06240)
+// through FC30B261 5566FF7F (a texel env + (prim - env) x its grey), in its
+// player's prim and env (0x86107EBC, 0x861085C8-0x86108690)
+const DIGITS = [[0x00009b, 0xaaf5ff], [0x006400, 0xc8ff9b], [0x780000, 0xffa0be], [0xd25a00, 0xffff8c]];
 // the touch (made for the remake): a finger on the left half is a stick, full
 // left or right RANGE px from where it went down (in steps of 16 of the
 // game's 64, none within DEAD px); a tap on the right half flaps
@@ -42,11 +47,14 @@ export async function create(shell, onProgress) {
   const assets = await loadAssets("assets/golbat/", onProgress);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
-  // the game's lights: one from the front and above, a dimmer one from below (0x86100ACC, 0x86100B34)
-  scene.add(new THREE.AmbientLight(0xffffff, 0.62 * Math.PI));
-  const sun = new THREE.DirectionalLight(0xffffff, 0.45 * Math.PI);
+  // the game's lights (its layout, 0x8610A14C-0x8610A17C): a white one and a
+  // grey one turned with the camera (0x86100ACC, 0x86100B34; their ways by
+  // eye), and all round 250/255 (16FAFAFA): the shade is held to 1 (assets.js),
+  // so the models are lit almost flat
+  scene.add(new THREE.AmbientLight(0xffffff, (250 / 255) * Math.PI));
+  const sun = new THREE.DirectionalLight(0xffffff, Math.PI);
   sun.position.set(0.4, 0.8, 1.2);
-  const fill = new THREE.DirectionalLight(0x808080, 0.3 * Math.PI);
+  const fill = new THREE.DirectionalLight(0x808080, Math.PI);
   fill.position.set(-0.5, -0.6, 1);
   scene.add(sun, fill);
   const game = new Game(scene, assets);
@@ -64,25 +72,31 @@ export async function create(shell, onProgress) {
   const hint = hud.querySelector(".gb-hint"), pads = hud.querySelector(".gb-pads");
   const stickEl = hud.querySelector(".gb-stick"), knob = hud.querySelector(".gb-knob"), flapEl = hud.querySelector(".gb-flap");
   const mark = meMark(hud, shell.me), over = new THREE.Vector3();
+  const digitPics = DIGITS.map(() => []); // (each player's 0-9, as they come)
+  DIGITS.forEach(([prim, env], z) => {
+    for (let d = 0; d < 10; d++) tintURL(`assets/ui/big${d}.png`, prim, env).then((url) => { digitPics[z][d] = url; });
+  });
 
   // ---- sounds and the like, from the game ----
+  // (each Golbat's on its player's own channel, panned by where it is: 0x861000B8)
   const mine = (z) => z === shell.me();
   game.on("send", (m) => shell.send("pad", m));
   game.on("sound", (name) => shell.sound(name));
-  game.on("wing", (z, pan) => shell.sound("wing", { pan })); // (0x0F03)
-  game.on("got", (z, pan) => { // (0x0F04)
-    shell.sound("got", { pan });
+  game.on("wing", (z, pan) => shell.sound("wing", z, { pan })); // (0x0F03)
+  game.on("got", (z, pan) => { // (0x0F04: in the play, not at the end)
+    shell.sound("got", z, { pan });
     if (mine(z)) { shell.haptic("light"); shell.flash(z, "bump"); }
   });
-  game.on("drop", (z, pan) => shell.sound("drop", { pan })); // (0x0F05)
+  game.on("drop", (z, pan) => shell.sound("drop", z, { pan })); // (0x0F05)
   game.on("zap", (z, pan) => { // (0x0F02)
-    shell.sound("zap", { pan });
+    shell.sound("zap", z, { pan });
     if (mine(z)) { shell.haptic("medium"); shell.flash(z, "hurt"); }
   });
   game.on("bump", (z, pan) => { // (0x0F01)
-    shell.sound("bump", { pan });
+    shell.sound("bump", z, { pan });
     if (mine(z)) { shell.haptic("medium"); shell.flash(z, "hurt"); }
   });
+  game.on("end", () => shell.music(null, 40)); // (the cave's stopped: song 13 fades over 40 frames, 0x86109404)
 
   // ---- the controls: a finger on the left half steers, one on the right flaps; or the keys ----
   const coarse = window.matchMedia?.("(pointer: coarse)");
@@ -117,7 +131,7 @@ export async function create(shell, onProgress) {
     setTimeout(() => flapEl.classList.remove("on"), 90);
   }
 
-  let view = null, box = null, portrait = false;
+  let view = null, box = null, portrait = false, cardEls = [];
   const api = {
     game, scene, assets,
     get views() { return view ? [view] : []; },
@@ -154,6 +168,7 @@ export async function create(shell, onProgress) {
       pads.style.setProperty("--room", Math.max(150, H - (box.top + box.h)) + "px");
       rest();
       // the cards where the game's badges are
+      cardEls = cards;
       cards.forEach((c, i) => {
         c.classList.toggle("mini", portrait || u < 2);
         const [x, y] = BADGE[i];
@@ -180,7 +195,7 @@ export async function create(shell, onProgress) {
       shell.stopSound();
     },
     go() { game.start(); shell.music("main"); }, // song 13, from GO
-    finish() { shell.music(null, 40); },
+    finish() {}, // (its song's faded as the cave stopped; the results bring theirs)
     stop() { game.stop(); },
     setControl(z, c) { game.setControl(z, c); },
     get state() { return game.state; },
@@ -240,6 +255,15 @@ export async function create(shell, onProgress) {
     if (was && !pads.hidden) rest();
     hint.hidden = !(game.state === "ready" || (game.state === "play" && game.lastFrame < SHOW_HINT));
     hint.textContent = coarse?.matches ? "Slide on the left to fly ← → · tap the right to flap" : "← → to fly · Space to flap";
+    // each one's hearts, in its colours (over the shell's plain digits)
+    cardEls.forEach((c, z) => {
+      const el = c.querySelector(".num"), n = Math.max(0, game.heartsOf(z));
+      if (el.dataset.gb === String(n) && el.firstElementChild?.classList.contains("gb-big")) return;
+      const urls = String(n).split("").map((d) => digitPics[z][d]);
+      if (urls.some((u) => !u)) return;
+      el.innerHTML = urls.map((u, i) => `<img class="gb-big" src="${u}" alt="${String(n)[i]}">`).join("");
+      el.dataset.gb = n;
+    });
     // which Golbat is yours (the four look the same)
     const { badge, model } = game.golbats[shell.me()];
     if (badge.visible) over.copy(badge.position).y += badge.top() + OVER_BADGE;

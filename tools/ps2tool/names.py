@@ -145,8 +145,12 @@ BANKS = {
     216: "Streaming Stampede Omanyte", 217: "Streaming Stampede Pichu", 218: "Streaming Stampede Pikachu",
     219: "Streaming Stampede Magneton", 220: "Streaming Stampede Togepi",
     415: "Streaming Stampede digits", 416: "Streaming Stampede words",
-    # Pichu's Power Plant (module #54): its effects and charge gauges
-    224: "Pichu's Power Plant spark", 225: "Pichu's Power Plant lightning",
+    # module #64's particles (the minigames' shared code: 0x87F039F0, 0x87F0339C):
+    # a spark (Pichu's Power Plant's, Egg Emergency's hurt Chansey, Gutsy
+    # Golbat's Magnemite hits), lightning (Pichu's Power Plant's, round a hurt
+    # Golbat) and a star (Gutsy Golbat's caught hearts and Jynx's)
+    224: "spark", 225: "lightning", 147: "star",
+    # Pichu's Power Plant (module #54): its charge gauges
     409: "Pichu's Power Plant gauge fill", 410: "Pichu's Power Plant gauge frame",
     # Tumbling Togepi (module #55): the whole track the treadmills scroll (32 x
     # 2048: START, the 10-90 marks and GOAL), and the rank coins over the

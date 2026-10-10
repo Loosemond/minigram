@@ -1,10 +1,11 @@
 // Loads Gutsy Golbat's files (tools/web_assets.py puts them in
 // assets/golbat/): Golbat (object 53), Jynx (110), the backdrops (image bank
 // 221: the cave, its mouth, the meadow), the Magnemite and heart strips (banks
-// 69 and 222), each player's glow (bank 343, coloured) and the badges over
-// them (434, the shared ones: src/badge.js). Lighting is done on the
-// textures' display values, as the N64 does (see src/egg/assets.js,
-// docs/colours.md).
+// 69 and 222), each player's glow (bank 343, coloured), module #64's particles
+// (bank 224's burst and 225's lightning, strips of 8, and 147's star in each
+// player's colours and Jynx's) and the badges over them (434, the shared
+// ones: src/badge.js). Lighting is done on the textures' display values, as
+// the N64 does (see src/egg/assets.js, docs/colours.md).
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
@@ -44,8 +45,31 @@ function prepare(scene) {
   return scene;
 }
 
+// A material drawn as the game's models are. The RSP's shade is ambient + the
+// lights' N.L, held to 1, and the texel's times it: so with the scene's
+// ambient of 250/255 (index.js) a model is lit almost flat, never brighter
+// than its texture. And the object's colour (its +0xC4: rgb and how much)
+// laid over it as the draw's fog colour, blended by its alpha (the first
+// cycle's G_RM_FOG_PRIM_A, OR'd on every layer's render mode at 0x8003D140,
+// the colour from SetFogColor at 0x8003D0D4): out = fog x a + in x (1 - a).
+// fog: { value: Vector4(r, g, b, a) }, 0-1, shared by a model's materials;
+// for sprites too (the Magnemite's flash).
+export function n64Look(m, fog) {
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.n64fog = fog;
+    sh.fragmentShader = "uniform vec4 n64fog;\n" + sh.fragmentShader
+      .replace("vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + totalEmissiveRadiance;",
+        "vec3 outgoingLight = min(reflectedLight.directDiffuse + reflectedLight.indirectDiffuse, diffuseColor.rgb) + totalEmissiveRadiance;")
+      .replace("#include <opaque_fragment>", "#include <opaque_fragment>\n\tgl_FragColor.rgb = mix(gl_FragColor.rgb, n64fog.rgb, n64fog.a);");
+  };
+  m.customProgramCacheKey = () => "golbat-n64";
+  m.needsUpdate = true;
+  return m;
+}
+
 const MODELS = ["golbat", "jynx"];
-const PICTURES = ["cave", "mouth", "meadow", "magnemite", "hearts", "glow0", "glow1", "glow2", "glow3"];
+const PICTURES = ["cave", "mouth", "meadow", "magnemite", "hearts", "glow0", "glow1", "glow2", "glow3",
+  "spark", "bolt", "star0", "star1", "star2", "star3", "star_jynx"];
 
 export async function loadAssets(base, onProgress = () => {}) {
   const jobs = [];
@@ -68,7 +92,7 @@ export async function loadAssets(base, onProgress = () => {}) {
 }
 
 // A model, at the game's scale, with its own mixer: a clip is posed at a frame
-// (looped), and its materials can be tinted (the game's colour on it)
+// (looped), and the object's colour laid over it (fog())
 export function makeModel(a, s = 1) {
   const model = cloneSkinned(a.scene);
   model.scale.setScalar(GLB * s);
@@ -76,10 +100,10 @@ export function makeModel(a, s = 1) {
   root.add(model);
   const mixer = new THREE.AnimationMixer(model);
   const actions = a.clips.map((c) => mixer.clipAction(c));
-  const mats = [];
+  const fog = { value: new THREE.Vector4(1, 1, 1, 0) };
   model.traverse((o) => {
     if (!o.isMesh) return;
-    o.material = [o.material].flat().map((m) => { const c = m.clone(); c.userData.base = c.color.clone(); mats.push(c); return c; });
+    o.material = [o.material].flat().map((m) => n64Look(m.clone(), fog));
     if (o.material.length === 1) o.material = o.material[0];
   });
   let current = -1, action = null;
@@ -105,15 +129,7 @@ export function makeModel(a, s = 1) {
       action.time = d > 0 ? (Math.max(0, f) / FPS) % d : 0;
       mixer.update(0);
     },
-    // a colour laid over it: towards rgb by k (0 none), and see-through by alpha
-    tint(rgb, k, alpha = 1) {
-      for (const m of mats) {
-        m.color.copy(m.userData.base).lerp(rgb, k);
-        m.emissive?.copy(rgb).multiplyScalar(k * 0.6);
-        m.transparent = alpha < 1;
-        m.opacity = alpha;
-        m.depthWrite = alpha >= 1;
-      }
-    },
+    // the object's colour over it (n64Look): rgb (a THREE.Color) by alpha (0-1: 0 none)
+    fog(rgb, alpha) { fog.value.set(rgb.r, rgb.g, rgb.b, Math.max(0, Math.min(1, alpha))); },
   };
 }

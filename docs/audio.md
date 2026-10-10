@@ -265,14 +265,19 @@ aren't asked for by module #55.
 
 Gutsy Golbat's (module #49) are bank 0's (entries 1-7: sounds `0x00`-`0x06`),
 played with `0x800277B4` panned by the Golbat's x across where Golbat can
-go (`0x86100020`), and the shared count for the play's last seconds:
+go (`0x86100020`) and with its player (`0x861000B8`: the object's +0x23):
+`0x0F01`-`0x0F05` have flag bit 1, so each player's are on channels of its
+own. And the shared count for the play's last seconds. Song 13 starts at GO
+and fades over 40 frames the frame the cave stops (`0x86109404`:
+`0x800225B4(0x28)`); the results' song 55 or 56 follows as the first loser
+lands. No whistle at the end:
 
 | Id | Sound | Effects of font 12 | When (from the code) |
 |---|---|---|---|
 | `0x0F01` | `0x00` | instrument 1 | a dashing Golbat knocks a heart out of another |
 | `0x0F02` | `0x01` | 1, instrument 2 | a Magnemite hits a Golbat |
-| `0x0F03` | `0x02` (volume 63, channel 0 only) | 2 | a wingbeat: each time a Golbat's flying clip comes round |
-| `0x0F04` | `0x03` | 3 | a heart caught |
+| `0x0F03` | `0x02` (volume 63, channel 0 only) | 2 | a wingbeat: on frame 0 of a Golbat's flying clip (`0x86102FF0`: a flap's faster clip can step past it), in the countdown too, not at the end |
+| `0x0F04` | `0x03` | 3 | a heart caught in the play (state 4: not at the end, `0x8610654C`) |
 | `0x0F05` | `0x04` | instrument 0 | a heart knocked out (one each) |
 | `0x0F06`, `0x0F07` | `0x05`, `0x06` | 4, 5 | each count tick; GO (with song 13) |
 | `0xCF00`, `0xCF06` | `0x7C`, `0x28` | 96; 33 | 3, 2 and 1 seconds before the cave stops; as it stops |

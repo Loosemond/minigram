@@ -106,7 +106,7 @@ BOB = [0, 0.207912, 0.406737, 0.587785, 0.743145, 0.866025, 0.951057, 0.994522, 
        0.866025, 0.743145, 0.587785, 0.406737, 0.207912, 0, -0.207912, -0.406737, -0.587785, -0.743145,
        -0.866025, -0.951057, -0.994522, -0.994522, -0.951057, -0.866025, -0.743145, -0.587785, -0.406737, -0.207912]
 
-BACKDROP, INTRO = 864, 80
+BACKDROP, INTRO = 864, 100  # (the countdown's 100 frames: 0x86107DF0, 0x86100790)
 CAVE, MOUTH, MEADOW = 0, 1, 2
 BACKDROPS_AT = [-100, 764]
 MEADOW_STOP, JYNX_AT = 10, BACKDROP * 1.35
@@ -118,9 +118,12 @@ FAR, MID, ANY, NO_LEFT, CROWDS, MAGS_X2 = 0x100, 0x200, 0x800, 0x10, 0x40, 0x80
 ROAM_X, ROAM_W, ROAM_Y, ROAM_H, ROAM_TOP = -158.62593, 480.16498, -127.32945, 245.01274, 117.68329
 U = 4294967296
 
-# How long after the play's end a round is over (the winners' cheer, made for
-# the remake), and the frame the play ends on (it doesn't depend on anyone's pads)
-AFTER = 30
+# How long after the play's end a round is over: the game hands over to the
+# results as the first loser lands (0x86100874), 28-88 frames after the cave
+# stops, 37 mostly (each device's show is its own, web/minigames/src/golbat/
+# flight.js, so each says when it's there: this is when to expect it). The
+# frame the play ends on is below (it doesn't depend on anyone's pads)
+AFTER = 37
 
 
 def level_code(level, cpus):

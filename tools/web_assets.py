@@ -220,7 +220,10 @@ UI["title_togepi.png"] = bank(417, 0)
 # 221 (the backdrops: the cave, its mouth, the meadow outside), 69 (Magnemite,
 # a sprite in 5 frames) and 222 (the hearts: red, then outlined in 1P-4P's
 # colours), both made into strips below, 343 (the glow behind each Golbat,
-# coloured below) and 434 (the badges). Its name banner is bank 395.
+# coloured below) and 434 (the badges); module #64 (the minigames' shared
+# code) its particles' 224 (a Magnemite's hit), 225 (the lightning round a
+# hurt Golbat) and 147 (the stars of a caught heart), coloured below. Its
+# name banner is bank 395.
 GOLBAT = {
     "golbat.glb": "objects/053_golbat/053_golbat.glb",
     "jynx.glb": "objects/110_jynx/110_jynx.glb",
@@ -1096,7 +1099,35 @@ def build():
                 px += bytes(e + (p - e) * i // 255 for p, e in zip(prim, env)) + bytes([255 - i])
             with open(os.path.join(site, "golbat", "glow%d.png" % z), "wb") as fh:
                 fh.write(png.encode_rgba(gw, gh, bytes(px)))
-        print("golbat: the Magnemite and heart strips and the glows (image banks 69, 222, 343)")
+        # and module #64's particles over them, each through FC509BFF 3FFDFE38: a
+        # texel prim + (env - prim) x its grey, its alpha the grey (an I8's) or
+        # its own (IA8) times env's. The burst of a Magnemite's hit (bank 224) and
+        # the lightning round a hurt Golbat (225), strips of their 8 frames, prim
+        # yellow and env white (0x87F039F0, as Pichu's Power Plant's); the stars
+        # of a caught heart (bank 147, 0x87F0339C), env and prim each player's
+        # (0x861061B0), and the ones Jynx's hearts shed, env white, prim yellow
+        # (0x86106784)
+        def particle(rgba, prim, env=(255, 255, 255), grey_alpha=True):
+            px = bytearray()
+            for o in range(0, len(rgba), 4):
+                i = rgba[o]
+                px += bytes(p + (e - p) * i // 255 for p, e in zip(prim, env)) + bytes([i if grey_alpha else rgba[o + 3]])
+            return bytes(px)
+        for name, b in (("spark", 224), ("bolt", 225)):
+            frames = images.bank_images(rom, b)
+            w, h = frames[0][1], frames[0][2]
+            tinted = [particle(rgba, (255, 255, 0)) for _, _, _, rgba in frames]
+            rows = [b"".join(t[y * w * 4:(y + 1) * w * 4] for t in tinted) for y in range(h)]
+            with open(os.path.join(site, "golbat", name + ".png"), "wb") as fh:
+                fh.write(png.encode_rgba(w * len(frames), h, b"".join(rows)))
+        (_, sw, sh, star), = images.bank_images(rom, 147)[:1]
+        for name, prim, env in (("star0", (0, 0, 255), (200, 200, 255)), ("star1", (0, 255, 0), (200, 255, 200)),
+                                ("star2", (255, 0, 0), (255, 200, 200)), ("star3", (255, 255, 0), (255, 255, 200)),
+                                ("star_jynx", (255, 255, 0), (255, 255, 255))):
+            with open(os.path.join(site, "golbat", name + ".png"), "wb") as fh:
+                fh.write(png.encode_rgba(sw, sh, particle(star, prim, env, grey_alpha=False)))
+        print("golbat: the Magnemite and heart strips, the glows, the burst, the lightning and the stars"
+              " (image banks 69, 222, 343, 224, 225, 147)")
         # Rampage Rollout's dust (bank 159) and clouds (150), each a strip of its
         # frames; the clouds and the stars (384) in each player's colours
         def strip(frames):

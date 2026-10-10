@@ -109,6 +109,19 @@ What isn't known yet, roughly by how useful it would be.
   the fade is (`0x80007B14(0x14)`, read by the screen's own code) and the
   instructions' camera (`0x8670A404`: what its +0x14 and +0x18 do), which the
   remake leaves out, as the other games' instructions shows.
+- **Gutsy Golbat's loose ends** (its rules are read: [minigames.md](minigames.md#gutsy-golbat)):
+  what an object's +0xD0-+0xD8 are, which the glows and Jynx's hearts are
+  placed from (`0x86109AE0`, `0x86107150`: a node's place in the world as
+  it's drawn, *by context*; the remake puts a glow on its Golbat and Jynx's
+  hand by eye); clip 9's loop from frame 49 once a loser's down (the remake
+  loops 49-56: whether the player loops or holds there wasn't checked); a
+  dash still flagged as the cave stops (the end's bumps, `0x86103194`, would
+  knock a heart out then; the remake counts no more after the stop); the clip
+  speed a flap leaves on through the end's startle (nothing sets it there: the
+  remake plays the end's clips at 1); the lights' ways (the geo's `002D0019`
+  isn't decoded: with the ambient at 250/255 they barely show); and PAL's 25
+  frames a second (the module asks `tv_rate` and doesn't scale its speeds,
+  so on a PAL console it runs 20% slower; the remake runs NTSC's 30).
 - **Audio:** the voices' codec (5, in sample banks 4–6), the reverb
   settings, the game's custom sequence function (`0x800275D8`), and the
   0x28-byte records at `0x49B780` ([audio.md](audio.md)).

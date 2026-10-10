@@ -616,34 +616,50 @@ side, filling it: the course is the same every round, so the Magnemite and
 hearts the game brings on just past its screen's edge are drawn coming from
 further off, and the backdrops go on past the game's two (the cave, its
 mouth, the meadow, then the meadow mirrored). The badges and hearts are at the
-top where the game has them, and a badge (1P-4P, or COM in its colour) over
-each Golbat, as in the game. On a phone: slide
+top where the game has them, each player's hearts in the game's big digits in
+its colours, and a badge (1P-4P, or COM in its colour) over each Golbat, as in
+the game. The models are lit as the game's (almost flat), and the colours laid
+over a Golbat are the game's: its player's while it dashes, red as a dash
+knocks it, a white flicker while a Magnemite's hurt it; a Magnemite that hits
+flashes dark and white. The effects are the game's shared ones (module #64's):
+a Magnemite's hit bursts, lightning crackles round a hurt Golbat, a caught
+heart throws up stars in its catcher's colours, and Jynx's hearts shed
+yellow ones. On a phone: slide
 a finger on the left half to fly left and right (the stick's middle is where
 it went down, and follows it), tap the right half to flap; a resting stick
 and the A button show where. In portrait the screen is at the top, a little
 wider than the window, the stick and the button below it. With a keyboard:
 ← → to fly, Space (or ↑) to flap. In the countdown the Golbat fly in from by
-the camera; at the end the winners fly round cheering, the others drop to the
-floor, and Jynx throws hearts.
+the camera, steering to their places as the game's do (a 100-frame count, 25
+a number, the cave going by); at the end, as the cave stops, the song fades,
+the four are startled, then the winners fly round cheering, the others drop
+to the floor, and Jynx throws hearts (anyone still flying can catch them, for
+show); the results come as the first loser lands, as in the game (at once if
+all four have the same). The show (the fly-in, the end, the effects) is each
+device's own, with random numbers of its own: it doesn't touch the world. It
+all goes at the game's 30 frames a second and is drawn between its frames,
+so nothing moves in steps.
 
 **Sound**: the game's (`assets/golbat/sound.bin`, 517 KB): song 13 from GO,
-bank 0's effects (the wingbeats, a heart caught, one knocked out, a Magnemite's
-hit, a dash's), panned by where the Golbat is, its own count and GO, and the
-shared count for the last three seconds.
+faded as the cave stops; bank 0's effects (the wingbeats, through the
+countdown too, a heart caught in the play, one knocked out, a Magnemite's
+hit, a dash's), each Golbat's on its player's channels, panned by where it
+is; its own count and GO, and the shared count for the last three seconds.
 
 What comes from the ROM and what is made up:
 
 | From the game | Made for the remake |
 |---|---|
-| the course (its sections and their order), the flying, the bumps and dashes, the Magnemite and the hearts, the clock and the backdrops' timing, the CPUs, the end (module #49's code) | 80 frames of the backdrops going by before GO (the game's countdown is 100, 25 a number), the end's flight (its winners roam and its losers fall the game's way, from random spots of the remake's own), the sparkles, a hurt Golbat's flashing |
-| Golbat (53) and its clips, Jynx (110), the backdrops (bank 221), Magnemite (69), the hearts (222), the glows (343, coloured as the game's combiner does), the badges (434), the camera | Golbat in every seat, the touch stick and A button (the menus' A, bank 51), the 92% screen, more of the cave on a wide screen (the meadow mirrored past its edge), the title's art (the cave) |
-| song 13, bank 0's effects, the count | |
+| the course (its sections and their order), the flying, the bumps and dashes, the Magnemite and the hearts, the clock and the backdrops' timing (100 frames of them in the countdown), the CPUs, the fly-in, the end and when it hands over (module #49's code) | the show's random numbers (the fly-in's speeds, the end's pushes, Jynx's throws, the effects: each device's own), the fly-in eased into the world's places at GO, Jynx's hand (where her hearts come from, by eye), the lights' ways (by eye) |
+| Golbat (53) and its clips, Jynx (110), the backdrops (bank 221), Magnemite (69), the hearts (222), the glows (343), the badges (434), the heart counts' big digits (429), module #64's particles (224, 225, 147), each coloured as the game's combiner does, the colours over the models, the lighting, the camera | Golbat in every seat, the touch stick and A button (the menus' A, bank 51), the 92% screen, more of the cave on a wide screen (the meadow mirrored past its edge), the title's art (the cave), the cards' layout |
+| song 13 and its fade, bank 0's effects on each player's channels, the count | |
 
 Code: `src/golbat/rules.js` has the world (and `tools/golbat_rules.py`, the
 server's copy, line for line), `src/golbat/game.js` the game (the pads, running
-the world again, and its scene), `src/golbat/assets.js` the models and
-pictures and `src/golbat/index.js` the layout, the controls, its HUD and its
-online messages.
+the world again, and its scene), `src/golbat/flight.js` the show's flight (the
+fly-in and the end), `src/golbat/assets.js` the models (lit and coloured as
+the game's) and pictures and `src/golbat/index.js` the layout, the controls,
+its HUD and its online messages.
 
 ## Barrier Ball
 
@@ -1043,7 +1059,10 @@ How it works:
   everyone in it on time: the others as if they held their stick and didn't
   flap, till their pad comes in a few frames late; then it runs the world
   again from a frame it saved before then, and eases the others' Golbat to
-  where they turn out to be.
+  where they turn out to be. The show round the world (the fly-in, the end)
+  is each device's own: each hands over to the results as its first loser
+  lands, which the server takes to be about 37 frames after the cave stops
+  (`AFTER`), the round's end it waits for.
 - **Barrier Ball**: the same as Gutsy Golbat (`pad`, `won`), with
   `tools/barrier_rules.py`; the play can end on any frame (a fifth point), so
   the server looks again every half second, and says each one's points

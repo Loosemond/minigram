@@ -76,7 +76,7 @@ TOGEPI_SCRIPT = [[0, 0, -60], [100, 45, -60], [160, 0, -60], [260, -60, -45], [3
 # web/minigames/src/golbat/rules.js: a round with seats 0 and 2 on golbat_pad()
 # and two CPUs (normal, hard and easy), the world's digest() every 50 frames,
 # the end and the hearts (web/minigames/tests.js has the same)
-JS_GOLBAT = {1: "7f7fc535a3084587", 12345: "1187f3c1ce14e6a9", 2 ** 31 - 1: "25353e1685cb6a40"}
+JS_GOLBAT = {1: "ef999629c57bfe9c", 12345: "fd9fbc24e01eae26", 2 ** 31 - 1: "a1db3b0f2ef6720e"}
 GOLBAT_LEVEL = {1: "normal", 12345: "hard", 2 ** 31 - 1: "easy"}
 
 
@@ -1047,7 +1047,7 @@ def golbat_digest(seed):
 def _():
     for seed, want in JS_GOLBAT.items():
         assert golbat_digest(seed) == want, seed
-    assert golbat_rules.END == 1837, golbat_rules.END  # (the cave's mouth after 1200 frames, the meadow, and it stops)
+    assert golbat_rules.END == 1817, golbat_rules.END  # (the cave's mouth after 1200 frames, the meadow, and it stops: 100 frames of it went by in the countdown)
     # the CPUs catch hearts, more on the harder levels (four CPUs: the people's seats hold still)
     def best(seed, level):
         w = golbat_rules.World(seed, level, [False, True, True, True])
@@ -1063,9 +1063,10 @@ def _():
 @check("Gutsy Golbat: the server runs the world from the pads, says how it ended and stops cheats", together="Golbat")
 def _():
     saved = golbat_rules.TIME, golbat_rules.BACKDROPS_AT, golbat_rules.MEADOW_STOP, golbat_rules.END
-    # (a short round: the cave's mouth and the meadow come at once, and it stops at 640)
+    # (a short round: the cave's mouth and the meadow come at once, and it stops at 640; the
+    # backdrops at -860 and -856 at GO, after the countdown's INTRO frames of 4 each)
     golbat_rules.TIME, golbat_rules.MEADOW_STOP = -1, 640
-    golbat_rules.BACKDROPS_AT = [-860 + 320, -856 + 320]
+    golbat_rules.BACKDROPS_AT = [-860 + 4 * golbat_rules.INTRO, -856 + 4 * golbat_rules.INTRO]
     golbat_rules.END = golbat_rules.end_frame()
     try:
         assert 40 < golbat_rules.END < 70, golbat_rules.END

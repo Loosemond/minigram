@@ -37,7 +37,7 @@ const TOGEPI_SCRIPT = [[0, 0, -60], [100, 45, -60], [160, 0, -60], [260, -60, -4
   [700, -45, -45], [760, 60, -60], [800, 0, -60]];
 // Gutsy Golbat: a round with seats 0 and 2 on golbatPad() and two CPUs (normal, hard, easy), the
 // world's digest() every 50 frames, the end and the hearts: the same as JS_GOLBAT in tools/test_rooms.py
-const GOLBAT = { 1: "7f7fc535a3084587", 12345: "1187f3c1ce14e6a9", 2147483647: "25353e1685cb6a40" };
+const GOLBAT = { 1: "ef999629c57bfe9c", 12345: "fd9fbc24e01eae26", 2147483647: "a1db3b0f2ef6720e" };
 const GOLBAT_LEVEL = { 1: "normal", 12345: "hard", 2147483647: "easy" };
 // Barrier Ball: a round with seats 0 and 2 on barrierPad() and two CPUs (normal, hard, easy), the
 // world's digest() every 50 frames, the end and the points: the same as JS_BARRIER in tools/test_rooms.py
@@ -1101,7 +1101,7 @@ await test("Gutsy Golbat: online, the others' pads coming in late run the world 
   }
 });
 
-await test("Gutsy Golbat: a solo round, played headless: it ends when the meadow's in place, places by hearts", async () => {
+await test("Gutsy Golbat: a solo round, played headless: it ends when the meadow's in place, places by hearts, hands over as a loser lands", async () => {
   await solo.mg.show("golbat");
   const api = solo.mg.mini, g = api.game, saved = g.listeners, { END } = await moduleOf(solo, "./src/golbat/game.js");
   solo.mg.paused = true;
@@ -1122,7 +1122,10 @@ await test("Gutsy Golbat: a solo round, played headless: it ends when the meadow
       assert(res.every((r, k) => r.score === h[r.i] && (!k || res[k - 1].place <= r.place)), `${level}: results ${JSON.stringify(res)} for hearts ${h}`);
       assert(res.every((r) => r.place === 1 + h.filter((x) => x > h[r.i]).length), `${level}: places ${JSON.stringify(res)}`);
       assert(h.slice(1).some((x) => x > 0), `${level}: the CPUs caught nothing: ${h}`);
-      out.push(`${level}: ${h.join(", ")}`);
+      // (the results come as the first loser lands on the floor, as the game's do: 0x86100874; at once if all four tie)
+      const down = g.ends.filter((e) => e.landed).length, after = g.frame - END;
+      assert(g.winners.every((x) => !x) ? after <= 1 : down >= 1 && after > 20 && after < 100, `${level}: handed over ${after} frames after the stop, ${down} down`);
+      out.push(`${level}: ${h.join(", ")} (handed over ${after} frames after the stop)`);
     }
   } finally {
     g.listeners = saved;

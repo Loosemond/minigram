@@ -120,8 +120,9 @@ const BOB = [0, 0.207912, 0.406737, 0.587785, 0.743145, 0.866025, 0.951057, 0.99
 
 // The backdrops (image bank 221: the cave, its mouth, the meadow), two side by
 // side 864 across, going by at half the scroll (0x86105CD8). They go by in the
-// countdown too (INTRO frames of it, here), and the play's clock starts at GO.
-export const BACKDROP = 864, INTRO = 80;
+// countdown too: its 100 frames (a step of 25, 0x86107DF0; state 3 runs them,
+// 0x86100790, GO on its 100th: 0x87F006BC), and the play's clock starts at GO.
+export const BACKDROP = 864, INTRO = 100;
 export const CAVE = 0, MOUTH = 1, MEADOW = 2;
 const BACKDROPS_AT = [-100, 764];
 // The end: as the meadow comes, no more come on (it's past 0.95 x 864) and the

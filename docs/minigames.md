@@ -155,7 +155,7 @@ audits of each module; `0x87F0A098`'s callers):
 
 | Minigame | Hands over | Its song at the end |
 |---|---|---|
-| Gutsy Golbat | when the first loser lands, about 1 s after the scroll stops (`0x86100874`) | faded over 40 frames as it stops (`0x86109404`) |
+| Gutsy Golbat | when the first loser lands, 28-88 frames after the scroll stops, 37 mostly (`0x86100874`); at once if all four have the same (`0x861008E8`) | faded over 40 frames as it stops (`0x86109404`) |
 | Barrier Ball | 8 frames after the end (`0x863024A8`) | plays on |
 | Furret's Frolic | after the 40-frame fade at the time-up (`0x8620392C`, `0x86204A9C`) | faded |
 | Pichu's Power Plant | 130 frames after the finish (`0x8660429C`) | plays on |
@@ -1406,7 +1406,26 @@ plane z = 0, and the module's odd constants are screen pixels × 2.6795
 (1200 tan 15° / 120): a Golbat stays within x −364.41 (−136 px) to 321.54
 (120 px) and y −209 (−78 px; −192.92 outside the play) to 199.35; things
 come on at x 464.85 (just past the right edge) and go past −464.85. Two
-lights follow the camera (white and grey, `0x86100ACC`, `0x86100B34`).
+lights follow the camera (white and grey: `14000000 002D0019 FFFFFF28` and
+`…80808028` at `0x8610A14C`, turned by `0x86100ACC` and `0x86100B34`), and
+the ambient is 250/255 (`0x8610A17C`: `16FAFAFA`). The RSP holds a vertex's
+shade (ambient + the lights' N·L) to 1, so the models are lit almost flat.
+
+**The colour over a model** (the object's +0xC4: RGB and how much). The
+object's draw hands its node's +0xA0 (the object's +0xC4) to `0x8003DBD0`
+(`0x8003BF3C`), the draw state's colour (`0x80126318`); while its alpha
+isn't 0 each draw sets it as the fog colour and ORs `G_RM_FOG_PRIM_A` into
+the first cycle (`0x8003DA18` → `0x8003D098`): the colour is laid over the
+model by its alpha, out = colour × a + in × (1 − a), never see-through. On a
+Golbat in the play (`0x8610362C`): hurt by a Magnemite, white, its alpha
+0x2F less a frame round and round (a bright-to-dim flicker of about 5.4
+frames, `0x861037C4`), and 0x5F as the hurt's over (`0x86103794`); otherwise
+7 less a frame, and 64 less while it's over 0x40 and not dashing
+(`0x861039C0`, `0x86103AC0`); dashing, its player's colour (C8C8FF at 0xD2,
+96DC96, FF9696 and FFFF64 at 0xBE: `0x86103A38`-`0x86103AB4`); knocked by a
+dash, FF0000 at 0xAF (`0x86100E20`). At the end it's 0 every frame
+(`0x86103C94`). A Magnemite's is black at 0x9F on two frames of three and
+white on the third, from its hit's frame for 17 frames (`0x86105950`), else 0.
 
 - **The backdrops** (`0x86106044`, `0x86105CD8`): image bank 221's three
   256 × 192 pictures (the cave, the cave's mouth, the meadow outside),
@@ -1419,19 +1438,49 @@ lights follow the camera (white and grey, `0x86100ACC`, `0x86100B34`).
   last three seconds sound the shared count (0xCF00) and the end 0xCF06.
 - **Golbat** (object 53 at 0.04): clip 2 flying (played faster after a flap:
   1 + 2 × its upward speed / 15), 4 knocked by a dash, 5 hurt by a Magnemite,
-  6 cheering, 8 falling, 9 down; its wingbeat (0x0F03) each time clip 2 comes
-  round. It turns 15% of the way a frame to face right, or left while its
+  6 cheering, 8 falling, 9 down; its wingbeat (0x0F03) on clip 2's frame 0
+  (`0x86102FF0`: a flap's faster clip can step past it; after a knock or a
+  hurt the clip starts again at 0), in the countdown too. It turns 15% of
+  the way a frame to face right, or left while its
   stick's pushed that way (`0x8610362C`). Behind it, a glow in its player's
   colour (bank 343, a grey disc the combiner makes env + (prim − env) × grey,
   alpha 1 − grey; `0x86109AE0`, colours `0x8610A224`), pulsing.
 - **Magnemite** (bank 69, five 32 × 19 frames, 0, 1, 2, 1, 0, 3, 4, 3, one
-  every three frames; on a 112 × 66 quad at 0.64: `0x86105C30`) bob 10 up and
-  down, 12° a frame.
+  every three frames, every frame while it flashes: `0x86105AD8`; on a 112 × 66
+  quad at 0.64: `0x86105C30`) bob 10 up and down, 12° a frame.
 - **Hearts** (bank 222, 16 × 16 on a 46 × 46 quad, wobbling; red from the
   course, outlined in the colour of the Golbat they were knocked out of).
 - **Jynx** (object 110 at 0.2, turned −22.5°, at y −242.92, z −100) comes with
   the meadow, 1.35 × 864 to its right; once the scroll stops she throws a
-  heart on frames 8 and 47 of her clip, which the winners catch (for show).
+  heart on frames 8 and 47 of her clip (`0x86107208`, `0x86107150`: from her
+  node's +0xD0, at 10 a frame, −45° to 180°), growing from half its size over
+  15 frames, drifting left 4 a frame and slowing (× 0.97), bouncing off the
+  floor and the roof (`0x86106784`).
+
+**Module #64's particles** (the minigames' shared code: drawn turned to the
+camera, blended in layer 9, through `FC509BFF 3FFDFE38`: a texel prim + (env
+− prim) × its grey, its alpha the grey times env's; each is updated and
+drawn from the frame it's made, for its life):
+
+- A Magnemite's hit (`0x861057D8` → `0x87F03884`, type 0, drawn by
+  `0x87F039F0`): image bank 224's burst (8 frames of 64 × 64 I8, its picture
+  `0x87F0F660`[(age & 15) / 2]) on a 64 × 64 quad at 3.7x (237 across), at
+  the Magnemite + (7, −17), following it, turning 0x7F a frame, for 15
+  frames; prim yellow, env white.
+- A hurt Golbat (`0x86103384`, every third of its 26 frames): type 1, image
+  bank 225's lightning (8 frames of 32 × 96) on a 32 × 96 quad, at a random
+  angle a out from the Golbat, (0.5-2.5) × 28 off, 100 in front, turned
+  a − 0x3FFF (pointing out), 0.3 × (0.5-2.5) big, for 8 frames, following it.
+- A caught heart (`0x861061B0` → `0x87F0328C`, mode 0; drawn by `0x87F0339C`,
+  run by `0x87F02F00`): 5 stars (image bank 147, 32 × 32 IA8, on a 32 × 32
+  quad) ±28 round the heart, 1-2x, for 10-25 frames, thrown up 1-16 and ±3
+  across plus the scroll, falling 0.98 a frame faster; env and prim by the
+  catcher: 1P C8C8FF / 0000FF, 2P C8FFC8 / 00FF00, 3P FFC8C8 / FF0000, 4P
+  FFFFC8 / FFFF00. Each is sin(π × age / life) of its size and turns 0x1FF
+  twice a frame.
+- Jynx's hearts (`0x86106BD8`, every third of a heart's first 60 frames): a
+  star (mode 1: falling 1.5 a frame) ±30 round it in x, y and z, 1.5x, for
+  15-30 frames, env white, prim yellow.
 
 **The course** (`0x86100418`): the scroll counts 8 a frame through sections of
 1000; a section is a list of [where /255, height /255, what] (`0x8610A250`,
@@ -1480,28 +1529,72 @@ It steers round Magnemite within 52.16 first, brakes for one in its way, and
 works its stick and A as a person would: a frame's change of speed is its
 buttons, and it can't flap two frames running.
 
-**The end** (state 5, `0x861008E8`): the most hearts win (a four-way tie: no
-one); for half a second all are startled (clip 5, pushed left), then the
-winners fly round the meadow cheering (clip 6) and the others drop to the
-floor (clips 8, 9), while Jynx throws hearts.
+**The end** (state 5, from the frame the scroll stops: `0x86109404` fades song
+13 over 40 frames then, `0x800225B4(0x28)`; `0x861008E8`): the most hearts
+win (a four-way tie: no one, and the results come at once). Each Golbat
+(`0x86103C48`, in seat order): gravity, held to ±15, moved, slowed
+(`0x86103B74`); then startled (clip 5 from a random frame of its 12), the
+winners till their frame counter's past 30, the others 15 (`0x86100E20`):
+pushed left (on its first 3 frames, or while it goes right: 64 × (0.025 +
+0.05 × rand)), kept up (below −104.5 a random push up to 9, else rising at
+least 0.58), shaking ±2.8, growing to 1.3x (0.004 a frame from 0.04), its
+label 0.42 a frame higher and with its size, facing right. Then a winner
+(clip 6 from a random frame of its first 26) flies to its spot (its record's
++0x18, then random ones in x −364.4 to 321.5 and y −63.7 to 58.8 once within
+112: `0x86104BEC`), 0.025 of the way (held to 1.472 across, 9 up) with no
+gravity; a loser loses its label and falls at three times the gravity
+(`0x861043B0`): clip 8, from frame 14 again at its end, then on the floor
+(−192.92) turned any way, clip 9 with its loop from frame 49
+(`0x86104448`-`0x86104474`). They bump each other (`0x86103194`, as in the
+play, but no one's knocked then) and are kept to the floor and the roof (the
+sides too while startled or a winner: `0x86100BE0`, a loser's
+`0x86100CFC`). As the first loser lands, the results come
+(`0x86100874` → `0x861007D8` → `0x87F0A098`): 28-88 frames after the stop,
+37 mostly; the scene goes on under them. The hearts still about go on too
+(scroll 0), and Jynx's; any Golbat not lying on the floor catches them
+(`0x86106504`), but only in the play (state 4) does a catch count or sound
+0x0F04: now it's just the stars.
 
 **The HUD** (`0x86108018`): the badges (bank 434 at 0.8) at x 28, 97, 166 and
-235, y 16, each player's hearts beside them in its colour. Over each Golbat
+235, y 16, each player's hearts beside them (`0x86107EBC`: module #64's big
+digits, `0x87F06240`, image bank 429 at 0.57, x + 36 for one, x + 28 and +41
+for two, y + 2) through `FC30B261 5566FF7F` (env + (prim − env) × the texel's
+grey: dark digits in a light rim), prim and env by player (`0x861085C8`-
+`0x86108690`): 1P 00009B / AAF5FF, 2P 006400 / C8FF9B, 3P 780000 / FFA0BE,
+4P D25A00 / FFFF8C. Over each Golbat
 its badge too, module #64's label (`0x86107D7C`; as Delibird's Delivery's):
 28 × 1.9 = 53.2 over its middle, the label at 1.75 (66.5 × 49), its env
 alpha 0xC8 (`0x861047CC`-`0x861048F8`), from the countdown on, gone from a
 loser as it falls (`0x86104370`). The song is 13
-(sequence 52), from GO; the count is 0x0F06 and GO 0x0F07 ([audio.md](audio.md)).
+(sequence 52), from GO; the count is 0x0F06 and GO 0x0F07; the Golbat's own
+sounds go with their player (`0x861000B8`: the object's +0x23) on their
+player's channels ([audio.md](audio.md)).
 
 **The states** (`0x861095EC`): 0-2 the instructions and the fade, 3 the
-Golbat flying in from by the camera (to a zigzag on the left: x −160.77 and
-−272.77, y 117.68 down 81.67 each) with the countdown, 4 the play (the clock
-counts down 1200 frames), 5 the end, 6 the results, 7 the menu after.
+Golbat flying in from by the camera with the countdown, 4 the play (the clock
+counts down 1200 frames), 5 the end (the results over it), 6 after the
+results, 7 the menu. State 3 is the countdown's 100 frames (a step of 25:
+`0x86107DF0`; GO on the 100th, `0x87F006BC`): each frame it runs the Golbat
+and the backdrops (`0x86100790`), so the cave's gone 100 frames by GO. Each
+Golbat starts at a corner (`0x861034A8`: (0, 99.68), (160.77, 0), (0,
+−104.5), (−182.21, 0)), z 1200, going right and up at random speeds up to
+100, and flies to its place (a zigzag on the left: x −160.77 and −272.77, y
+117.68 down 81.67 each; `0x861049C0`, `0x861044EC`): while it's more than 28
+off (or still coming, z speed 7 or more) it faces the way it flies (atan2 of
+its z and x speeds: mostly away from the camera), steers as a CPU does
+(`0x86101E04`: the stick, a flap whenever it's below the place) and comes 5%
+of the way to the screen a frame; within 28 it's on the screen (z 0), still
+steering, and turns 7.5% of the way a frame to face right; within 5° of it,
+it's in place and stays (`0x861048FC`, with a spot to roam to); at GO one
+that isn't is stopped where it is (`0x86104948`). Its wings beat through it.
 
 The browser remake runs this world in every device and on the server, from
 everyone's pads (the CPUs think in it), and shows the screen at 92% of the
 game's width and height, as a TV did, and more of the cave either side on a
-wide screen ([web/README.md](../web/README.md#gutsy-golbat)).
+wide screen ([web/README.md](../web/README.md#gutsy-golbat)). The show
+round it (the fly-in, the end, Jynx's hearts, the particles) is each
+device's own, with random numbers of its own: the world starts at GO with
+each Golbat in its place, and the fly-in's eased into it.
 
 ## Barrier Ball
 
