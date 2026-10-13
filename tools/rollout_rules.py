@@ -34,7 +34,7 @@ START_FOR = 10
 ROLL_FOR = 30
 AHEAD = 4  # frames ahead of now a pad may be for (a device sends its player's up to 3 ahead: src/lag.js leadFor)
 LONGEST = 200 * FPS
-AFTER = 90  # frames from the end to the results (the last one in coasting to a stop)
+AFTER = 0  # frames from the end to the results: none, the game calls them as the race ends (0x8640687C)
 
 UP, DOWN, LEFT, RIGHT, A = 8, 4, 2, 1, 0x8000
 DIRS = [(UP, 0, -1, 0x7FFF), (DOWN, 0, 1, 0), (LEFT, -1, 0, 0xBFFF), (RIGHT, 1, 0, 0x3FFF)]
@@ -116,6 +116,22 @@ def _look(y, x):
     return ATAN[0] if x == 0 else ATAN[int((y / x) * 1024 + 0.5)]
 
 
+def sine(i):
+    """The main program's sine table (0x80087FB0: float32s, 4096 to a turn, 5120 of
+    them, so 1024 on is the cosine), made as rules.js makes it."""
+    q, x = (i >> 10) & 3, ((i & 1023) * (2 * 3.141592653589793)) / 4096
+    x2 = x * x
+    s = 1 if q % 2 == 0 else 0
+    term = x if s else 1.0
+    total = term
+    for n in range(1, 14):
+        k = 2 * n + s
+        term = -term * x2 / ((k - 1) * k)
+        total += term
+    v = struct.unpack(">f", struct.pack(">f", total if q < 2 else -total))[0]
+    return v if v != 0 else 0.0
+
+
 def s16(v):
     return ((v & 0xFFFF) ^ 0x8000) - 0x8000
 
@@ -145,7 +161,7 @@ class Donphan:
     __slots__ = ("z", "human", "slot", "x", "h", "y", "vx", "vz", "vh", "rot", "timer", "start", "tumble",
                  "knocked", "bounce", "ready", "drop", "done", "won", "fin", "corners", "seg", "laps", "progress",
                  "rank", "speed", "boost", "roll", "stun", "wait", "clouds", "out", "target", "angle",
-                 "notice", "lane", "px", "ph", "py")
+                 "notice", "lane", "px", "ph", "py", "halt")
 
     def copy(self):
         o = Donphan.__new__(Donphan)
@@ -196,6 +212,7 @@ class World:
             d.speed, d.boost, d.roll, d.stun, d.wait, d.clouds, d.out = 20, 0, 0, 0, 0, 0, 0
             d.target, d.angle, d.notice, d.lane = -16385, -16385, 0, 0
             d.px, d.ph, d.py = 0, 0, 0
+            d.halt = None
             self.d.append(d)
         for d in self.d:
             d.lane = self.lane_roll()
@@ -269,6 +286,7 @@ class World:
         for d in lapped:
             if d.laps > 0:
                 d.clouds = min(3, d.clouds + d.rank)
+                self.events.append(["stars", d.z])
             else:
                 d.clouds = 0
             if d.rank == 0 and d.laps >= 1:
@@ -612,19 +630,58 @@ class World:
                 self.events.append(["in", d.z, int(d.won)])
         if over or t >= LONGEST:
             self.end = t
+            if all(d.won for d in self.d):
+                for d in self.d:
+                    d.won = False
             for c in self.clouds:
                 c.phase = 2
                 c.timer = 0
 
     def coast(self):
         for d in self.d:
-            d.speed *= 0.94
-            d.boost = 0
+            self.segment(d)
+            d.roll = 0
+            if d.halt is not None:
+                d.timer += 1
+                if d.timer < 20:
+                    d.speed += 0.13
+                else:
+                    d.speed *= 0.9
+            else:
+                d.speed *= 0.94
             d.x += d.vx * d.speed
             d.y += d.vz * d.speed
-            if d.speed < 1:
-                d.speed = 0
             self.height(d)
+        self.bumps()
+        for d in self.d:
+            d.x += d.px
+            d.h += d.ph
+            d.y += d.py
+            d.px, d.ph, d.py = 0, 0, 0
+            if not d.speed < 1 or d.halt is not None:
+                continue
+            d.halt = self.t
+            if d.z == 0:
+                on = [e for e in self.d if e.won] or self.d
+                x = h = y = 0
+                for e in on:
+                    x += e.x
+                    h += e.h
+                    y += e.y
+                if len(on) >= 2:
+                    x, h, y = x / len(on), h / len(on), y / len(on)
+                self.events.append(["camera", x, h, y])
+            if not d.won:
+                d.timer = 0
+                i = (d.rot & 0xFFFF) >> 4
+                d.vx = sine(i + 1024)
+                d.vz = -sine(i)
+                d.speed = 0
+            self.events.append(["halt", d.z, int(d.won)])
+        for c in list(self.clouds):
+            self.cloud(c)
+            c.timer += 1
+        for d in self.d:
             self.walls(d)
 
     def cpu(self, d):
@@ -732,7 +789,9 @@ class World:
 
     @property
     def places(self):
-        return [d.rank + 1 for d in self.d]
+        fins = [d.fin for d in self.d if d.fin is not None]
+        first = min(fins) if fins else None
+        return [1 if d.fin is not None and d.fin == first else d.rank + 1 for d in self.d]
 
     def digest(self):
         parts = [self.t, self.seed, self.ids, -1 if self.end is None else self.end]
@@ -741,7 +800,7 @@ class World:
                       int(d.start), int(d.tumble), int(d.knocked), int(d.bounce), int(d.ready), int(d.drop),
                       int(d.done), int(d.won), -1 if d.fin is None else d.fin, d.corners, d.seg, d.laps, _hex(d.progress), d.rank, _hex(d.speed),
                       _hex(d.boost), d.roll, d.stun, d.wait, d.clouds, d.out, _hex(d.target), _hex(d.angle),
-                      d.notice, _hex(d.lane)]
+                      d.notice, _hex(d.lane), -1 if d.halt is None else d.halt]
         for c in self.clouds:
             parts += [c.id, c.owner, _hex(c.x), _hex(c.h), _hex(c.y), c.timer, c.phase, c.frame]
         return ",".join(str(p) for p in parts)

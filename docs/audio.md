@@ -74,7 +74,7 @@ What each minigame's code module asks for:
 | Streaming Stampede | 29, 30, 31, 32 | 68 (its opening), 69 (from the first question), 70 (the results), 71 (before the last answer) |
 | Topsy-Turvy | 33 | 72 |
 | Barrier Ball | 35 | 74 |
-| Rampage Rollout | 34, 100 | 73 (30 frames after GO; 100, when the leader starts the final lap, is 34 again 17 beats a minute faster) |
+| Rampage Rollout | 34, 100 | 73 (31 frames after GO; 100, 31 frames after the leader starts the final lap and the song's faded over 30, is 34 again 17 beats a minute faster) |
 | Egg Emergency | 45 | 84 (122 BPM, a 23.6 s loop, font 49) |
 | Tumbling Togepi | 46 | 85 |
 | Furret's Frolic | 47 | 86 |
@@ -82,7 +82,10 @@ What each minigame's code module asks for:
 | Eager Eevee | 53, 54, 101 | 92 (a held roll, after each prize), 93 (as Aipom calls each round; 101 is 54, 40 beats a minute faster, for the final one) |
 
 Rampage Rollout passes its song in a register (`0x86408CA0`: the song, and
-frames to wait, the old one fading meanwhile). After the finish, the
+frames to wait, the old one fading meanwhile; `0x86408C1C` starts it once
+its count's past them: song 34 31 frames after GO, song 100 31 frames after
+the final lap's 30-frame fade; the remake's `final` song is sequence 73 with
+the tempo +17). After the finish, the
 minigame results (module #45) play songs 76 (sequence 115) and 55
 (sequence 94, a 3.6 s fanfare; song 57, sequence 96, is another). Each
 minigame's own results, module #64's banner ([minigames.md](minigames.md#the-shared-module-64-the-countdown-and-the-results)),
@@ -321,12 +324,20 @@ song takes over, 8 frames on (`0x863024A8`). A goal in the first step after
 the end still sounds `0x6F05` and `0x6F0B` (`0x86306A4C`).
 
 Rampage Rollout's (module #52) are bank 5's (`0x5F00`-`0x5F0A`; it also asks
-for `0x5001` and `0x5404`, the same entries), placed by where the Donphan is
-(`0x87C03B60`, then `0x8002780C`), and `0x4F06` and `0x1C07` (banks 4 and 1).
-Rolling and the stun ring on until they're stopped: the game asks for them
-again each frame (every 5) while they last; rolling shares the footsteps'
-channel. Sound `0x41`'s script works out its effect from the sound number as
-`0x42`-`0x47`'s do, so `tools/web_assets.py` lists it by hand:
+for `0x5001` and `0x5404`, the same entries, held), each Donphan's on its
+player's own channel (their flags' bit 1) placed by where it is
+(`0x87C03B60`, then `0x8002780C` with its player), and `0x4F06` and `0x1C07`
+(banks 4 and 1). Rolling is asked for each frame a Donphan rolls, so it goes
+on till it stops; it shares the footsteps' channel (the player's). The stun
+ring is asked for only every 5 frames, so the held sounds' manager
+(`0x80027480`: one not asked for again is stopped the next frame) cuts each
+one after a frame: a ring every 5 frames (the remake plays it so, `frames: 1`;
+a frame of it is still heard). The crowd for the first one in is held for 68
+frames (`0x80027764(0x1C07, 0x44)`: the second argument is frames, not a
+pan); the leader's laps, the final lap and each one in (`0x5F08`) are in the
+middle (`0x800279B4`). Sound `0x41`'s script works out its effect from the
+sound number as `0x42`-`0x47`'s do, so `tools/web_assets.py` lists it by
+hand:
 
 | Id | Sound | Effects of font 12 | When (from the code) |
 |---|---|---|---|
@@ -339,7 +350,7 @@ channel. Sound `0x41`'s script works out its effect from the sound number as
 | `0x5F07`, `0x5F08` | `0x3F`, `0x40` | | each count tick; GO, and each Donphan as it gets in |
 | `0x5F09` | `0x41` (volume 105) | 40 | the leader starts a lap |
 | `0x5F0A` | `0x2E` | | the leader starts the final lap (with song 100) |
-| `0x1C07` | `0x0E` | 13 | the first one in (the crowd) |
+| `0x1C07` | `0x0E` | 13 | the first one in (the crowd), for 68 frames |
 
 `0x5F01` (sound `0x3C`, rolling's) and `0x5F02` (`0x39`) aren't asked for by
 module #52 by that id.

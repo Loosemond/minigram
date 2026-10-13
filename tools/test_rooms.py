@@ -104,8 +104,9 @@ def barrier_pad(z, t):
 
 # web/minigames/src/rollout/rules.js: a race with seats 0 and 2 on
 # rollout_pad() and two CPUs (normal, hard and easy), the world's digest()
-# every 50 frames, the end, the places and the frames in (web/minigames/tests.js has the same)
-JS_ROLLOUT = {1: "54a4ecbd48f149ad", 12345: "0478f9cb5f8a5194", 2 ** 31 - 1: "fb2a806822e44641"}
+# every 50 frames and on through the show after it (90 frames), the end, the
+# places and the frames in (web/minigames/tests.js has the same)
+JS_ROLLOUT = {1: "54ceb6862f49266a", 12345: "31a7ccb87fe46c27", 2 ** 31 - 1: "e314b7df6c155a92"}
 ROLLOUT_LEVEL = {1: "normal", 12345: "hard", 2 ** 31 - 1: "easy"}
 
 
@@ -1247,12 +1248,13 @@ def _():
 def rollout_digest(seed):
     w = rollout_rules.World(seed, ROLLOUT_LEVEL[seed], [False, True, False, True])
     parts, t = [], 0
-    while w.end is None:
+    while w.end is None or t <= w.end + 90:
         w.step(t, [rollout_pad(0, t, w), None, rollout_pad(2, t, w), None])
         w.events = []
         if t % 50 == 0:
             parts.append(w.digest())
         t += 1
+    parts.append(w.digest())
     parts.append("%d:%s:%s" % (w.end, ",".join(map(str, w.places)), ",".join(str(d.fin) for d in w.d)))
     return hashlib.sha256(";".join(parts).encode()).hexdigest()[:16]
 
@@ -1264,6 +1266,9 @@ def _():
     # the main program's arctangent table (0x8008CFB0): a few of its 1025, made the same way
     assert [rollout_rules.ATAN[i] for i in (0, 1, 512, 1023, 1024)] == [0, 10, 4836, 8187, 8192]
     assert [rollout_rules.angle(*p) for p in ((1, 0), (0, 1), (-1, 0), (0, -1), (1, 1))] == [0, 16384, -32768, -16384, 8192]
+    # its sine table (0x80087FB0), the same
+    assert [rollout_rules.sine(i) for i in (0, 1, 512, 1024, 3072, 4095)] == [0, 0.0015339801320806146, 0.7071067690849304,
+                                                                              1, -1, -0.0015339801320806146]
 
     # the harder CPUs are quicker: over a few races, the last in comes in sooner, and fewer clouds catch them
     def race(seed, level):
@@ -1286,6 +1291,28 @@ def _():
     fin = [d.fin for d in w.d]
     assert all(d.laps == 0 and d.done for d in w.d) and w.end == max(fin) + 1, (w.end, fin)
     assert w.places[fin.index(min(fin))] == 1 and [d.won for d in w.d].count(True) >= 1
+    # then the show (state 5): each comes to a stop, 1P's moving the camera to the winners; the
+    # winners stay, the losers walk off a little (to the inside, as far as the block lets them)
+    at, cam = {}, None
+    for _ in range(90):
+        w.step(t, [])
+        for e in w.events:
+            if e[0] == "halt":
+                at[e[1]] = (w.d[e[1]].x, w.d[e[1]].y)
+            elif e[0] == "camera":
+                cam = t
+        w.events = []
+        t += 1
+    moved = [math.hypot(d.x - at[d.z][0], d.y - at[d.z][1]) for d in w.d]
+    assert all(d.halt is not None for d in w.d) and cam == w.d[0].halt, ([d.halt for d in w.d], cam)
+    assert all(m < 10 for m, d in zip(moved, w.d) if d.won) and max(m for m, d in zip(moved, w.d) if not d.won) > 20, moved
+    # all four in together: none of them won, a draw, and all first
+    w = rollout_rules.World(4, "normal", [True] * 4)
+    for d in w.d:
+        d.laps = 0
+    w.step(0, [])
+    w.step(1, [])
+    assert w.end == 1 and not any(d.won for d in w.d) and w.places == [1, 1, 1, 1], (w.end, w.places)
 
 
 @check("Rampage Rollout: the server runs the world from the pads, says how it ended and stops cheats", together="Rollout")
@@ -1332,7 +1359,7 @@ def _():
         a.send("pad", r=r, s=0, f=won["f"] + 5, x=1, a=1)  # after the end: nothing
         a.send("done", r=r)
         b.send("done", r=r)
-        a.s.settimeout(8)  # (the round's over 3 s after the race: AFTER)
+        a.s.settimeout(8)  # (the round's over as the race is: AFTER, none)
         res = a.wait("results", timeout=10)
         assert res["scores"] == [round(f * 100 / rollout_rules.FPS) for f in said["fin"]], res
         b.close()

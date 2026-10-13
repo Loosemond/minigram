@@ -40,14 +40,20 @@ What isn't known yet, roughly by how useful it would be.
   the trail's colour, whose combiner takes the prim LOD fraction, not K5:
   the hitter's colour faded to white; and the light, geo command 0x14's
   degrees.)
-- **Rampage Rollout's loose ends** (its rules are read: [minigames.md](minigames.md#rampage-rollout)):
-  image bank 343 (Gutsy Golbat's glow: loaded by module #52, but nothing
-  found draws it); the Donphan that run in from by the camera before the
-  countdown (state 2: `0x8640708C`, `0x86406EF0`; the remake starts at the
-  countdown); the end's camera move (`0x86405138`: `m2c` garbles the call,
-  the remake takes its arguments in order: from the winners, (−200, +450,
-  +80), looking at (+90, −40, 0)); and sound `0x5F02` (`0x39`), in bank 5 but
-  not asked for.
+- **Rampage Rollout's loose ends** (its rules are read: [minigames.md](minigames.md#rampage-rollout);
+  the end's camera move is settled, `0x86407290` takes the eye then the
+  target): image bank 343 (Gutsy Golbat's glow: loaded by module #52, but
+  nothing found draws it); the Donphan that run in from by the camera before
+  the countdown (state 2: `0x8640708C`, `0x86406EF0`; the remake starts at
+  the countdown); sound `0x5F02` (`0x39`), in bank 5 but not asked for. In
+  the end's show: whether a clip loops after its last frame (the remake: the
+  cheer's 76 frames, 0-75) and on which frame `0x8003EC84` says a clip's at
+  frame n (the remake sounds the cheer and the slump as the clip shows frames
+  4 and 15); the knocked-over red's strength (`+0xC4`, `0xFF6464C8`). The
+  game's random numbers are one stream (`rand_lcg`) for the race, the dust,
+  the clips' first frames and FINAL LAP!'s colours: the remake's world has
+  its own and the show (the dust, the colours) uses the browser's, so a
+  race isn't the game's to the frame from the same seed.
 - **Topsy-Turvy's loose ends** (its rules are read: [minigames.md](minigames.md#topsy-turvy);
   its frame rate is settled, 30 a second): what the audio thread does with a
   bump's sound asked for again at each step the two touch (`0x80026C70`

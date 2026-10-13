@@ -129,7 +129,7 @@ BANKS = {
     396: "banner Clear Cut Challenge", 400: "banner Topsy-Turvy", 403: "banner Egg Emergency",
     405: "banner Furret's Frolic", 408: "banner Pichu's Power Plant", 411: "banner Streaming Stampede",
     417: "banner Tumbling Togepi", 374: "banner Barrier Ball", 375: "banner Delibird's Delivery",  # (374, 375 by appearance)
-    385: "Rampage Rollout final lap", 386: "Rampage Rollout lap",  # (by appearance)
+    385: "Rampage Rollout final lap", 386: "Rampage Rollout lap",  # (module #52's HUD: 0x86408414, 0x86408738; its rank coins are 387)
     389: "Eager Eevee prizes", 390: "Eager Eevee digits", 392: "Eager Eevee rounds",
     393: "Eager Eevee sec box", 394: "Eager Eevee time digits",
     397: "Clear Cut Spinarak", 398: "Clear Cut flash", 399: "Clear Cut cuts",  # (398 is Delibird's Delivery's too)

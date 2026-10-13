@@ -701,12 +701,13 @@ SOUNDS = {
         "count": _sound(0x13, 100, 5, 0x0100, sfx=[16]),  # 0x2F00
         "go": _sound(0x14, 100, 5, 0x0100, sfx=[17]),  # 0x2F01 (with song 35)
     }),
-    # Rampage Rollout asks for song 34 (sequence 73) 30 frames after GO, and
-    # song 100 when the leader starts the final lap: that's 34 again, 17 beats a
-    # minute faster (the remake speeds the song up). Its effects are bank 5's
-    # (0x5Fxx, and 0x5001, 0x5404: the same entries), placed by where they
-    # happen; 0x4F06 is bank 4's, 0x1C07 bank 1's (the crowd: the first in)
-    "rollout": ({"main": 73, "win": 94}, {
+    # Rampage Rollout asks for song 34 (sequence 73) 31 frames after GO, and
+    # song 100 when the leader starts the final lap, 31 frames after fading the
+    # first over 30 (0x86408CA0): that's 34 again, 17 beats a minute faster
+    # ("final"). Its effects are bank 5's (0x5Fxx, and 0x5001, 0x5404: the
+    # same entries), placed by where they happen; 0x4F06 is bank 4's, 0x1C07
+    # bank 1's (the crowd: the first in)
+    "rollout": ({"main": 73, "final": [73, 17], "win": 94}, {
         "step": dict(_sound(0x38, 75, 1, 0x0001), pitch=0.49),  # 0x5F00, a footstep (each time the run comes round)
         "roll": _sound(0x3C, 83, 1, 0x0001),  # 0x5001, rolling (every frame of it)
         "hit": _sound(0x3A, 95, 1, 0x0010),  # 0x5F03, sent flying by a cloud, or knocked over

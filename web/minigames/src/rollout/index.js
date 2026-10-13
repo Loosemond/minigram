@@ -2,13 +2,15 @@
 // the controls (on a phone: a finger anywhere is a D-pad, the way it slides
 // from where it went down, and the A button drops a dust cloud; or the keys),
 // its HUD (the places and the laps, in the middle of the track as the game has
-// them, the hint and the buttons) and its online messages ("pad", "won"). The
-// rules are in rules.js, the game in game.js.
+// them, moving as the game moves them; the hint and the buttons), its sounds
+// and song, and its online messages ("pad", "won"). The rules are in
+// rules.js, the game in game.js.
 import * as THREE from "three";
 import { loadAssets } from "./assets.js";
 import { Game, CAMERA } from "./game.js";
 import * as R from "./rules.js";
 import { meMark } from "../mark.js";
+import { paint, tintURL } from "../tint.js";
 
 export const SOUNDS = {
   url: "assets/rollout/sound.bin",
@@ -31,7 +33,23 @@ const DEAD = 14; // px a finger moves before it's a direction
 // the track's outer corners and the frame's top (what the view must show)
 const TRACK = [340, 60, 285];
 const COLOUR_NAMES = ["blue", "green", "red", "yellow"];
-const HEAD = 78; // the arrow over your Donphan (55 tall; the camera's steep, so a little more)
+const HEAD = 78; // the arrow over your Donphan (55 tall; the camera's steep, so a little more)...
+const OVER_LABEL = 4; // ...or just over its badge, while it has one
+// the HUD's moves (0x86407E2C: from where it is to a place in so many frames,
+// eased (1 - cos)/2, on the game's 320 x 240 screen): at GO the rank coins come
+// up from below (114, 240 + 64k) to their column (110, 79 + 15k) and the LAP
+// sign in from the right (320) to its place (156), in 40 frames (0x864080A0,
+// 0x86408148); once the first one's in the LAP sign goes off to the left
+// (-70), in 20 (0x8640826C); once the race is over the coins line up in a row
+// along the bottom, (64 + 52k, 198), in 20 (0x864081E8): placed on the window
+// as the shell places the winners' banner over them (its screen's 69 / 240
+// down). Where the remake has the board, a pixel of the game's screen is a
+// 12th of its unit (its rows are 1.25 units apart, the game's 15 pixels)
+const SLIDE_IN = 40, LAP_OFF = 20, ROW_UP = 20, PX = 1 / 12;
+// the laps to go in module #64's big digits (image bank 429) at 0.7, (20, 20)
+// into the LAP gear, through FC30B261 5566FF7F with prim E1F0FF and env black
+// (0x86408798-0x86408828): light blue with a dark rim
+const DIGIT = { prim: 0xe1f0ff, env: 0x000000 };
 
 export async function create(shell, onProgress) {
   const assets = await loadAssets("assets/rollout/", onProgress);
@@ -50,7 +68,7 @@ export async function create(shell, onProgress) {
   hud.innerHTML = `
     <div class="rr-board">
       <ol class="rr-places">${[0, 1, 2, 3].map((k) => `<li><img class="rr-rank" src="${A}rank${k + 1}.png" alt="${k + 1}"><img class="rr-badge" alt=""></li>`).join("")}</ol>
-      <div class="rr-lap"><img class="rr-gear" src="${A}lap.png" alt="Laps"><b></b><img class="rr-final" src="${A}final.png" alt="Final lap" hidden></div>
+      <div class="rr-lap"><img class="rr-gear" src="${A}lap.png" alt="Laps"><img class="rr-num" alt=""><canvas class="rr-final" hidden></canvas></div>
     </div>
     <div class="rr-hint" hidden></div>
     <div class="rr-pads" hidden>
@@ -59,38 +77,54 @@ export async function create(shell, onProgress) {
     </div>`;
   shell.hud.append(hud);
   const board = hud.querySelector(".rr-board"), rows = [...hud.querySelectorAll(".rr-places li")];
-  const lapEl = hud.querySelector(".rr-lap"), lapNum = lapEl.querySelector("b"), gear = lapEl.querySelector(".rr-gear"), finalEl = lapEl.querySelector(".rr-final");
+  const lapEl = hud.querySelector(".rr-lap"), lapNum = lapEl.querySelector(".rr-num"), gear = lapEl.querySelector(".rr-gear"), finalEl = lapEl.querySelector(".rr-final");
   const hint = hud.querySelector(".rr-hint"), pads = hud.querySelector(".rr-pads"), stickEl = hud.querySelector(".rr-stick"),
     knob = hud.querySelector(".rr-knob"), aEl = hud.querySelector(".rr-a");
   const mark = meMark(hud, shell.me), over = new THREE.Vector3();
+  // the HUD's pictures as the game colours them: FINAL LAP! (grey, bank 385) times
+  // its colour of the moment (ENV x the texel: FC50D2A1 FFA7FFFF), the digits
+  const finalPic = new Image();
+  finalPic.src = A + "final.png";
+  const digitPics = [];
+  for (let d = 0; d < 10; d++) tintURL(`assets/ui/big${d}.png`, DIGIT.prim, DIGIT.env).then((url) => { digitPics[d] = url; });
 
   // ---- sounds and the like, from the game ----
+  // (each Donphan's on its player's own channel, placed where it is: 0x8002780C; the
+  // leader's lap, the final lap and each one in, in the middle: 0x800279B4)
   const mine = (z) => z === shell.me();
   game.on("send", (m) => shell.send("pad", m));
-  game.on("tempo", (n) => shell.tempo(n)); // (the final lap: the tune speeds up)
-  game.on("step", (z, pan) => shell.sound("step", { pan })); // (0x5F00)
-  game.on("loop", (name, on) => (on ? shell.sound(name) : shell.stopSound(name)));
-  game.on("drop", (z, pan) => { shell.sound("cloud", { pan }); if (mine(z)) shell.haptic("light"); }); // (0x4F06)
+  game.on("step", (z, pan) => shell.sound("step", z, { pan })); // (0x5F00)
+  game.on("hold", (name, z, on, pan) => shell.hold(name, z, on, { pan })); // (rolling, 0x5001: each frame of it)
+  game.on("dizzy", (z, pan) => shell.sound("dizzy", z, { pan, frames: 1 })); // (0x5404: asked for every 5 frames, held a frame)
+  game.on("drop", (z, pan) => { shell.sound("cloud", z, { pan }); if (mine(z)) shell.haptic("light"); }); // (0x4F06)
   for (const name of ["hit", "knocked"]) {
     game.on(name, (z, pan) => { // (0x5F03)
-      shell.sound("hit", { pan });
+      shell.sound("hit", z, { pan });
       shell.flash(z, "hurt");
       if (mine(z)) shell.haptic("heavy");
     });
   }
   game.on("rocket", (z) => { if (mine(z)) shell.haptic("medium"); });
   game.on("lap", () => shell.sound("lap")); // (0x5F09: the leader's)
-  game.on("final", () => shell.sound("final")); // (0x5F0A)
-  game.on("in", (z, pan, won) => { // someone's in (0x5F08; the first in, 0x1C07)
-    shell.sound("go", { pan });
-    if (won) shell.sound("crowd");
+  game.on("final", () => shell.sound("final")); // (0x5F0A; the song fades and comes back faster: game.js)
+  game.on("in", (z, pan, won) => { // someone's in (0x5F08; the first in, the crowd for 68 frames: 0x80027764(0x1C07, 0x44))
+    shell.sound("go");
+    if (won) shell.sound("crowd", undefined, { frames: 0x44 });
     shell.flash(z, "bump");
     if (mine(z)) shell.haptic(won ? "success" : "light");
   });
-  game.on("end", (winners) => {
-    shell.stopSound("crowd");
-    winners.forEach((w, z) => setTimeout(() => shell.sound(w ? "cheer" : "slump", { pan: game.pan(game.world.d[z].x) }), w ? 140 : 500));
-  });
+  game.on("cheer", (z, pan) => shell.sound("cheer", z, { pan })); // (0x5F06, at the end)
+  game.on("slump", (z, pan) => shell.sound("slump", z, { pan })); // (0x5F05)
+  // the song the game has on (game.tune: 34 from 31 frames after GO; faded, and 100, on the
+  // final lap), as soon as it's not catching up (so a device that rejoins has it too)
+  let tune = null;
+  function music() {
+    const t = game.tune;
+    if (!t || t.key === tune || game.state !== "play" || shell.catchingUp?.()) return;
+    tune = t.key;
+    if (t.name) shell.music(t.name);
+    else shell.music(null, t.fade);
+  }
 
   // ---- the controls ----
   // a finger anywhere (but the A button) is a D-pad: the way it slides from
@@ -131,7 +165,7 @@ export async function create(shell, onProgress) {
   }
   let rest = {};
 
-  let view = null, portrait = false, inner = null;
+  let view = null, portrait = false, inner = null, screen = { W: 1, H: 1, u: 8 };
   const api = {
     game, scene, assets,
     get views() {
@@ -179,6 +213,7 @@ export async function create(shell, onProgress) {
       // the middle of the track on the screen: the places on its left, the laps on its right (as the game has them)
       inner = screenBox(cam, view, [[-R.INNER[0], 0, -R.INNER[1]], [R.INNER[0], 0, -R.INNER[1]], [-R.INNER[0], 0, R.INNER[1]], [R.INNER[0], 0, R.INNER[1]]]);
       const u = Math.max(8, Math.min(inner.h / 6.5, inner.w / 9));
+      screen = { W, H, u };
       board.style.setProperty("--u", u + "px");
       shell.place(board, { left: inner.x + "px", top: inner.y + "px" });
       board.style.width = inner.w + "px";
@@ -205,6 +240,7 @@ export async function create(shell, onProgress) {
       const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me)
         : [0, 1, 2, 3].map((z) => !(round.lineup || []).some((p) => p.seat === z));
       game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, told: m?.rr, delay: round.delay });
+      tune = null;
       shell.stopSound();
       keys.clear();
       steer = null;
@@ -214,15 +250,16 @@ export async function create(shell, onProgress) {
     idle() {
       game.reset(game.levelName || "normal");
       game.state = "idle";
+      tune = null;
       shell.stopSound();
     },
-    go() { game.start(); setTimeout(() => game.state === "play" && shell.music("main"), 1000); }, // (song 34, 30 frames after GO)
-    finish() { shell.music(null, 40); },
+    go() { game.start(); },
+    finish() {}, // (the song plays on: the results' takes its place)
     stop() { game.stop(); },
     setControl(z, c) { game.setControl(z, c); },
     get state() { return game.state; },
     get time() { return game.time; },
-    step(dt) { game.update(dt); },
+    step(dt) { game.update(dt); music(); },
     animate() {},
     score(i) { return game.lapOf(i); },
     setScores(scores) { game.scores = scores.map((x) => (Number.isInteger(x) && x >= 0 ? x : null)); },
@@ -277,28 +314,59 @@ export async function create(shell, onProgress) {
     const playing = game.state === "play" || game.state === "ready";
     pads.hidden = !playing || !coarse?.matches;
     board.hidden = !(game.state === "play" || game.state === "over");
-    // each place's coin and who's in it (0x864082A8)
-    const places = game.places();
+    // each rank's coin and who has it (0x864082A8: the players' ranks, 1st to 4th)
+    const w = game.world;
     for (let k = 0; k < 4; k++) {
-      const z = places.indexOf(k + 1), img = rows[k].querySelector(".rr-badge");
+      const z = w.d.findIndex((d) => d.rank === k), img = rows[k].querySelector(".rr-badge");
       rows[k].hidden = z < 0;
       if (z < 0) continue;
       const src = `assets/ui/badge_${game.cpus[z] ? "com_" + COLOUR_NAMES[z] : z + 1 + "p"}.png`;
       if (img.getAttribute("src") !== src) img.setAttribute("src", src);
     }
-    // the leader's laps to go, on the gear; FINAL LAP! flashing on the last
-    const lead = game.world.d[places.indexOf(1)] || game.world.d[0];
-    const left = Math.max(1, lead.laps), last = left < 2 && game.world.end === null;
+    // the leader's laps to go on the gear; FINAL LAP! on its last, in its colour of the moment
+    const lead = w.d.find((d) => d.rank === 0) || w.d[0], last = lead.laps < 2;
     gear.hidden = last;
     lapNum.hidden = last;
     finalEl.hidden = !last;
-    if (last) finalEl.style.filter = `hue-rotate(${Math.floor(game.clockS * 3) * 70}deg)`;
-    if (lapNum.textContent !== String(left)) lapNum.textContent = left;
+    if (last) {
+      const c = game.finalColour() || [255, 255, 255], key = c.join();
+      if (key !== painted && finalPic.naturalWidth) { paint(finalEl, finalPic, c, 0); painted = key; }
+    } else if (digitPics[lead.laps % 10] && lapNum.getAttribute("src") !== digitPics[lead.laps % 10]) {
+      lapNum.src = digitPics[lead.laps % 10];
+      lapNum.alt = lead.laps;
+    }
+    if (!board.hidden) moves();
     hint.hidden = !(game.state === "ready" || (game.state === "play" && game.lastFrame < SHOW_HINT));
     hint.textContent = coarse?.matches ? "Slide a finger to turn · A: a dust cloud" : "Arrows to turn · Space: a dust cloud";
-    // which Donphan is yours (the four look the same); (the views' getter moves the camera to now first)
-    over.copy(game.donphan[shell.me()].root.position).y += HEAD;
+    // which Donphan is yours (the four look the same): over its badge, or its head once
+    // that's gone; (the views' getter moves the camera to now first)
+    const v = game.donphan[shell.me()];
+    if (v.label.visible) over.copy(v.label.position).y += v.label.top() + OVER_LABEL;
+    else over.copy(v.root.position).y += HEAD;
     mark.place((game.state === "play" || game.state === "over") && api.views[0], over);
+  }
+  let painted = null;
+
+  // the HUD's moves, drawn between the game's frames: the coins and the LAP sign in at GO,
+  // the sign off once the first one's in, the coins in a row once it's over
+  function moves() {
+    const ease = (n, of) => (1 - Math.cos((Math.max(0, Math.min(n, of)) / of) * Math.PI)) / 2;
+    const px = screen.u * PX, shown = game.shown, first = game.firstIn(), end = game.endFrame();
+    const unit = Math.min(screen.W / 260, screen.H / 240); // (the banner's pixel: main.js)
+    const k = ease(game.time * R.FPS, SLIDE_IN), row = end === null ? 0 : ease(shown - end, ROW_UP);
+    rows.forEach((li, n) => {
+      const x = inner.x + li.offsetLeft, y = inner.y + li.offsetTop;
+      let dx = 4 * px * (1 - k), dy = (screen.H + 64 * n * px - y) * (1 - k); // (from below, staggered)
+      if (row > 0) { // (to the game's (64 + 52k, 198), on the window as the banner is)
+        dx += (screen.W / 2 + (64 + 52 * n - 160) * unit - x) * row;
+        dy += ((screen.H * 198) / 240 - y) * row;
+      }
+      li.style.transform = dx || dy ? `translate(${dx}px, ${dy}px)` : "";
+    });
+    const x = inner.x + lapEl.offsetLeft;
+    let dx = (screen.W - x) * (1 - k); // (in from the right edge)
+    if (first !== null) dx += (-lapEl.offsetWidth - 14 * px - x) * ease(shown - first, LAP_OFF); // (to -70: off the left edge)
+    lapEl.style.transform = dx ? `translateX(${dx}px)` : "";
   }
 
   // the field of view (degrees) that shows the whole track from the camera

@@ -282,11 +282,11 @@ i.egg {
 .rr-places li { display: flex; align-items: center; gap: calc(var(--u) * 0.25); height: calc(var(--u) * 1.1); }
 .rr-rank { height: calc(var(--u) * 1); image-rendering: pixelated; }
 .rr-badge { height: calc(var(--u) * 1); }
-.rr-lap { position: relative; width: calc(var(--u) * 3); height: calc(var(--u) * 2.7); display: grid; place-items: center; }
-.rr-gear { width: 100%; height: 100%; object-fit: contain; }
-.rr-lap b { position: absolute; left: 50%; top: 62%; transform: translate(-50%, -50%); color: #fff; font-weight: 900;
-  font-size: calc(var(--u) * 1.2); text-shadow: 0 1px 2px #000, 0 0 3px #000; }
-.rr-final { position: absolute; width: 115%; image-rendering: pixelated; }
+/* the LAP gear (56 x 50), its digits (bank 429 at 0.7) at (20, 20) in it, FINAL LAP! (64 x 29) at (-6, 10): the game's */
+.rr-lap { position: relative; width: calc(var(--u) * 3); height: calc(var(--u) * 3 * 50 / 56); }
+.rr-gear { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.rr-num { position: absolute; left: 35.71%; top: 40%; width: 30%; height: 44.8%; }
+.rr-final { position: absolute; left: -10.71%; top: 20%; width: 114.29%; height: 58%; image-rendering: pixelated; }
 .rr-hint { position: absolute; left: 50%; bottom: calc(var(--safe-b) + 14%); transform: translateX(-50%);
   padding: 6px 14px; border-radius: 16px; background: rgba(0, 0, 0, 0.5); color: #fff; font-weight: 700;
   font-size: 15px; white-space: nowrap; text-shadow: 0 1px 2px #000; }
@@ -304,7 +304,7 @@ i.egg {
 .rr-knob { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%;
   background: rgba(235, 235, 245, 0.7); border: 2px solid #fff; box-sizing: border-box; }
 .rr-stick.rest { opacity: 0.55; }
-.game-hud.off .rr-pads, .game-hud.off .rr-hint, .game-hud.off .rr-board { display: none; }
+.game-hud.off .rr-pads, .game-hud.off .rr-hint { display: none; } /* (the board stays for the end: the coins line up under the banner) */
 
 /* Topsy-Turvy: the clock in its balloon at the top (the swirl round it), each
    player's points (five dots by its card), the hint; on a touch screen the

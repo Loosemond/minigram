@@ -116,6 +116,21 @@ for (let i = 0; i <= 1024; i++) {
 }
 export { ATAN };
 const look = (y, x) => (x === 0 ? ATAN[0] : ATAN[Math.trunc((y / x) * 1024 + 0.5)]);
+// The main program's sine table (0x80087FB0: float32s, 4096 to a turn, 5120 of
+// them, so 1024 on is the cosine), made the same way everywhere: by its series
+// in a quarter turn, to the nearest float32 (it's the table, every entry)
+export function sine(i) {
+  const q = (i >> 10) & 3, x = ((i & 1023) * (2 * 3.141592653589793)) / 4096, x2 = x * x;
+  const s = q % 2 === 0 ? 1 : 0; // (the sine's series in the 1st and 3rd quarters, the cosine's in the others)
+  let term = s ? x : 1, sum = term;
+  for (let n = 1; n < 14; n++) {
+    const k = 2 * n + s;
+    term = (-term * x2) / ((k - 1) * k);
+    sum += term;
+  }
+  const v = Math.fround(q < 2 ? sum : -sum);
+  return v === 0 ? 0 : v;
+}
 // the angle of the point (a, b) from the +a axis towards +b, in 65536ths of a
 // turn, -32768 to 32767 (0x8000B390)
 export function angle(a, b) {
@@ -164,6 +179,7 @@ export class World {
       start: true, tumble: false, knocked: false, bounce: false, ready: false, drop: false, done: false, won: false, fin: null,
       corners: 0, seg: 0, laps: LAPS, progress: 0, rank: z, speed: 20, boost: 0, roll: 0, stun: 0, wait: 0,
       clouds: 0, out: 0, target: -16385, angle: -16385, notice: 0, lane: 0, px: 0, ph: 0, py: 0,
+      halt: null, // (the frame it came to a stop once it was over: 0x20000)
     }));
     for (const d of this.d) { d.lane = this.laneRoll(); d.notice = this.noticeRoll(); }
     // the countdown: they run in to their places and stop (0x864055CC)
@@ -233,8 +249,10 @@ export class World {
     }
     this.placings();
     for (const d of lapped) {
-      if (d.laps > 0) d.clouds = Math.min(3, d.clouds + d.rank); // (the further back, the more)
-      else d.clouds = 0;
+      if (d.laps > 0) { // (the further back, the more; and the stars it holds pop up again: 0x86409378)
+        d.clouds = Math.min(3, d.clouds + d.rank);
+        this.events.push(["stars", d.z]);
+      } else d.clouds = 0;
       if (d.rank === 0 && d.laps >= 1) this.events.push([d.laps === 1 ? "final" : "lap", d.z]);
     }
     for (const c of [...this.clouds]) { this.cloud(c); c.timer++; }
@@ -501,7 +519,7 @@ export class World {
     order.forEach((d, i) => { d.rank = i; });
   }
   // who's in (0x8640633C): the first in wins (together, on the same frame);
-  // once all four are in, the race is over
+  // once all four are in, the race is over (and if all four won, none did: 0x864067B8)
   finish(t) {
     const before = this.d.filter((d) => d.done).length;
     let over = false;
@@ -518,21 +536,55 @@ export class World {
     }
     if (over || t >= LONGEST) {
       this.end = t;
+      if (this.d.every((d) => d.won)) for (const d of this.d) d.won = false;
       for (const c of this.clouds) { c.phase = 2; c.timer = 0; } // (0x86406710)
     }
   }
 
-  // once it's over (0x8640533C, for the show): each slows to a stop where it's going
+  // ---- once it's over (state 5, 0x8640533C: the show, under the winners' banner) ----
+  // Each slows x0.94 a frame to a stop where it's going; when it's slower than 1
+  // it's stopped (halt): a winner stays (game.js: it cheers), a loser is turned a
+  // quarter turn from the way it faces and walks off slumped, 0.13 faster a frame
+  // for 20 frames, then x0.9. 1P's Donphan stopping moves the camera to the
+  // winners (0x86405138: an event). They still bump (0x86401D1C), and the clouds
+  // fade and the walls hold (0x864066B4)
   coast() {
     for (const d of this.d) {
-      d.speed *= 0.94;
-      d.boost = 0;
+      this.segment(d);
+      d.roll = 0;
+      if (d.halt !== null) {
+        d.timer++;
+        if (d.timer < 20) d.speed += 0.13;
+        else d.speed *= 0.9;
+      } else d.speed *= 0.94;
       d.x += d.vx * d.speed;
       d.y += d.vz * d.speed;
-      if (d.speed < 1) d.speed = 0;
       this.height(d);
-      this.walls(d);
     }
+    this.bumps();
+    for (const d of this.d) {
+      d.x += d.px; d.h += d.ph; d.y += d.py;
+      d.px = 0; d.ph = 0; d.py = 0;
+      if (!(d.speed < 1) || d.halt !== null) continue;
+      d.halt = this.t;
+      if (d.z === 0) { // (where the winners are, or all four with none; the others not pushed yet this frame)
+        const on = this.d.some((e) => e.won) ? this.d.filter((e) => e.won) : this.d;
+        let x = 0, h = 0, y = 0;
+        for (const e of on) { x += e.x; h += e.h; y += e.y; }
+        if (on.length >= 2) { x /= on.length; h /= on.length; y /= on.length; }
+        this.events.push(["camera", x, h, y]);
+      }
+      if (!d.won) { // (its way off from the table at 0x80087FB0, +1024 the cosine)
+        d.timer = 0;
+        const i = (d.rot & 0xffff) >> 4;
+        d.vx = sine(i + 1024);
+        d.vz = -sine(i);
+        d.speed = 0;
+      }
+      this.events.push(["halt", d.z, +d.won]);
+    }
+    for (const c of [...this.clouds]) { this.cloud(c); c.timer++; }
+    for (const d of this.d) this.walls(d);
   }
 
   // ---- a CPU (0x86403F5C): its line round the track, round the clouds in the way ----
@@ -630,8 +682,13 @@ export class World {
     this.events = [];
   }
 
-  // the places so far (1-4), by seat
-  get places() { return this.d.map((d) => d.rank + 1); }
+  // the places so far (1-4), by seat: all in on the first frame anyone was are
+  // first (the game's winners, or a draw if that's all four); the rest by rank
+  get places() {
+    let first = null;
+    for (const d of this.d) if (d.fin !== null && (first === null || d.fin < first)) first = d.fin;
+    return this.d.map((d) => (d.fin !== null && d.fin === first ? 1 : d.rank + 1));
+  }
   // a fingerprint of the world, exact, to check two runs of it agree (the tests;
   // tools/rollout_rules.py's is the same)
   digest() {
@@ -639,7 +696,7 @@ export class World {
     for (const d of this.d) {
       parts.push(hex(d.x), hex(d.h), hex(d.y), hex(d.vx), hex(d.vz), hex(d.vh), d.rot, d.timer, +d.start, +d.tumble, +d.knocked,
         +d.bounce, +d.ready, +d.drop, +d.done, +d.won, d.fin ?? -1, d.corners, d.seg, d.laps, hex(d.progress), d.rank, hex(d.speed),
-        hex(d.boost), d.roll, d.stun, d.wait, d.clouds, d.out, hex(d.target), hex(d.angle), d.notice, hex(d.lane));
+        hex(d.boost), d.roll, d.stun, d.wait, d.clouds, d.out, hex(d.target), hex(d.angle), d.notice, hex(d.lane), d.halt ?? -1);
     }
     for (const c of this.clouds) parts.push(c.id, c.owner, hex(c.x), hex(c.h), hex(c.y), c.timer, c.phase, c.frame);
     return parts.join(",");

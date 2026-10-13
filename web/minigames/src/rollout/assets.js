@@ -3,12 +3,14 @@
 // (113: its field and the red frame round it), and the pictures: a dust cloud
 // in each player's colours (image bank 150, 16 frames side by side), the dust
 // a Donphan kicks up (159, 8 frames), the stars over a Donphan (384, in each
-// player's colours) and the shadows (307). Lighting is done on the textures'
-// display values, as the N64 does (see src/egg/assets.js, docs/colours.md).
+// player's colours) and the shadows (307); the badges over them are the shared
+// ones (434: src/badge.js). Lighting is done on the textures' display values, as
+// the N64 does (see src/egg/assets.js, docs/colours.md).
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { retry, attemptURL } from "../retry.js";
+import { loadBadges } from "../badge.js";
 
 const FPS = 30; // the game's animation rate
 const GLB = 100; // the exported models are in hundredths of the game's units
@@ -50,11 +52,12 @@ export async function loadAssets(base, onProgress = () => {}) {
   const jobs = [];
   let done = 0;
   const job = (p) => { jobs.push(p); return p.then((x) => { onProgress(++done / jobs.length); return x; }); };
-  const [models, pics] = await Promise.all([
+  const [models, pics, badges] = await Promise.all([
     Promise.all(MODELS.map((m) => job(gltf(base + m + ".glb")))),
     Promise.all(PICTURES.map((p) => job(texture(base + p + ".png")))),
+    loadBadges(job),
   ]);
-  const out = {};
+  const out = { badges };
   MODELS.forEach((name, i) => {
     const g = models[i];
     prepare(g.scene);
@@ -85,7 +88,8 @@ export function makeModel(a, s = 1) {
     root, model, mixer,
     get clip() { return current; },
     length: (i) => (a.clips[i] ? Math.round(a.clips[i].duration * FPS) : 1),
-    // clip i at frame f (looped; or held on its last frame)
+    // clip i at frame f (looped; or held on its last frame: a frame game.js has
+    // already wrapped as the game does, past its last key)
     pose(i, f, hold = false) {
       const next = actions[i];
       if (!next) return;

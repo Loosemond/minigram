@@ -52,8 +52,9 @@ const barrierPad = (z, t) => (z === 0 ? [[64, 0, -64, 32, -32, 0][Math.floor(t /
 const golbatPad = (z, t) => (z === 0 ? [[64, 0, -64, 32, -32, 0][Math.floor(t / 90) % 6], t % 12 === 0 || t % 47 === 5]
   : [[-64, 64][Math.floor(t / 70) % 2], t % 9 === 0]);
 // Rampage Rollout: a race with seats 0 and 2 on rolloutPad() and two CPUs (normal, hard, easy), the
-// world's digest() every 50 frames, the end, the places and the frames in: the same as JS_ROLLOUT in tools/test_rooms.py
-const ROLLOUT = { 1: "54a4ecbd48f149ad", 12345: "0478f9cb5f8a5194", 2147483647: "fb2a806822e44641" };
+// world's digest() every 50 frames and on through the show after it (90 frames), the end, the places and
+// the frames in: the same as JS_ROLLOUT in tools/test_rooms.py
+const ROLLOUT = { 1: "54ceb6862f49266a", 12345: "31a7ccb87fe46c27", 2147483647: "e314b7df6c155a92" };
 const ROLLOUT_LEVEL = { 1: "normal", 12345: "hard", 2147483647: "easy" };
 // (seat 0 round the track, turning at the corners, with a false start; seat 2 a pattern)
 const rolloutWay = (d) => (d.y < -150 && d.x > -200 ? 2 : d.x < -200 && d.y < 150 ? 4 : d.y > 150 && d.x < 200 ? 1 : 8);
@@ -1322,23 +1323,32 @@ await test("Rampage Rollout: the world and the CPUs are the same as the server's
   const R = await moduleOf(solo, "./src/rollout/rules.js");
   for (const [seed, want] of Object.entries(ROLLOUT)) {
     const w = new R.World(+seed, ROLLOUT_LEVEL[seed], [false, true, false, true]), parts = [];
-    for (let t = 0; w.end === null; t++) {
+    for (let t = 0; w.end === null || t <= w.end + 90; t++) {
       w.step(t, [rolloutPad(0, t, w), null, rolloutPad(2, t, w), null]);
       w.events = [];
       if (t % 50 === 0) parts.push(w.digest());
     }
-    parts.push(`${w.end}:${w.places.join()}:${w.d.map((d) => d.fin).join()}`);
+    parts.push(w.digest(), `${w.end}:${w.places.join()}:${w.d.map((d) => d.fin).join()}`);
     const got = await sha16(parts.join(";"));
     assert(got === want, `seed ${seed}: ${got}; tools/rollout_rules.py expects ${want} (update both, and the digests)`);
   }
-  // the main program's arctangent table (0x8008CFB0), and its angles
+  // the main program's arctangent table (0x8008CFB0), and its angles; its sine table (0x80087FB0)
   const a = [0, 1, 512, 1023, 1024].map((i) => R.ATAN[i]), b = [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1]].map(([x, y]) => R.angle(x, y));
   assert(a.join() === "0,10,4836,8187,8192" && b.join() === "0,16384,-32768,-16384,8192", `atan ${a}; angles ${b}`);
+  const s = [0, 1, 512, 1024, 3072, 4095].map((i) => R.sine(i)).join();
+  assert(s === "0,0.0015339801320806146,0.7071067690849304,1,-1,-0.0015339801320806146", `sine ${s}`);
 });
 
 await test("Rampage Rollout: its music and sound effects play from sound.bin", () => soundTest("assets/rollout/sound.bin", [
   ["main", 6, (r) => assert(r.notes > 10 && r.peak > 0.05 && r.peak < 1, `song 34: ${r.notes} notes, peak ${r.peak.toFixed(2)}`)],
-]));
+  // song 100: song 34, 17 beats a minute faster
+  ["final", 6, (r) => assert(r.notes > 10 && r.e.players[0].tempoChange === 17 * 48, `song 100: ${r.notes} notes, tempo +${r.e.players[0].tempoChange / 48}`)],
+], async (render, audio) => {
+  // the stun ring as the game asks for it (0x5404, held: stopped the frame after): still heard
+  const r = await render(1, (e) => audio.startEffects(e), (e) => audio.trigger(e, "dizzy", 0), [0.15 + 1 / 30, (e) => audio.stopEffect(e, "dizzy")]);
+  assert(r.notes && r.peak > 0.02, `the stun ring, a frame of it: ${r.notes} notes, peak ${r.peak.toFixed(3)}`);
+  return `a frame of the stun ring: peak ${r.peak.toFixed(2)}`;
+}));
 
 await test("Rampage Rollout: online, the others' pads coming in late run the world again to the same place", async () => {
   await solo.mg.show("rollout");
@@ -1377,7 +1387,7 @@ await test("Rampage Rollout: online, the others' pads coming in late run the wor
   }
 });
 
-await test("Rampage Rollout: a solo race, played headless: everyone gets in, places by who's in first", async () => {
+await test("Rampage Rollout: a solo race, played headless: everyone gets in, places by who's in first, the show after", async () => {
   await solo.mg.show("rollout");
   const api = solo.mg.mini, g = api.game, saved = g.listeners, { AFTER } = await moduleOf(solo, "./src/rollout/game.js");
   solo.mg.paused = true;
@@ -1393,10 +1403,21 @@ await test("Rampage Rollout: a solo race, played headless: everyone gets in, pla
         g.update(1 / 30);
       }
       const res = g.results(), fin = g.world.d.map((d) => d.fin), end = g.world.end;
-      assert(g.state === "over" && end === Math.max(...fin) + 1 && g.frame >= end + AFTER, `${level}: ${g.state}, the end at ${end}, in at ${fin}`);
+      // (the round's over on the frame the race is, as the game calls its results then: 0x8640687C)
+      assert(g.state === "over" && end === Math.max(...fin) + 1 && g.frame === end + AFTER, `${level}: ${g.state} at ${g.frame}, the end at ${end}, in at ${fin}`);
       assert(res.every((r) => r.score === Math.round((fin[r.i] * 100) / 30)), `${level}: results ${JSON.stringify(res)} for frames ${fin}`);
       assert(res.every((r, k) => !k || fin[res[k - 1].i] <= fin[r.i]) && g.winners[res[0].i], `${level}: places ${JSON.stringify(res)}, winners ${g.winners}`);
-      out.push(`${level}: ${fin.join(", ")}`);
+      // the show (0x8640533C): each stops; the camera goes to the winners as 1P's does; the winners
+      // cheer (twice), the others slump (once), each when its clip comes round
+      const heard = [];
+      g.listeners = { cheer: [(z) => heard.push("cheer" + z)], slump: [(z) => heard.push("slump" + z)] };
+      for (let k = 0; k < 150; k++) g.update(1 / 30);
+      const halts = g.world.d.map((d) => d.halt), clips = g.donphan.map((v) => v.walk.clip);
+      assert(halts.every((h) => h !== null) && g.camTo?.f === halts[0], `${level}: stopped at ${halts}, the camera at ${g.camTo?.f}`);
+      assert(g.winners.every((w, z) => clips[z] === (w ? 2 : 3) && heard.filter((x) => x === (w ? "cheer" : "slump") + z).length === (w ? 2 : 1)),
+        `${level}: winners ${g.winners}, clips ${clips}, heard ${heard}`);
+      g.listeners = {};
+      out.push(`${level}: ${fin.join(", ")} (stopped at ${halts.map((h) => h - end).join(", ")} after)`);
     }
   } finally {
     g.listeners = saved;

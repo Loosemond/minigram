@@ -786,27 +786,40 @@ The screen is the game's camera, with the field of view that shows the whole
 track (at least the game's), over the whole window; in portrait the picture
 is moved up so the track sits under the top cards. In the track's middle, as
 the game has them, the places (rank coins and badges) and the leader's laps
-to go on the LAP gear, or FINAL LAP!. Over each Donphan, a star for each
-cloud it holds. On a phone: a finger anywhere is a D-pad (the way it slides
-from where it went down: up, down, left or right, whichever it went more; a
-resting one shows where), and the A button drops a cloud. With a keyboard:
-the arrows (or W A S D) and Space. In the countdown the Donphan run in to the
-grid under the start camera, which then moves over the track; at the end the
-camera goes to the winners, who cheer, and the others slump.
+to go on the LAP gear in the game's big digits, or FINAL LAP! fading from
+one random colour to the next every third of a second; they move as the
+game's do: at GO the coins rise into place and the sign comes in from the
+right, the sign goes off to the left once the first one's in, and at the end
+the coins line up in a row along the bottom. Over each Donphan its badge
+(1P-4P, or COM in its colour) and a star for each cloud it holds, turning,
+popping up again each lap. On a phone: a finger anywhere is a D-pad (the way
+it slides from where it went down: up, down, left or right, whichever it
+went more; a resting one shows where), and the A button drops a cloud. With
+a keyboard: the arrows (or W A S D) and Space. In the countdown the Donphan
+run in to the grid kicking up dust under the start camera, which then moves
+over the track. The results (the shell's winners' banner) come the frame the
+race is over, as in the game, and its show goes on under them: each Donphan
+slows to a stop, its badge goes, and a winner cheers there while a loser
+slumps and walks off a little to the inside; the camera goes to the winners
+when 1P's Donphan stops, and the clouds fade. A four-way tie is a draw. It all
+goes at the game's 30 frames a second and is drawn between its frames, so
+nothing moves in steps.
 
-**Sound**: the game's (`assets/rollout/sound.bin`, 649 KB): song 34 from
-just after GO, 17 beats a minute faster from the final lap (the game's song
-100), bank 5's effects (footsteps, rolling, the stun's ring, a cloud, the
-laps, the end's cheers and slumps) placed by where the Donphan is, the crowd
-for the first one in, and the count and GO.
+**Sound**: the game's (`assets/rollout/sound.bin`, 652 KB): song 34 from
+31 frames after GO; on the final lap it fades and comes back 17 beats a
+minute faster (the game's song 100); bank 5's effects (footsteps, rolling,
+the stun's ring every 5 frames, a cloud, the laps, the end's cheers, twice,
+and slumps as their clips come round), each Donphan's on its player's
+channel, placed by where it is; the crowd for the first one in, and each
+one in, in the middle; the count and GO.
 
 What comes from the ROM and what is made up:
 
 | From the game | Made for the remake |
 |---|---|
-| the track and its walls, running, turning, rolling and rocket starts, the clouds and bumps, the laps and places, the CPUs, the start and the end, the cameras (module #52's code) | the field of view that fits the window, the portrait layout, the dust's colours (the game's, but 4P's are red as 3P's: as the game has it), the race called after 200 s if it isn't over |
-| Donphan (108: walking, rolling) and its clips, the track (113), the clouds (150), the dust (159), the stars (384), the shadows (307), the rank coins (387), LAP and FINAL LAP (386, 385), the badges (434) | the touch D-pad and A button (the menus' A, bank 51), the title's art (the track from above) |
-| song 34, bank 5's effects, the count | |
+| the track and its walls, running, turning, rolling and rocket starts, the clouds and bumps, the laps and places, the CPUs, the start and its dust, the end's show and when it hands over (at once), the cameras, the HUD's moves and FINAL LAP!'s colours (module #52's code) | the field of view that fits the window, the portrait layout, the HUD's sizes and places (the end's row on the window as the shell's banner is), the show's random numbers (the dust, FINAL LAP!'s colours: each device's own), the race called after 200 s if it isn't over |
+| Donphan (108: walking, rolling) and its clips, the track (113), the clouds (150), the dust (159, the game's colours: 4P's red as 3P's), the stars (384), the shadows (307), the rank coins (387), LAP and FINAL LAP (386, 385), the laps' big digits (429), the badges in the HUD and over each Donphan (434), each coloured as the game's combiner does | the touch D-pad and A button (the menus' A, bank 51), the title's art (the track from above) |
+| song 34 and song 100 (its fade, then faster), bank 5's effects on each player's channel, the crowd, the count | |
 
 Code: `src/rollout/rules.js` has the world (and `tools/rollout_rules.py`, the
 server's copy, line for line), `src/rollout/game.js` the race (the pads,
@@ -1112,8 +1125,10 @@ How it works:
   each one's points then (`won`).
 - **Rampage Rollout**: the same (`pad`: the D-pad held, and A), with
   `tools/rollout_rules.py`; the race is over the frame after the last one's
-  in, and the server says when, the frame each came in on and the places
-  (`won`).
+  in, and the round with it (`AFTER` 0: the game calls its results then);
+  the server says when, the frame each came in on and the places (`won`: all
+  in on the first frame anyone was are first). Each device then runs the
+  world on for the show (it's the same on all).
 - **Topsy-Turvy**: the same (`pad`: the stick, and A), with
   `tools/topsy_rules.py`; its frames count from the play's start, 20 after
   GO (`START`); the server says the frame the play ended on and each one's

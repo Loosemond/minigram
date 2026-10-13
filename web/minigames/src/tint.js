@@ -5,7 +5,8 @@
 // Furret's Frolic's points by player; docs/colours.md): the extracted pictures
 // are the plain grey. tint() is a coloured copy of one, made once for each
 // picture and colours; tintURL() the same from a picture's URL, as an image's
-// src for the HTML HUD.
+// src for the HTML HUD; paint() the same into a canvas of the caller's, each
+// time it's asked (a colour that changes every frame).
 //
 // prim and env: [r, g, b] (0-255), 0xrrggbb or "#rrggbb". alpha: "own" (the
 // picture's: an IA picture's), "grey" (an I picture, which the RDP reads as its
@@ -24,19 +25,26 @@ export function tint(pic, prim, env, { alpha = "own", times = 1 } = {}) {
   let mine = made.get(pic);
   if (!mine) made.set(pic, (mine = new Map()));
   if (mine.has(key)) return mine.get(key);
-  const c = document.createElement("canvas");
-  c.width = pic.naturalWidth || pic.width;
-  c.height = pic.naturalHeight || pic.height;
+  const c = paint(document.createElement("canvas"), pic, p, e, { alpha, times });
+  mine.set(key, c);
+  return c;
+}
+
+// The same into a canvas of the caller's, afresh each time (no copy kept: for
+// a colour that changes every frame, e.g. Rampage Rollout's FINAL LAP!); c back
+export function paint(c, pic, prim, env, { alpha = "own", times = 1 } = {}) {
+  const p = rgb(prim), e = rgb(env), w = pic.naturalWidth || pic.width, h = pic.naturalHeight || pic.height;
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
   const g = c.getContext("2d");
+  g.clearRect(0, 0, w, h);
   g.drawImage(pic, 0, 0);
-  const d = g.getImageData(0, 0, c.width, c.height), px = d.data, a = typeof alpha === "function" ? alpha : ALPHA[alpha];
+  const d = g.getImageData(0, 0, w, h), px = d.data, a = typeof alpha === "function" ? alpha : ALPHA[alpha];
   for (let i = 0; i < px.length; i += 4) {
     const grey = px[i], k = grey / 255;
     px[i + 3] = Math.round(Math.max(0, Math.min(255, a(grey, px[i + 3]))) * times);
     for (let j = 0; j < 3; j++) px[i + j] = Math.round(e[j] + (p[j] - e[j]) * k);
   }
   g.putImageData(d, 0, 0);
-  mine.set(key, c);
   return c;
 }
 

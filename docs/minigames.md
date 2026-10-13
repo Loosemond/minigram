@@ -113,7 +113,7 @@ wobble that dies away. Once the countdown's over GO is squeezed away, its width
 | Furret's Frolic | 20 | `0x2F00`, `0x2F01` | at GO, song 47 (`0x86204FB4`) |
 | Barrier Ball | 20 | `0x2F00`, `0x2F01` | at GO, song 35 (`0x863036A4`) |
 | Pichu's Power Plant | 20 | `0x2F00`, `0x2F01` | at GO, song 21 (`0x866049B4`) |
-| Rampage Rollout | 20 | `0x5F07`, `0x5F08` | at GO; song 34 30 frames on (`0x86406994`: `0x86408CA0(34, 30)`) |
+| Rampage Rollout | 20 | `0x5F07`, `0x5F08` | at GO; song 34 31 frames on (`0x86406994`: `0x86408CA0(34, 30)`, which starts it once its count's past 30) |
 | Streaming Stampede | 25 | none: neither module asks for one | 37 frames after GO, when the opening camera move it runs over ends (`0x86905630`; song 29 on its frame 25, the countdown's 26th; state 3, at GO, `0x86901D24`, is never entered) |
 | Tumbling Togepi | 20 | `0x5F07`, `0x5F08` | at GO, song 46 (`0x86709108`) |
 | Delibird's Delivery | 20 | `0x2F00`, `0x2F01` | at GO, song 52 (`0x86A0184C`) |
@@ -2116,7 +2116,27 @@ camera's steep enough that it stands up), the dust a running Donphan kicks up
 cloud it holds (bank 384 at 1.5, 110 above it, 30 apart), clouds and stars
 in each player's colours (`0x864095D0`: the combiner makes env + (prim − env)
 × the picture's grey), and its shadow (bank 307, Eager Eevee's effects: 2.53
-across and 5.28 along, round while it rolls).
+across and 5.28 along, round while it rolls). Over each Donphan, module
+#64's label (`0x87F029B8` at `+0xCDBC`: bank 434, 1P-4P for a person, COM
+in its colour for a CPU), 75 above it at 1.5, its alpha 0xAF
+(`0x86405AE4`-`0x86405B7C`); hidden (its flag `0x10000000`, which
+`0x87F02878` skips) once the Donphan's stopped at the end (`0x8640551C`).
+
+**The dust** (`0x86401DBC`, each frame for each Donphan on the ground, with
+its speed: in the race, in the end, and in the countdown as they run in at
+20 × 0.8ⁿ, `0x86405730`): one puff if a random number × SPEED is under its
+speed, k = 1 (flying), 1.5 (a boost on) or 0.75, × (0.5 + a random number);
+sand (`0xC8AA82`, flag `0x10000000`), or its player's colour just after a
+cloud (`0x01000000` << player). It flies back the way the Donphan came at its
+speed, and up at 5, slowing × 0.8, × 0.95, × 0.8 a frame, turning 0xFF;
+sand grows × 1.06 a frame, the coloured × 1.05 (`0x86400320`); it fades over
+6 frames.
+
+**The stars** (`0x86408D4C`): each turns 0xFFF a frame while it's on, and
+another 0xFFF as it fades (`0x86408DDC`, `0x86408ECC`); it pops up from 3 to
+1.5 over 10 frames and fades over 10 as its cloud's dropped (`0x864094BC`).
+At every lap with laps still to go, every star the Donphan holds pops up
+again (`0x86409378`, called from `0x86405074` even when the lap adds none).
 
 **The race** goes the other way from a clock seen from above: along the top
 to the left, down the left side, along the bottom to the right, up the right
@@ -2158,8 +2178,10 @@ cloud (up, within 30) sends a Donphan flying (`0x86402304`, 0x5F03): up to
 92.8 and spinning, stopped, for 20 frames if it's leading, 14 second, 8
 third or last; the cloud fades. At each lap a Donphan gets clouds by its
 place (none for the leader, 1, 2, 3 for the last; up to 3 held), and the
-leader's lap sounds 0x5F09, the last one 0x5F0A (and song 100: song 34, 17
-beats a minute faster).
+leader's lap sounds 0x5F09, the last one 0x5F0A, and `0x86408CA0(100, 30)`
+fades the song over 30 frames (`0x800225B4`) and has `0x86408C1C` start
+song 100 (song 34, 17 beats a minute faster) 31 frames on. A second leader
+starting its final lap does it all again.
 
 **Bumps** (`0x86401920`): two Donphan closer than 46.4 (in 3D) are pushed
 apart, half each; one with a boost over SPEED × 0.9 × 0.5 (only a last lap's
@@ -2189,16 +2211,59 @@ right along the top, each further in and lower down than the last, and slow
 to a stop (× 0.8 a frame) on the grid, facing left, while the camera (from
 (120, 430, 40) towards (120, 0, −210)) moves over the track in 80 frames.
 **The end** (`0x8640633C`): the first in wins (several, in on the same
-frame); the race is over the frame after the last one's in. Those in coast to
-a stop (× 0.97 − 0.025 × place a frame); at the end each slows × 0.94, then
-the winners cheer (clip 2), the others slump (clip 3), and the camera moves
-to the winners.
+frame: flag `0x10000`, with `0x5F08` and the crowd, `0x80027764(0x1C07,
+0x44)`: held for 68 frames, `0x5F08` alone for the others); the first one in
+sends the LAP sign off (`0x8640826C`). The race is over the frame after the
+last one's in; that frame (`0x86406710`) the clouds fade, a four-way tie
+clears every winner's flag (`0x864067B8`-`0x8640683C`: no winners, a draw),
+the results start (`0x8640687C`, module #64's `0x87F0A098`: the banner,
+song 55, and so on) and the HUD's coins line up (`0x864081E8`); the state is
+5 till the results are done (`0x864064DC`). Those in coast to a stop (×
+0.97 − 0.025 × place a frame).
 
-**The HUD** (`0x864082A8`): in the block's middle, the rank coins (bank 387)
-with each place's badge (434), and the leader's laps to go on the LAP gear
-(386), or FINAL LAP! (385) flashing. The song is 34 (sequence 73), 30 frames
-after GO; the count and GO are 0x5F07 and 0x5F08, which also sounds as each
-one gets in ([audio.md](audio.md)). Its name banner is image bank 383.
+**State 5** (`0x8640533C`, the show under the results), each frame: for each
+Donphan its part of the track, no rolling, and if it's stopped (flag
+`0x20000`) its timer + 1 and its speed + 0.13 under 20, else × 0.9; if not,
+its speed × 0.94; it moves by its speed (no boost) and falls. Then the bumps
+(`0x86401D1C`); then for each its push, its dust, and if it's slower than 1
+and not yet stopped, it stops: its label goes; 1P's Donphan stopping starts
+the end camera (`0x86405138`: from where the camera is to (−200, +450, +80)
+from the winners' middle, or all four's with none, looking at (+90, −40, 0)
+from it, over 60 frames, by `0x86407290`'s eye-then-target arguments; the
+others not pushed yet that frame); a loser gets its timer 0, speed 0, and a
+way a quarter turn from where it faces (x the cosine and z minus the sine of
+its angle, by the main program's float32 sine table at `0x80087FB0`, 4096 to
+a turn: to the inside of the track), so it walks off a little, slumped
+(about 46 at most; the block's edge bounces it back, × −0.1, as any wall
+does once it's in). Then its clip (`0x86404C20`): standing till it's
+stopped; then a winner's cheer, clip 2 (76 frames, round and round), `0x5F06`
+at its frame 4 its first two times round (`+0x5A` counts them); a loser's
+slump, clip 3 (71 frames), its loop start set to 50 (`0x86404CFC`) so frames
+50-70 go round, `0x5F05` at its frame 15. Each Donphan's sounds are on its
+player's channel, placed where it is (`0x8002780C`). The clouds, the dust
+and the stars go on, and the walls hold (`0x864066B4`). Nothing stops the
+crowd.
+
+**The HUD** (`0x864082A8`, every frame; its items at `+0xCE00`, each moved
+by `0x86407E2C` from where it is to a place in so many frames, eased (1 −
+cos)/2, and drawn at whole pixels): the rank coins (bank 387, the players'
+ranks 1st to 4th) with each one's badge (434 at 0.56, 18 to the right), and
+the leader's laps to go on the LAP gear (386), in module #64's big digits
+(`0x87F06240`: bank 429 at 0.7, (+20, +20) into it, through `FC30B261
+5566FF7F` with prim `E1F0FF` and env black: light blue with a dark rim), or
+while the leader has fewer than 2 laps to go FINAL LAP! (385 at (−6, +10))
+through `FC50D2A1 FFA7FFFF` (env × the texel): env is a tenth more of the
+way each frame from the last colour to the next, a new random one (three
+`rand_lcg`s' low bytes: green, red, blue) every 10 frames, from white to white at first
+(`0x86408328`-`0x864083F8`, `+0`, `+4`, `+8`). The items start off the
+screen (`0x864080A0`: the coins at (114, 240 + 64k), the sign at (320, 86));
+at GO (`0x86408148`) the coins rise to (110, 79 + 15k) and the sign comes in
+to (156, 86), in 40 frames; when the first one's in the sign goes to (−70,
+86) in 20 (`0x8640826C`); when the race is over the coins line up at (64 +
+52k, 198) in 20 (`0x864081E8`). The song is 34 (sequence 73), 31 frames
+after GO (`0x86406994`: `0x86408CA0(34, 30)`); the count and GO are 0x5F07
+and 0x5F08, which also sounds as each one gets in ([audio.md](audio.md)).
+Its name banner is image bank 383.
 
 **The states** (`0x864069DC`): 0-2 the instructions and the fade, 3 the
 countdown, 4 the race, 5 the end, 6 the results, 7 the menu after.
