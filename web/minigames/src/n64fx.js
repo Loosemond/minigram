@@ -47,7 +47,7 @@ export function tagPrims(gltf) {
 const RGB = ["C.rgb", "t0.rgb", "t1.rgb", "prim.rgb", "shade.rgb", "env.rgb"];
 const SEL_A = [...RGB, "vec3(1.0)", "vec3(0.5)"]; // (then 1, the noise)
 const SEL_B = [...RGB, "vec3(0.5)", "vec3(0.0)"]; // (then the key's centre, K4)
-const SEL_C = [...RGB, "vec3(C.a)", "vec3(t0.a)", "vec3(t1.a)", "vec3(prim.a)", "vec3(shade.a)", "vec3(env.a)", "vec3(0.0)", "vec3(plod)"]; // (LOD 0; K5 0, past the end)
+const SEL_C = [...RGB, "vec3(1.0)", "vec3(C.a)", "vec3(t0.a)", "vec3(t1.a)", "vec3(prim.a)", "vec3(shade.a)", "vec3(env.a)", "vec3(0.0)", "vec3(plod)"]; // (6 the key's scale, as tools/ps2tool/combiner.py takes it; LOD 0; K5 0, past the end)
 const SEL_D = [...RGB, "vec3(1.0)", "vec3(0.0)"];
 const ALPHA = ["C.a", "t0.a", "t1.a", "prim.a", "shade.a", "env.a", "1.0", "0.0"]; // (a, b and d)
 const ALPHA_C = ["0.0", "t0.a", "t1.a", "prim.a", "shade.a", "env.a", "plod", "0.0"];
