@@ -129,7 +129,7 @@ TOPSY_LEVEL = {1: "normal", 157: "hard", 2 ** 31 - 1: "easy"}
 # and two CPUs (normal, hard, easy), the world's digest() every 100 frames:
 # the hard one to its end and the show after (1921 frames), the others 600;
 # then the end, the points and the places (web/minigames/tests.js has the same)
-JS_FURRET = {1: "71f7890a4652fb1b", 157: "5d54951a1f163b23", 2 ** 31 - 1: "1c343168cb41c113"}
+JS_FURRET = {1: "d8bba6ac13cb2e76", 157: "8a791b70fad491c7", 2 ** 31 - 1: "1feb9cfed6ca125d"}
 FURRET_LEVEL = {1: "normal", 157: "hard", 2 ** 31 - 1: "easy"}
 
 
@@ -1525,7 +1525,7 @@ def _():
         a.send("pad", r=r, s=0, f=won["f"] + 5, x=1, a=1)  # after the end: nothing
         a.send("done", r=r)
         b.send("done", r=r)
-        a.s.settimeout(8)  # (the round's over 4 s after the play: AFTER)
+        a.s.settimeout(8)  # (the round's over as the play is: AFTER, none)
         res = a.wait("results", timeout=10)
         assert res["scores"] == said["s"], res
         b.close()

@@ -935,27 +935,37 @@ The field is object 155 (the field, its shadows, the ramps' boards), seen
 from the game's camera (turned a quarter at a time for this device's
 player), with the field of view that shows the lanes and the ramps; in
 portrait the picture's moved up under the top cards, the buttons below it.
-Over each goal its player's badge, over each Furret its label (1P-4P, COM),
-under each ball its shadow. On a phone: a finger anywhere is the D-pad (the
-way it slides from where it went down, held), and the A button swings. With a
+Over each goal its player's badge, see-through and turned the way its
+player's Furret faces (so yours reads upright), over each Furret its label
+(1P-4P, COM), under each ball its shadow; a ball rolls a degree for each
+unit it goes, its glint always at its upper left; the lights (white and grey)
+go round with the camera. The clock and the points are the game's big
+digits in its colours. On a phone: a finger anywhere is the D-pad (the way it
+slides from where it went down, held), and the A button swings. With a
 keyboard: the arrows (or W A S D; two at once: left, then right, up, down, as
-the game takes them) and Space. At GO they pop up on the hollow across the
-middle from their goal and hop into the middle; at the end the winners hop
-back to the middle and cheer, the others sulk, and the camera closes in and
-goes round.
+the game takes them) and Space. Through the countdown they pop up on the
+hollow across the middle from their goal (as the game makes them when it
+starts), and at GO hop into the middle. The time's up hands over to the
+results at once, as the game does; under the winners' banner the winners hop
+back to the middle and cheer (crying out twice), the others sulk, and the
+camera closes in and goes round, on through the results. The world ticks 30
+times a second and is drawn between its last two frames (the clips weighed
+from one to the next where they change), so nothing steps at 30.
 
 **Sound**: the game's (`assets/furret/sound.bin`, 495 KB): song 47 from GO,
-faster in the last 30 s, bank 11's effects (a swing, a ball batted, a goal, a
-ball landing hard, a winner's cry) placed by where they are, and the count,
-GO and the last seconds' count.
+faster in the last 30 s and faded as the time's up (the results' song takes
+over), bank 11's effects (a swing, a ball batted, a goal, every ball landing
+hard, a winner's cry) placed by where they are across this device's view as
+the game works it out, a swing on its player's channel, and the count, GO
+and the last seconds' count.
 
 What comes from the ROM and what is made up:
 
 | From the game | Made for the remake |
 |---|---|
-| the field's mesh, the balls and their physics, the spots, the hops, the swing and the bat, the goals, the balls coming, the CPUs, the end, the camera and the clear colour (module #50's code) | the view turned for each player, the field of view that fits the window, the portrait layout, the labels' and badges' size, the D-pad on a phone |
-| Furret (142) and its clips, the Poké Balls (153), the field, its shadows and the boards (155), the shadow's dot (307), the labels (260), the badges (434) | the title's art (the field from above) |
-| song 47, bank 11's effects, the count | |
+| the field's mesh, the balls and their physics, the spots, the hops, the swing and the bat, the goals, the balls coming, the CPUs, the end and its show, the camera, the lights and the clear colour (module #50's code) | the view turned for each player, the field of view that fits the window, the portrait layout, the labels' and badges' size, where the clock is, the D-pad on a phone |
+| Furret (142) and its clips (the cheer and the sulk going round as the code has them), the Poké Balls (153) and their glints, the field, its shadows and the boards (155), the shadow's dot (307), the labels (260), the badges (434), the digits (429) and their colours | the title's art (the field from above) |
+| song 47, bank 11's effects and where they're placed, the count | |
 
 Code: `src/furret/rules.js` has the world (and `tools/furret_rules.py`, the
 server's copy, line for line), `src/furret/game.js` the round (the pads,
@@ -1136,7 +1146,8 @@ How it works:
   about 0.3 s of the server's time (Python).
 - **Furret's Frolic**: the same (`pad`: the spot the D-pad holds, and A),
   with `tools/furret_rules.py`; the play's over when the minute's up, and the
-  server says that frame and each one's points (`won`). A minute of it is
+  server says that frame and each one's points (`won`); the round's over then
+  too (the game hands over to its results that frame). A minute of it is
   about 0.3 s of the server's time.
 - **Delibird's Delivery**: the same (`pad`: the stick, packed as
   Topsy-Turvy's), with `tools/delibird_rules.py`; the play's over when the

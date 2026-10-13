@@ -15,7 +15,7 @@ SEATS = 4
 FPS = 30
 LEVELS = {"easy": 1, "normal": 2, "hard": 3}
 AHEAD = 4  # frames ahead of now a pad may be for (a device sends its player's up to 3 ahead: src/lag.js leadFor)
-AFTER = 120  # frames from the end to the results (the winners hop to the middle and cheer)
+AFTER = 0  # frames from the end to the results: none (0x8620392C fades the song and 0x86204A9C starts them that frame)
 
 STEPS = 3
 TIME = 60 * FPS
@@ -66,6 +66,8 @@ TAIL = [
 UP, STAND, SWING, CHEER, SAD, HOP, LAND = range(7)
 CLIP_LEN = [24, 24, 29, 102, 129, 5, 7]
 HOLD = [False, False, False, False, False, True, True]
+LOOP = [0, 0, 0, 0x42, 0x74, 0, 0]  # (the frame a clip goes back to: the show writes the cheer's and the sulk's)
+COUNTDOWN = 4 * 20  # (GO 80 frames after the Furret pop up: clip 0 at frame 8 then)
 SKILLS = [[0, 0, 0, 0], [1, 1, 0, 0], [2, 2, 1, 0], [3, 3, 3, 2]]
 
 MESH = [
@@ -260,7 +262,7 @@ def _at_last(f):
 def _advance(f):
     f.frame += 1
     if f.frame >= CLIP_LEN[f.clip]:
-        f.frame = CLIP_LEN[f.clip] - 1 if HOLD[f.clip] else 0
+        f.frame = CLIP_LEN[f.clip] - 1 if HOLD[f.clip] else LOOP[f.clip]
 
 
 def _bat(v, d):
@@ -326,7 +328,7 @@ class World:
             p.z, p.cpu, p.goal, p.score, p.won, p.arrived, p.cheer, p.skill = z, bool(cpus[z]), GOALS[z], 0, False, False, False, 0
             p.state, p.timer, p.held = 0, 0, 0
             f = p.f = Furret()
-            f.spot, f.target, f.pos, f.tail, f.clip, f.frame, f.counter = 0, 0, [0, 30, 0], [0, 0, 0], UP, 0, 0
+            f.spot, f.target, f.pos, f.tail, f.clip, f.frame, f.counter = 0, 0, [0, 30, 0], [0, 0, 0], UP, COUNTDOWN % CLIP_LEN[UP], 0
             f.frozen, f.swing, f.redirect, f.hit, f.layout, f.cry = True, False, False, False, 0, 0
             self.p.append(p)
         for p in self.p:

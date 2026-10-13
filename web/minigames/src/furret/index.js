@@ -12,6 +12,7 @@ import { loadAssets } from "./assets.js";
 import { Game, CAMERA } from "./game.js";
 import * as R from "./rules.js";
 import { meMark } from "../mark.js";
+import { tintURL } from "../tint.js";
 
 export const SOUNDS = {
   url: "assets/furret/sound.bin",
@@ -32,6 +33,12 @@ for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) FIT.push([x * 700, 0,
 for (const [x, z] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) FIT.push([x * 950, 760, z * 950]);
 // the D-pad's ways on the screen, and the spots they hop to with the game's view (right, down, up, left)
 const WAYS = { r: [1, 0], d: [0, 1], u: [0, -1], l: [-1, 0] };
+// The HUD (0x862040AC) in module #64's big digits (image bank 429, 0x87F06240) through FC30B261
+// 5566FF7F (env + (prim - env) x the texel's grey: src/tint.js): the seconds left in green at 0.82,
+// whatever's left (prim C8FF73, env 004600); each one's points at 0.57 in its player's prim and env
+// (0x86203F50: 1P 00009B and AAF5FF, 2P 006400 and C8FF9B, 3P 780000 and FFA0BE, 4P D25A00 and FFFF8C)
+const CLOCK = [0xc8ff73, 0x004600];
+const POINTS = [[0x00009b, 0xaaf5ff], [0x006400, 0xc8ff9b], [0x780000, 0xffa0be], [0xd25a00, 0xffff8c]];
 // the arrow over your Furret: over the game's label (48 tall, 180 over its
 // tail's tip; small on a phone), clear of it, and gone with it in the end's show
 const OVER_LABEL = 40;
@@ -40,41 +47,71 @@ export async function create(shell, onProgress) {
   const assets = await loadAssets("assets/furret/", onProgress);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(165 / 255, 173 / 255, 231 / 255); // (the game's clear colour: 0xA579)
-  // the scene's lights (its layout, 0x86208038: white and grey, at angles from the camera; 0xA0A0A0 all round)
-  scene.add(new THREE.AmbientLight(0xffffff, 0.63 * Math.PI));
-  const sun = new THREE.DirectionalLight(0xffffff, 0.55 * Math.PI);
-  sun.position.set(-0.3, 1, 0.6);
-  scene.add(sun);
-  const fill = new THREE.DirectionalLight(0xffffff, 0.2 * Math.PI);
-  fill.position.set(0.6, 0.4, -0.3);
-  scene.add(fill);
+  // the scene's lights (its layout, 0x86208038): 0xA0A0A0 all round, and a white light node and a grey
+  // one (0x86208070, 0x86208088) that the game turns with the camera each frame (0x86200794,
+  // 0x862007FC): from the eye's pitch over where it looks and its yaw (0x80037200), the white one at
+  // pitch + 0x2000 and yaw - 0x2000, the grey one at -0x2000 - pitch and yaw + 0x6000; a node's way
+  // (0x8003AE84) is (sin yaw cos pitch, sin pitch, cos yaw cos pitch), towards it. x PI: three's
+  // lights are physical (and the shade's held to 1: assets.js)
+  scene.add(new THREE.AmbientLight(0xa0a0a0, Math.PI));
+  const white = new THREE.DirectionalLight(0xffffff, Math.PI), grey = new THREE.DirectionalLight(0x808080, Math.PI);
+  scene.add(white, grey);
+  const ANGLE = 65536 / (2 * Math.PI), way = (p, y) => {
+    const P = p / ANGLE, Y = y / ANGLE;
+    return [Math.sin(Y) * Math.cos(P), Math.sin(P), Math.cos(Y) * Math.cos(P)];
+  };
+  function light(eye, at) {
+    const dx = eye.x - at[0], dy = eye.y - at[1], dz = eye.z - at[2];
+    const pitch = Math.atan2(dy, Math.hypot(dx, dz)) * ANGLE, yaw = Math.atan2(dx, dz) * ANGLE;
+    white.position.set(...way(pitch + 0x2000, yaw - 0x2000));
+    grey.position.set(...way(-0x2000 - pitch, yaw + 0x6000));
+  }
   const game = new Game(scene, assets);
+  game.toGo = shell.toGo; // (before GO they pop up as the countdown goes: game.js)
 
   // ---- its HUD: the clock (0x862040AC), the hint, the buttons ----
   const hud = document.createElement("div");
   hud.className = "game-hud fu";
   hud.innerHTML = `
-    <div class="fu-time"><small>TIME</small><b>60</b></div>
+    <div class="fu-time" role="img" aria-label="Time"></div>
     <div class="fu-hint" hidden></div>
     <div class="fu-pads" hidden>
       <div class="fu-dpad rest"><i class="u"></i><i class="r"></i><i class="d"></i><i class="l"></i></div>
       <div class="fu-a"><img src="assets/furret/button_a.png" alt="A"></div>
     </div>`;
   shell.hud.append(hud);
-  const timeEl = hud.querySelector(".fu-time"), timeNum = timeEl.querySelector("b");
+  const timeEl = hud.querySelector(".fu-time");
   const hint = hud.querySelector(".fu-hint"), pads = hud.querySelector(".fu-pads"), dpad = hud.querySelector(".fu-dpad"),
     aEl = hud.querySelector(".fu-a");
   const mark = meMark(hud, shell.me), over = new THREE.Vector3();
+  const clockPics = [], pointPics = POINTS.map(() => []); // (the digits coloured, as they come)
+  for (let d = 0; d < 10; d++) {
+    tintURL(`assets/ui/big${d}.png`, ...CLOCK).then((url) => { clockPics[d] = url; });
+    POINTS.forEach(([prim, env], z) => tintURL(`assets/ui/big${d}.png`, prim, env).then((url) => { pointPics[z][d] = url; }));
+  }
 
   // ---- sounds and the like, from the game ----
+  // A placed sound goes by where its ball or Furret is across this device's view, as the game works it
+  // out (0x87C03B60): through the view's matrix (0x87C037C0: the camera's, fov 30 on the 4:3 screen),
+  // x 64, held to -127-127; 0x8002780C, 0x800277E0 pan it 64 + that
+  const ear = new THREE.PerspectiveCamera(CAMERA.fov, 4 / 3, 50, 20000), place = new THREE.Vector3();
+  game.placeOf = (p) => {
+    if (!view) return 0;
+    ear.position.copy(view.cam.position);
+    ear.quaternion.copy(view.cam.quaternion);
+    ear.updateMatrixWorld();
+    return Math.trunc(Math.max(-127, Math.min(127, place.set(...p).project(ear).x * 64)));
+  };
   const mine = (z) => z === shell.me();
   game.on("send", (m) => shell.send("pad", m));
   game.on("tempo", (n) => shell.tempo(n)); // (the last 30 s: the tune speeds up)
   game.on("sound", (name) => shell.sound(name));
-  game.on("swing", (z, pan) => { shell.sound("swing", { pan }); if (mine(z)) shell.haptic("light"); }); // (0xBF00)
-  game.on("shot", (z, pan) => { shell.sound("shot", { pan }); if (mine(z)) shell.haptic("medium"); }); // (0xBF01)
-  game.on("bounce", (pan) => shell.sound("bounce", { pan })); // (0xBF03)
-  game.on("cheer", (z, pan) => shell.sound("cheer", { pan })); // (0xBF04)
+  game.on("swing", (z, x) => { shell.sound("swing", z, { x }); if (mine(z)) shell.haptic("light"); }); // (0xBF00: on its player's channel)
+  game.on("shot", (z, x) => { shell.sound("shot", z, { x }); if (mine(z)) shell.haptic("medium"); }); // (0xBF01, by the ball)
+  game.on("bounce", (x) => shell.sound("bounce", { x })); // (0xBF03: no one's, 0x800277E0)
+  game.on("cheer", (z, x) => shell.sound("cheer", { x })); // (0xBF05: no one's, by the Furret, 0x86206094)
+  // the time's up: song 47 fades over 40 frames (0x8620392C), and the results' song comes at once (the shell's)
+  game.on("end", () => shell.music(null, 40));
   game.on("goal", (z, points) => { // (0xBF02, for the goal's player)
     shell.sound("goal", z);
     shell.flash(z, "bump");
@@ -135,7 +172,7 @@ export async function create(shell, onProgress) {
   }
   let rest = {};
 
-  let view = null, portrait = false;
+  let view = null, portrait = false, cardEls = [];
   const api = {
     game, scene, assets,
     get views() { return view ? [view] : []; },
@@ -155,7 +192,7 @@ export async function create(shell, onProgress) {
       view = { cam, x: 0, y: 0, w: W, h: H };
       cam.aspect = W / H;
       cam.clearViewOffset();
-      game.camera(cam, true); // (the play's, not the end's: the shell lays out before it resets the round)
+      light(cam.position, game.camera(cam, true)); // (the play's, not the end's: the shell lays out before it resets the round)
       cam.updateMatrixWorld();
       cam.fov = fitFov(cam);
       cam.updateProjectionMatrix();
@@ -170,6 +207,7 @@ export async function create(shell, onProgress) {
       }
       view.base = cam.position.clone();
       const below = box.y + box.h;
+      cardEls = cards;
       cards.forEach((c, z) => {
         c.classList.toggle("mini", true);
         // where its goal is on the screen (0 bottom, 1 right, 2 top, 3 left), and the corner round from it
@@ -209,7 +247,7 @@ export async function create(shell, onProgress) {
       shell.stopSound();
     },
     go() { game.start(); shell.music("main"); }, // (song 47, at GO: 0x86204F20)
-    finish() { shell.music(null, 40); },
+    finish() {}, // (its song's faded at the time's up: "end", above)
     stop() { game.stop(); },
     setControl(z, c) { game.setControl(z, c); },
     get state() { return game.state; },
@@ -218,7 +256,7 @@ export async function create(shell, onProgress) {
     step(dt) {
       game.update(dt);
       if (!view) return;
-      game.camera(view.cam);
+      light(view.cam.position, game.camera(view.cam));
       view.base.copy(view.cam.position);
     },
     animate() {},
@@ -270,15 +308,25 @@ export async function create(shell, onProgress) {
   };
 
   // ---- the HUD, each frame ----
+  // n in coloured digits (pics: 0-9's) into el, once they're all made
+  function showDigits(el, n, pics, cls) {
+    const t = String(Math.max(0, n));
+    if (el.dataset.fu === t && el.firstElementChild?.classList.contains(cls)) return;
+    const urls = t.split("").map((d) => pics[d]);
+    if (urls.some((u) => !u)) return;
+    el.innerHTML = urls.map((u) => `<img class="${cls}" src="${u}" alt="">`).join("");
+    el.dataset.fu = t;
+    if (el === timeEl) el.setAttribute("aria-label", t + " seconds");
+  }
   function drawHud(on) {
     hud.classList.toggle("off", !on);
     const playing = game.state === "play" || game.state === "ready";
     pads.hidden = !playing || !coarse?.matches;
     timeEl.hidden = !(playing || game.state === "over");
-    // the clock: seconds left, rounded up (0x862040AC: 60 at GO)
-    const s = game.state === "ready" ? R.TIME / R.FPS : game.secondsLeft();
-    if (timeNum.textContent !== String(s)) timeNum.textContent = s;
-    timeEl.classList.toggle("low", game.state === "play" && s <= 10);
+    // the clock: seconds left, rounded up (0x862040AC: 60 at GO), its digits only
+    showDigits(timeEl, game.state === "ready" ? R.TIME / R.FPS : game.secondsLeft(), clockPics, "fu-clock");
+    // each one's points on its card, in its colours (over the shell's plain digits)
+    cardEls.forEach((c, z) => showDigits(c.querySelector(".num"), game.points()[z], pointPics[z], "fu-big"));
     hint.hidden = !(game.state === "ready" || (game.state === "play" && game.lastFrame < SHOW_HINT));
     hint.textContent = coarse?.matches ? "Slide to hop into the grass · A: swing your tail" : "Arrows: hop into the grass · Space: swing your tail";
     // which Furret is yours (the four look the same)

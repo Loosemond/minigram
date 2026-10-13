@@ -385,22 +385,26 @@ frames (450 / 15, entry 4 of `0x800A3B30`'s table), to 15.
 | `0x4F06` | `0x36` | 40 | crouching to jump in |
 | `0x0F04` | `0x03` | | a point, panned to the player |
 
-Furret's Frolic's (module #50) are bank 11's (`0xBF00`-`0xBF04`), placed by
-where the Furret or the ball is (`0x87C03B60`, then `0x8002780C` or
-`0x800277E0`); a goal's is panned to its player (`0x80027A18`). Its count and
+Furret's Frolic's (module #50) are bank 11's (`0xBF00`-`0xBF03` and
+`0xBF05`), placed by where the Furret or the ball is across the screen
+(`0x87C03B60`: the view's matrix, `0x87C037C0`, x 64, held to ±127; then
+`0x8002780C` or `0x800277E0`); a goal's is panned to its player
+(`0x80027A18`). Its count and
 GO are Pichu's Power Plant's (`0x2F00`, `0x2F01`), the last three seconds the
 shared count (`0xCF00`, `0xCF06` at 0). In the last 30 seconds it calls
 `0x80028108(11)`: one beat a minute faster every 15 frames (450 / 30, the
-12th entry of `0x800A3B30`'s jump table), to 30. Bank 11's `0xBF05` and
-`0xBF06` (sounds `0x79`, `0x7A`) aren't asked for by module #50.
+12th entry of `0x800A3B30`'s jump table), to 30. The time's up fades song
+47 over 40 frames (`0x8620392C`: `0x800225B4(0x28)`), and module #64's song
+55 or 56 starts at once on the same player, which cuts it short. Bank 11's
+`0xBF04` and `0xBF06` (sounds `0x78`, `0x7A`) aren't asked for by module #50.
 
 | Id | Sound | Effects of font 12 | When (from the code) |
 |---|---|---|---|
-| `0xBF00` | `0x74` | | a Furret swings its tail |
-| `0xBF01` | `0x75` (volume 110) | | its tail bats a ball |
+| `0xBF00` | `0x74` | | a Furret swings its tail (by the Furret, on its player's channel: `0x86205C74`) |
+| `0xBF01` | `0x75` (volume 110) | | its tail bats a ball (by the ball: `0x862059D0`) |
 | `0xBF02` | `0x76` (volume 120) | | a ball over a goal's line |
-| `0xBF03` | `0x64` (volume 125, pitch 2) | | a ball comes down hard on the field (deeper than 0.04 of its radius, after more than 55 in a frame) |
-| `0xBF04` | `0x78` (volume 80) | | a winner's cry, at frame 69 of its cheer, twice |
+| `0xBF03` | `0x64` (volume 125, pitch 2) | | a ball comes down hard on the field (deeper than 0.04 of its radius, after more than 55 in a frame), every time one does (`0x86200C18`) |
+| `0xBF05` | `0x79` (volume 110, channel 0) | | a winner's cry, as its cheer comes to frame 69, twice: the cheer goes round from 66 (`0x86206088`) |
 
 Delibird's Delivery's (module #60) are bank 8's (`0x8F00`-`0x8F19`; the
 tally's tick asks for `0x8012`, the same entry), a Delibird's placed by

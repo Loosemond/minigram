@@ -338,14 +338,15 @@ i.egg {
   background: rgba(235, 235, 245, 0.7); border: 2px solid #fff; box-sizing: border-box; }
 .tt-stick.rest { opacity: 0.55; }
 .game-hud.off .tt-pads, .game-hud.off .tt-hint { display: none; }
-/* Furret's Frolic: the clock at the top (the game's green digits), the hint;
-   on a touch screen the D-pad (where a finger went down) and A */
-.fu-time { position: absolute; display: flex; flex-direction: column; align-items: center; padding: 4px 12px 6px;
-  border-radius: 12px; background: rgba(0, 40, 0, 0.45); color: #c8ff73; line-height: 1; pointer-events: none;
-  text-shadow: 0 0 2px #004600, 1px 1px 0 #004600, -1px -1px 0 #004600, 1px -1px 0 #004600, -1px 1px 0 #004600; }
-.fu-time small { font-size: 10px; font-weight: 700; letter-spacing: 1px; opacity: 0.85; color: #fff; text-shadow: 0 1px 2px #000; }
-.fu-time b { font-size: 26px; font-weight: 900; font-variant-numeric: tabular-nums; min-width: 2ch; text-align: center; }
-.fu-time.low b { color: #ffe08a; }
+/* Furret's Frolic: the clock at the top, the hint; on a touch screen the D-pad
+   (where a finger went down) and A. The clock's seconds alone, in bank 429's
+   digits at 0.82, 18 apart (0x862040AC: --c, px a game pixel); each one's
+   points on its card at 0.57, 13 apart (0x86203F50) */
+.fu-time { position: absolute; display: flex; align-items: center; pointer-events: none; --c: 1.6; }
+.fu-time img.fu-clock { display: block; width: calc(var(--c) * 19.7px); height: calc(var(--c) * 26.2px); }
+.fu-time img.fu-clock + img.fu-clock { margin-left: calc(var(--c) * -1.7px); }
+.card .num img.fu-big { width: calc(var(--k) * 13.7px); height: calc(var(--k) * 18.2px); object-fit: fill; }
+.card .num img.fu-big + img.fu-big { margin-left: calc(var(--k) * -0.7px); }
 .fu-hint { position: absolute; left: 50%; bottom: calc(var(--safe-b) + 14%); transform: translateX(-50%);
   padding: 6px 14px; border-radius: 16px; background: rgba(0, 0, 0, 0.5); color: #fff; font-weight: 700;
   font-size: 15px; white-space: nowrap; text-shadow: 0 1px 2px #000; }

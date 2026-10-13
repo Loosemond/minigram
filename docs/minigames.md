@@ -110,7 +110,7 @@ wobble that dies away. Once the countdown's over GO is squeezed away, its width
 | Gutsy Golbat | 25 | `0x0F06`, `0x0F07` | at GO, song 13 (`0x861095AC`) |
 | Topsy-Turvy | 20 | `0x2F00`, `0x2F01` | when the countdown's over, a step after GO (`0x8600674C`), song 33 then (`0x860075A8`) |
 | Clear Cut Challenge | 20 | `0x1F0D`, `0x1F0E` (and the crowd `0x1B06` for 140 frames at GO) | at GO (`0x86508B94`); song 18 30 frames into each log |
-| Furret's Frolic | 20 | `0x2F00`, `0x2F01` | at GO, song 47 (`0x86204FB4`) |
+| Furret's Frolic | 20 (it never calls `0x87F00020`: `0x86202EF8` is its only countdown call, `0x87F00030`) | `0x2F00`, `0x2F01` | at GO, song 47 (`0x86204FB4`) |
 | Barrier Ball | 20 | `0x2F00`, `0x2F01` | at GO, song 35 (`0x863036A4`) |
 | Pichu's Power Plant | 20 | `0x2F00`, `0x2F01` | at GO, song 21 (`0x866049B4`) |
 | Rampage Rollout | 20 | `0x5F07`, `0x5F08` | at GO; song 34 31 frames on (`0x86406994`: `0x86408CA0(34, 30)`, which starts it once its count's past 30) |
@@ -157,7 +157,7 @@ audits of each module; `0x87F0A098`'s callers):
 |---|---|---|
 | Gutsy Golbat | when the first loser lands, 28-88 frames after the scroll stops, 37 mostly (`0x86100874`); at once if all four have the same (`0x861008E8`) | faded over 40 frames as it stops (`0x86109404`) |
 | Barrier Ball | 8 frames after the end (`0x863024A8`) | plays on |
-| Furret's Frolic | after the 40-frame fade at the time-up (`0x8620392C`, `0x86204A9C`) | faded |
+| Furret's Frolic | the frame the time's up: `0x8620392C` always returns 1 (`0x86203A94`), so `0x86204A9C` sets state 5 and calls `0x87F0A098` then (`0x86204CD8`-`0x86204D74`); the show goes on under it | faded over 40 frames that frame (`0x86203A10`), and song 55 or 56 takes its place at once (the same sequence player: the fade's cut short) |
 | Pichu's Power Plant | 130 frames after the finish (`0x8660429C`) | plays on |
 | Rampage Rollout | when the race's end is called (`0x8640633C`, `0x8640687C`) | plays on |
 | Streaming Stampede | 2 frames after the last points are in (`0x8690A5AC`, `0x8690B89C`) | plays on (song 32; song 55 takes its place) |
@@ -2577,8 +2577,17 @@ on the left, goal 3 (blue) at the bottom (`0x862017F8`, `0x86201790`). 1P's
 is goal 3, 2P's 1, 3P's 2, 4P's 0 (`0x862028F0`). The camera looks from 2708
 away at (56, 47, 56), 0x2000 round (45°) and 0x23E1 down (50.5°:
 `0x87F0C094`), with a fov of 30; the frame is cleared to `0xA579` (165, 173,
-231, a light blue); two lights, white and grey, at angles from the camera's
-(`0x86200794`, `0x862007FC`), and grey all round (0xA0).
+231, a light blue). **Its lights** (the layout `0x86208038`, as Delibird's
+Delivery's): `A0A0A0` all round (`16A0A0A0`) and two light nodes (geo
+`0x14`: `14000000 002D0019 FFFFFF28`, white, and the same with `808080`,
+grey) whose angles the game sets from the camera's every frame (`0x86200794`,
+`0x862007FC`: the eye's pitch over where it looks and its yaw, `0x80037200`;
+the white one at pitch + 0x2000 and yaw − 0x2000, the grey one at −0x2000 −
+pitch and yaw + 0x6000). A node's way (`0x8003AE84`) is (sin yaw × cos
+pitch, sin pitch, cos yaw × cos pitch), towards the light: from the play's
+camera the white one is almost straight above and the grey one low in front,
+and both go round with the end's camera. The shade is the ambient and the
+lights' N·L, held to 1.
 
 **The balls** (`0x86204A9C`, each frame): a counter goes to 11, then, with
 fewer balls than wanted and time left, one comes: its points by (a random
@@ -2609,7 +2618,9 @@ radius and moved more than 55 that frame).
 hollow and those at (±282.84, ±282.84), each 135 behind its spot from its
 goal (`0x862055F0`: 18 × 5 × SO SC × SO POS), facing it; they start on the
 spot across the middle from their goal, popping up (clip 0) through the
-countdown, and can move once they're standing (clip 1). The D-pad (`0x862070B0`,
+countdown (they're made, `0x86206334`, the frame it starts, `0x86204EB8`:
+`0x87F00688`; GO is 80 frames on, so clip 0, 24 frames going round, is at
+frame 8 at GO, and the play's first frame shows 9), and can move once they're standing (clip 1). The D-pad (`0x862070B0`,
 `0x86206EF8`: left, then right, up, down; none the middle) picks a spot:
 D-right the hollow on the screen's right, (282.84, −282.84), and so on. To a
 new spot it hops (`0x86205C8C`: clip 5, then on its last frame it's there and
@@ -2637,22 +2648,59 @@ the best of them; the spots shuffled a little and sorted, and the one of its
 rank, if it's worth more than its least; else the middle, and it tries again
 next frame. It holds the spot, and after its delay swings.
 
-**The end** (`0x8620392C`): the most points win; all four level, nobody.
-The winners hop back to the middle and, once all of them are there, cheer
-(layout 1, clip 3; a cry, 0xBF04, at its frame 69, twice); the others sulk
-(layout 1, clip 4; `0x86205F34`, `0x86203DE8`). The camera moves over 60
-frames to 1400 away and 45° down, looking past the middle, and then goes round
-(`0x86203D50`: 0x2E a frame).
+**The end** (`0x8620392C`, the frame the clock goes below 0:
+`0x86204CD0`): the most points win; all four level, nobody. That frame it
+fades song 47 over 40 frames (`0x800225B4(0x28)`), starts the camera's move
+(`0x87F0C358`) and returns 1, and `0x86204A9C` sets state 5 and starts module
+#64's results (`0x87F0A098`: the banner and song 55 and `0xCA0F`, or song 56
+and the crowd), which start a song on the same player at once. In state 5
+(`0x86203ED8`) the results run (`0x87F0A3E8`) and the show goes on under them
+(`0x86203DE8`, `0x86203C58`: the step, three a frame); in state 6, the menu
+after A (`0x87F02104`), only the camera goes on. The winners hop back to the
+middle and, once all of them are there, cheer (layout 1, clip 3); the others
+sulk (layout 1, clip 4; `0x86205F34`, `0x86203DE8`). Starting each, the show
+writes the clip's loop-start frame into its header (`0x86205FE8`: the
+model's +0x44, its header, `0x8003EC04`; +6, which `0x8003E7BC` goes back to
+past the last frame, `0x8003E830`): the cheer goes round from frame 66
+(0x42), the sulk from 116 (0x74), not from 0. A cheering Furret (species
+0xA2: `0x86206034`) cries out, `0xBF05` placed by where it is
+(`0x86206088`: `0x800277E0`), as the clip comes to frame 69
+(`0x8003EC84(model, 0x45)`), on the first of every three steps while its
+count's under 6: so twice, 36 frames apart (69, then 66-101 and round). The
+camera moves over 60 frames to 1400 away and 45° down, looking past the
+middle, and then goes round (`0x86203D50`, in states 5 and 6: 0x2E a frame).
 
 **What's drawn**: the field; the Furret (scale 0.4); each ball (object 153's
-layout by its points, scale 0.6 × its size), rolling, and its shadow (image
-bank 307's dot, black at 128) on the field under it (`0x86201620`); each
-player's label (image bank 260: 1P-4P, or COM) above its Furret's tail
-(`0x86205500`); each player's badge (image bank 434) over its goal, on the
-field's attachments 1-4, tilted to the camera (`0x86207874`), at 0x96 alpha
-(its env's, `0x86207760`: layer 9); at the top the
-badges and points (`0x862040AC`: digits in each player's colours), and at the
-bottom right the seconds left (rounded up). The song is 47 (sequence 86), from
+layout by its points, scale 0.6 × its size) and its shadow (image bank 307's
+dot, black at 128) on the field under it (`0x86201620`). A ball rolls
+(`0x86203B08`, each step): module #65's `0x87D00354` turns its matrix about
+the level line across the way it went that step (up × the move,
+`0x80035A80`, made a unit long) by its move across the ground taken as
+degrees (`0x87D00020`: × 0.0174533), whatever its size. Its glint (a joint
+whose geo `0x1D` has flag 2, in all four layouts) is drawn at the camera's turn, so it's
+always at the ball's upper left, in front (an IA8 16 × 16 picture, blended).
+Each player's label (image bank 260: 1P-4P, or COM) above its Furret's tail
+(`0x86205500`). Each player's badge (image bank 434: picture 6 + the player
+for a person, 2 + the player for a COM, `0x86203234`) over its goal, on the
+field's attachments 1-4, 1 up (`0x86207650`), scaled 9, tilted −0x3777 and
+turned the way its player's Furret faces: 0x2000, 0x6000, −0x2000 and
+−0x6000 for 1P-4P (`0x86207874`), so in the game's view only 1P's reads
+upright; drawn in layer 9 through `FCFFD3FF FFFCFE38` (its colour the
+texel's, its alpha the env's × the texel's) with the env's alpha 0x96
+(`0x86207760`), so 59 % opaque. The HUD (`0x862040AC`): at the top each
+player's badge (bank 434 at 0.8, x 28, 97, 166, 235) and points in module
+#64's big digits (`0x86203F50` → `0x87F06240`: bank 429 through `FC30B261
+5566FF7F` at 0.57, 13 apart, in the player's prim and env: 1P `00009B` and
+`AAF5FF`, 2P `006400` and `C8FF9B`, 3P `780000` and `FFA0BE`, 4P `D25A00`
+and `FFFF8C`); at the bottom right the seconds left, rounded up, in the same
+digits at 0.82, prim `C8FF73` and env `004600` whatever's left (x 244, or
+235 and 253; y 192), and no caption. A placed sound's pan is where the
+thing is across the screen: each frame `0x87C037C0` (`0x8620500C`) builds
+the view's matrix with the screen's x × 64 at W + 0x73CC4, and `0x87C03B60`
+puts trunc(x ÷ w), held to ±127, in the ball's byte (its +0x38, in its
+update, `0x86201CE8`) or the Furret's (+0x18, `0x862061E4`): the swing
+(`0xBF00`) by the Furret, the bat (`0xBF01`, `0x8620581C`) by the ball, each
+landing (`0xBF03`, `0x86200C18`, every time one asks) by the ball. The song is 47 (sequence 86), from
 GO (`0x86204F20`); in the last 30 s it speeds up (`0x80028108(11)`: a beat a
 minute faster every 15 frames, to 30); the count is Pichu's Power Plant's
 (0x2F00, 0x2F01), and the last three seconds the shared one (0xCF00, 0xCF06 at
@@ -2662,8 +2710,9 @@ up, 1 standing, 2 a swing, 3 a cheer, 4 sulking, 5 a hop and 6 landing (5 and
 Furret in a bush (183) for each player.
 
 **The states** (`0x86204FEC`): 0 and 1 the instructions, 2 the fade in (the
-Furret pop up), 3 the countdown (`0x87F006BC`: GO at frame 80, 2.67 s, above), 4 the
-play, 5 the end, 6 and 7 the results and the menu after.
+Furret pop up), 3 the countdown (`0x87F006BC`, a step of 20: GO at frame 80,
+2.67 s, above), 4 the play, 5 the end and module #64's results over the
+show, 6 the menu after A (the camera still going round), 7 the next.
 
 The browser remake runs this world on every device and on the server, from
 everyone's pads (the CPUs think in it) ([web/README.md](../web/README.md#furrets-frolic)).

@@ -747,14 +747,15 @@ SOUNDS = {
         "go": _sound(0x14, 100, 5, 0x0100, sfx=[17]),  # 0x2F01
     }),
     # Furret's Frolic asks for song 47 (sequence 86) at GO. Its effects are
-    # bank 11's (0xBFxx), placed by where they happen; its count and GO are
-    # Pichu's Power Plant's (0x2F00, 0x2F01)
+    # bank 11's (0xBFxx), placed by where they happen (the cry is 0xBF05:
+    # 0x86206088; 0xBF04 isn't asked for); its count and GO are Pichu's Power
+    # Plant's (0x2F00, 0x2F01)
     "furret": ({"main": 86, "win": 94}, {
         "swing": _sound(0x74, 100, 1, 0x0001),  # 0xBF00, a Furret swings its tail
         "shot": _sound(0x75, 110, 1, 0x0030),  # 0xBF01, and bats a ball
         "goal": _sound(0x76, 120, 1, 0x00C0),  # 0xBF02, a ball over a goal's line
         "bounce": dict(_sound(0x64, 125, 1, 0x0001), pitch=2.0),  # 0xBF03, a ball lands hard
-        "cheer": _sound(0x78, 80, 1, 0x0030),  # 0xBF04, a winner's cry at the end
+        "cheer": _sound(0x79, 110, 1, 0x0001),  # 0xBF05, a winner's cry at the end (frame 69 of its cheer, twice)
         **SHARED,
         "lastCount": SHARED["count"],
         "lastGo": SHARED["go"],

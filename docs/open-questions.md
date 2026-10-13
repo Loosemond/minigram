@@ -74,17 +74,20 @@ What isn't known yet, roughly by how useful it would be.
   `0x86004544` (a RAPID SPIN's charge, by its look), which nothing calls; and
   the instructions' show (`0x860057D0`), which the remake leaves out.
 - **Furret's Frolic's loose ends** (its rules are read: [minigames.md](minigames.md#furrets-frolic)):
-  the Furret's popping up (the countdown is module #64's, 20 frames a count
-  and GO at 80, so a clip started with it is at frame 80 at GO, not 0: which
-  frame the game starts it at wasn't traced); the size of the labels over the Furret and the badges over the goals
+  the size of the labels over the Furret and the badges over the goals
   (the game scales the badges' 200-unit quad by 9, too big to be the units
   the remake has, so it picks a size; and the labels are drawn by module #64,
-  not read); the lights' ways (worked out from the camera's angles at
-  `0x86200794` and `0x862007FC`; the remake places them by eye); the balls'
-  roll (`0x87D00354` turns each ball by how it moved: the remake turns it by
-  the same rule, not that code); Girafarig, whom the code loads for a Game
-  Pak's Girafarig (the remake has Furret for all); and the instructions' show
-  (a Furret in a bush for each player), which the remake leaves out.
+  not read: `0x87F08DF8` → `0x87F08280` wasn't followed); the frame the Furret
+  show at GO rests on the draw that makes them showing clip 0's first frame
+  (`0x8003EBDC` sets "the frame it shows next" to it), which wasn't watched
+  running; the effect table's byte 12 and the top of its flags byte (`0xBF00`
+  `0x43`, `0xBF03` `0xD3`: a random pitch, `0x80026980`, which the remake
+  doesn't play); how the balls' fade at the end (object +0x41) is drawn (the
+  remake fades all their materials); the balls' roll, which the game turns a
+  step at a time and the remake by where it's drawn (the same angle a unit,
+  about the same line); Girafarig, whom the code loads for a Game Pak's
+  Girafarig (the remake has Furret for all); and the instructions' show (a
+  Furret in a bush for each player), which the remake leaves out.
 - **Delibird's Delivery's loose ends** (its rules are read: [minigames.md](minigames.md#delibirds-delivery)):
   how the save's flags that swap in the Game Boy Advance and the GameCube
   get set (module #63's `0x87E07CB0` and `0x87E07C90` set them, reached

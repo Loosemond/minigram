@@ -83,7 +83,7 @@ function topsyPad(z, t, w) {
 // Furret's Frolic: a round with seats 0 and 2 on furretPad() and two CPUs (normal, hard, easy), the world's
 // digest() every 100 frames (the hard one to its end and the show after, the others 600 frames), the end,
 // the points and the places: the same as JS_FURRET in tools/test_rooms.py
-const FURRET = { 1: "71f7890a4652fb1b", 157: "5d54951a1f163b23", 2147483647: "1c343168cb41c113" };
+const FURRET = { 1: "d8bba6ac13cb2e76", 157: "8a791b70fad491c7", 2147483647: "1feb9cfed6ca125d" };
 const FURRET_LEVEL = { 1: "normal", 157: "hard", 2147483647: "easy" };
 // (seat 0 at the first ball's hollow, a swing now and then; seat 2 a pattern)
 function furretPad(z, t, w) {
@@ -1692,10 +1692,17 @@ await test("Furret's Frolic: a solo round, played headless: it ends on the clock
       assert(g.state === "over" && end === R.TIME && g.frame >= end + AFTER, `${level}: ${g.state}, the end at ${end}`);
       assert(res.every((r) => r.score === s[r.i]) && res.every((r, k) => !k || res[k - 1].score >= r.score), `${level}: results ${JSON.stringify(res)} for ${s}`);
       assert(g.winners.every((w, z) => w === (s[z] === Math.max(...s) && !s.every((x) => x === s[0]))), `${level}: winners ${g.winners} for ${s}`);
-      // (the winners hop to the middle and cheer; the others sulk)
+      // (the show goes on under the results: the winners hop to the middle and cheer, crying out on its frame 69
+      // and again as it comes round from 66, 36 frames on; the others sulk)
+      const cries = [[], [], [], []];
+      g.listeners = { cheer: [(z) => cries[z].push(g.lastFrame)] };
+      for (let k = 0; k < 240; k++) g.update(1 / 30);
+      g.listeners = {};
       const clips = g.world.p.map((p) => p.f.clip);
+      assert(g.world.t >= end + 239, `${level}: the show stopped at frame ${g.world.t}`);
       assert(g.world.p.every((p, z) => clips[z] === (g.winners[z] ? R.CLIP.cheer : R.CLIP.sad) && (!g.winners[z] || p.f.spot === 0)),
-        `${level}: at the end their clips are ${clips} for winners ${g.winners}`);
+        `${level}: in the show their clips are ${clips} for winners ${g.winners}`);
+      assert(cries.every((c, z) => (g.winners[z] ? c.length === 2 && c[1] - c[0] === 36 : !c.length)), `${level}: the cries ${JSON.stringify(cries)}`);
       out.push(`${level}: ${s.join(", ")}`);
     }
   } finally {
@@ -1760,7 +1767,8 @@ await test("Furret's Frolic: Play again has the first round's camera (the end's 
       play(W, H, 1);
       const first = camera();
       g.start();
-      for (let k = 0; g.state === "play" && k < 3000; k++) api.step(1 / 30); // (to the end, and its show)
+      for (let k = 0; g.state === "play" && k < 3000; k++) api.step(1 / 30); // (to the end)
+      for (let k = 0; k < 90; k++) api.step(1 / 30); // (and its show, under the results)
       const end = camera();
       play(W, H, 2);
       const second = camera();

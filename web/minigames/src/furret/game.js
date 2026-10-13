@@ -13,6 +13,11 @@
 // the D-pad as they did and didn't press A, and runs again from a saved frame
 // when one comes in (the balls eased to where they really are). The server
 // runs the same world and says how it ended (told("won")).
+//
+// The world runs 30 frames a second; the scene is drawn between its last two
+// frames (a frame behind), so the balls, their roll, the Furret's clips and
+// the labels move every drawing; the camera's end and the glints go by the
+// clock, and the show goes on under the results.
 import * as THREE from "three";
 import { makeModel } from "./assets.js";
 import * as R from "./rules.js";
@@ -20,8 +25,10 @@ import { leadFor } from "../lag.js";
 import { faceOnRender } from "../facing.js";
 import { makeBadge } from "../badge.js";
 
-// frames after the play's over before the round is (the winners hop to the middle and cheer)
-export const AFTER = 120;
+// frames after the play's over before the round is: none. The frame the time's up 0x8620392C fades
+// the song over 40 frames and 0x86204A9C hands over to module #64's results (its banner and song,
+// which cut the fade short); the show goes on under them (state 5: 0x86203ED8)
+export const AFTER = 0;
 // the camera (0x87F0C094: from its look-at point, dist away, pitch down and yaw round; 65536 to a turn)
 const ANG = (a) => (a / 65536) * Math.PI * 2;
 function eyeFrom(at, dist, pitch, yaw) {
@@ -38,19 +45,22 @@ const SMOOTH = 0.88; // a corrected ball's ease to where it is, a 60th of a seco
 const FURRET = 0.4; // Furret's scale (0x862055F0: 0.4 "SO SC")
 const LABEL_UP = 180; // the label over a Furret, above its tail's tip (0x86205500)
 const LABEL = [96, 48]; // (its size: made for the remake)
-// the badges over the goals (0x86207874: on the field's attachments 1-4, tilted to the camera), by goal
+// the badges over the goals (0x86207874: on the field's attachments 1-4, tilted -0x3777 and turned the
+// way its player's Furret faces, 0x2000, 0x6000, -0x2000, -0x6000 for 1P-4P), by goal
 const BADGE_AT = [[-460, 64, -460], [457, 64, -462], [-462, 64, 457], [460, 64, 460]];
 const BADGE = [150, 117]; // (their size: made for the remake, the badges' 36 x 28)
 const BADGE_A = 0x96 / 255; // (their env alpha: 0x86207760)
 const SHADOW_A = 0x80 / 255; // a ball's shadow (0x862014B8: the dot, black at 128)
-// each player's colours (0x862040AC: their points' digits)
-export const COLOURS = [0x5f7dff, 0x50d050, 0xff6464, 0xffd23c];
+const ROLL = Math.PI / 180; // a ball turns a degree for each unit it goes across (0x87D00354)
+const lerp = (a, b, k) => a + (b - a) * k;
 
 export class Game {
   constructor(scene, assets) {
     this.scene = scene;
     this.assets = assets;
     this.listeners = {};
+    this.placeOf = () => 0; // where a place is across the screen, for its sound (index.js: 0x87C03B60)
+    this.toGo = () => null; // s till GO (the shell's)
     const add = (o) => { scene.add(o); return o; };
     faceOnRender(scene); // (the balls' glint: its joint drawn facing the camera, however the ball rolls)
     // the field
@@ -73,11 +83,13 @@ export class Game {
       v.label.renderOrder = 5;
       return v;
     });
-    // the badges over the goals
-    this.badges = [0, 1, 2, 3].map(() => {
+    // the badges over the goals (its player's: in the game's view only 1P's reads upright, in the
+    // remake's, turned for each player, your own does)
+    this.badges = [0, 1, 2, 3].map((goal) => {
       const m = add(makeBadge(assets.badges, { size: BADGE, opacity: BADGE_A, flat: true, renderOrder: 2 }));
       m.rotation.order = "YXZ";
       m.rotation.x = ANG(-0x3777);
+      m.rotation.y = ANG(R.YAW[goal]);
       return m;
     });
     // the balls (made as they come) and their shadows
@@ -120,8 +132,7 @@ export class Game {
     this.winners = null;
     this.tempoN = 0;
     this.lastSecond = null;
-    this.bounceAt = {}; // (each ball's last bounce sound)
-    this.before = null; // where the balls were before the last frame (to draw between)
+    this.before = null; // the world as it was before the last frame (to draw between: drawn())
     this.offsets = new Map(); // a corrected ball's offset, easing away
     for (const [, v] of this.balls) this.drop(v);
     this.balls.clear();
@@ -199,7 +210,8 @@ export class Game {
     this.world.load(state);
     this.simT = at - 1;
   }
-  positions() { return new Map(this.world.balls.map((b) => [b.id, [...b.pos]])); }
+  // each ball's place, and how see-through (its alpha: it fades at the end)
+  positions() { return new Map(this.world.balls.map((b) => [b.id, [...b.pos, b.alpha]])); }
   // run the world up to frame t
   runTo(t) {
     const w = this.world;
@@ -209,7 +221,7 @@ export class Game {
         this.snaps.push([f, w.save()]);
         while (this.snaps.length > 2 && this.snaps[1][0] < f - KEEP) this.snaps.shift();
       }
-      if (f === t) this.before = this.positions();
+      if (f === t) this.before = this.drawn();
       w.step(f, [0, 1, 2, 3].map((z) => (this.cpus[z] ? null : this.padAt(z, f))));
       this.simT = f;
       if (f > this.shownT) { this.sounds(f); this.shownT = f; }
@@ -226,21 +238,19 @@ export class Game {
       }
     }
   }
-  // frame f's sounds (once each), the last seconds and the tune's hurry
+  // frame f's sounds (once each), the last seconds and the tune's hurry. Each placed sound goes by
+  // where its ball or Furret is across the screen (0x87C03B60): a ball's landing every time it
+  // asks (0x86200AD4), the bat by the ball (0x8620581C), a swing and a cry by the Furret
   sounds(f) {
-    const w = this.world;
+    const w = this.world, ball = (id) => w.balls.find((x) => x.id === id);
     for (const e of w.events) {
       const [what, z] = e;
       if (what === "end") { this.emit("over"); continue; }
       if (what === "spawn") continue;
-      if (what === "bounce") {
-        const b = w.balls.find((x) => x.id === z);
-        if (b && !(f - (this.bounceAt[z] ?? -99) < 4)) { this.bounceAt[z] = f; this.emit("bounce", this.pan(b.pos)); }
-        continue;
-      }
+      if (what === "bounce") { const b = ball(z); if (b) this.emit("bounce", this.placeOf(b.pos)); continue; }
       if (what === "goal") { this.emit("goal", z, e[3]); continue; }
-      if (what === "shot") { this.emit("shot", z, this.pan(w.p[z].f.pos)); continue; }
-      this.emit(what, z, this.pan(w.p[z].f.pos)); // (swing, cheer)
+      if (what === "shot") { this.emit("shot", z, this.placeOf((ball(e[2]) || w.p[z].f).pos)); continue; }
+      this.emit(what, z, this.placeOf(w.p[z].f.pos)); // (swing, cheer)
     }
     if (!w.over) {
       // the clock's last three seconds (0xCF00), and its 0 (0xCF06: the time's up)
@@ -256,8 +266,6 @@ export class Game {
       }
     } else if (w.end === f) this.emit("sound", "lastGo");
   }
-  // a sound's pan: where it is across the screen
-  pan(p) { return Math.round(64 + Math.max(-63, Math.min(63, ((p[0] - p[2]) / 2 / 1400) * 63))); }
 
   // ---- the round, frame by frame ----
   update(dt) {
@@ -269,7 +277,12 @@ export class Game {
       this.runTo(this.lastFrame); // (after a pad that came in late)
       const end = this.endFrame();
       if (end !== null && this.frame >= end + AFTER) { this.stop(); this.emit("finish"); }
-    } else if (this.state === "over") this.time += dt;
+    } else if (this.state === "over") {
+      this.time += dt;
+      this.runTo(this.lastFrame); // (after a pad that came in late)
+      // (the show, under the results: the winners hop to the middle and cheer, the others sulk)
+      for (let t = this.lastFrame + 1; t <= this.frame && this.world.over; t++) { this.runTo(t); this.lastFrame = t; }
+    }
     const ended = this.world.end !== null || (this.result && this.lastFrame >= this.result.f);
     if (ended && this.endAt === null) this.ending();
     this.animate(dt);
@@ -314,26 +327,42 @@ export class Game {
   animate(dt) {
     const k = Math.pow(SMOOTH, dt * 60);
     for (const o of this.offsets.values()) { o[0] *= k; o[1] *= k; o[2] *= k; }
-    const between = this.state === "play" ? Math.max(0, Math.min(1, this.time * R.FPS - this.lastFrame)) : 1;
+    const on = this.state === "play" || this.state === "over";
+    const between = on ? Math.max(0, Math.min(1, this.time * R.FPS - this.lastFrame)) : 1;
     this.draw(between, dt);
   }
 
+  // what's drawn between frames: the balls' places, and each Furret's clip, its frame, its layout, its place and its tail's tip
+  drawn() {
+    return { balls: this.positions(),
+      furret: this.world.p.map(({ f }) => ({ clip: f.clip, frame: f.frame, layout: f.layout, pos: [...f.pos], tail: [...f.tail] })) };
+  }
+
+  // the scene between the world's last two frames (between: 0 the one before, 1 the last)
   draw(between, dt = 0) {
     const w = this.world, before = this.before;
     // the Furret (where the world has them: they hop from spot to spot as their clips land)
     w.p.forEach((p, z) => {
-      const v = this.furret[z], f = p.f, end = f.layout === 1;
+      const v = this.furret[z], f = p.f, end = f.layout === 1, was = before?.furret[z];
       v.play.root.visible = !end;
       v.end.root.visible = end;
       const m = end ? v.end : v.play;
-      m.root.position.set(...f.pos);
       m.root.rotation.y = ANG(R.YAW[p.goal]);
-      // its clip: before GO popping up (its clip 0 going round), then the world's, between frames
-      let frame = f.frame + 1 + (this.state === "play" ? between - 1 : 0);
-      if (this.state === "ready" || this.state === "idle") frame = (this.clockS * R.FPS) % R.CLIP_LEN[R.CLIP.up];
-      const hold = f.clip === R.CLIP.hop || f.clip === R.CLIP.land;
-      m.pose(f.clip, Math.max(0, Math.min(frame, R.CLIP_LEN[f.clip] - (hold ? 1 : 0))), hold);
-      v.label.position.set(f.tail[0], f.tail[1] + LABEL_UP, f.tail[2]);
+      // its clip: before GO popping up (clip 0 going round from the countdown's start, as the game makes them
+      // then), then the world's between its last two frames: the same clip on (or round), or from the one
+      // before to the one after (both posed, weighed); its place and its tail's tip between the two
+      const same = was && was.layout === f.layout, last = R.CLIP_LEN[f.clip] - 1;
+      const at = same ? [0, 1, 2].map((k) => lerp(was.pos[k], f.pos[k], between)) : f.pos;
+      const tip = same ? [0, 1, 2].map((k) => lerp(was.tail[k], f.tail[k], between)) : f.tail;
+      m.root.position.set(...at);
+      if (this.state === "ready" || this.state === "idle") {
+        const s = this.state === "ready" ? this.toGo() : null, n = R.CLIP_LEN[R.CLIP.up];
+        m.pose(R.CLIP.up, s === null ? (this.clockS * R.FPS) % n : (((R.COUNTDOWN - s * R.FPS) % n) + n) % n);
+      } else if (same && was.clip === f.clip && (f.frame === was.frame || f.frame === was.frame + 1 || (was.frame === last && f.frame === R.LOOP[f.clip]))) {
+        m.pose(f.clip, lerp(was.frame, f.frame < was.frame ? last + 1 : f.frame, between));
+      } else if (same) m.pose(was.clip, was.frame, f.clip, f.frame, between); // (another clip, or its swing again)
+      else m.pose(f.clip, f.frame); // (its other layout, the show's: at once, as the game)
+      v.label.position.set(tip[0], tip[1] + LABEL_UP, tip[2]);
       v.label.visible = !w.over;
     });
     // the balls: rolling on the field, a shadow under each while the clock runs (0x86201620)
@@ -347,21 +376,22 @@ export class Game {
         this.balls.set(b.id, v);
         v.at = null;
       }
-      const was = before?.get(b.id) || b.pos, o = this.offsets.get(b.id) || [0, 0, 0];
+      const was = before?.balls.get(b.id) || [...b.pos, b.alpha], o = this.offsets.get(b.id) || [0, 0, 0];
       const x = was[0] + (b.pos[0] - was[0]) * between + o[0];
       const y = was[1] + (b.pos[1] - was[1]) * between + o[1];
       const zz = was[2] + (b.pos[2] - was[2]) * between + o[2];
-      // (rolling: turned about the level line across its way, as far as it went over its radius)
+      // (rolling, 0x86203B08: turned about the level line across its way, a degree for each unit it went
+      // across, whatever its size; the game turns it each step, the remake as it's drawn)
       if (v.at) {
         const dx = x - v.at[0], dz = zz - v.at[2], d = Math.hypot(dx, dz);
         if (d > 0.01 && d < 400) {
-          const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(dz / d, 0, -dx / d), d / R.RADIUS[b.kind]);
+          const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(dz / d, 0, -dx / d), d * ROLL);
           v.model.root.quaternion.premultiply(q);
         }
       }
       v.at = [x, y, zz];
       v.model.root.position.set(x, y, zz);
-      v.model.fade(b.alpha / 255);
+      v.model.fade(lerp(was[3], b.alpha, between) / 255);
       const g = w.left > 0 ? R.groundY(x, zz) : null;
       v.shadow.visible = g !== null && y - g < 2000;
       if (v.shadow.visible) v.shadow.position.set(x, g + 6, zz);
@@ -391,15 +421,11 @@ export class Game {
     this.spare[v.kind].push(v);
   }
 
-  // the view turned to yaw (65536 to a turn: the game's is 0x2000, 1P's goal at the bottom); the
-  // badges turned with it, to read
-  turn(yaw) {
-    this.yaw = yaw;
-    for (const m of this.badges) m.rotation.y = ANG(yaw); // (their tops away from the camera)
-  }
-  // the camera's place now: the game's in the play (turned); at the end, closer and going round (0x86203D50).
-  // play: the play's place whatever the round's at (the view's framed by it, and a layout can come
-  // while the last round's end is still on)
+  // the view turned to yaw (65536 to a turn: the game's is 0x2000, 1P's goal at the bottom)
+  turn(yaw) { this.yaw = yaw; }
+  // the camera's place now: the game's in the play (turned); at the end, closer and going round (0x86203D50,
+  // in states 5 and 6: under the results too). play: the play's place whatever the round's at (the view's
+  // framed by it, and a layout can come while the last round's end is still on). Where it looks, back
   camera(cam, play = false) {
     const r = Math.hypot(AT[0], AT[2]), a = ANG(this.yaw);
     let at = [Math.sin(a) * r, AT[1], Math.cos(a) * r], eye = eyeFrom(at, DIST, PITCH, this.yaw);
@@ -413,6 +439,7 @@ export class Game {
     }
     cam.position.set(...eye);
     cam.lookAt(...at);
+    return at;
   }
 
   // ---- the end ----

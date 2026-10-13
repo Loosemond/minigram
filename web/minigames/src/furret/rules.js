@@ -89,6 +89,13 @@ const TAIL = [
 export const CLIP = { up: 0, stand: 1, swing: 2, cheer: 3, sad: 4, hop: 5, land: 6 };
 export const CLIP_LEN = [24, 24, 29, 102, 129, 5, 7];
 const HOLD = [false, false, false, false, false, true, true];
+// the frame a clip that goes round goes back to (its header's +6: 0x8003E7BC). Its own are 0, but
+// the show writes the cheer's as 66 and the sulk's as 116 (0x86205FE8, 0x86206190)
+export const LOOP = [0, 0, 0, 0x42, 0x74, 0, 0];
+// GO comes 80 frames after the Furret pop up (module #64's countdown, a step of 20: they're made,
+// 0x86206334, as it starts, 0x86204EB8): clip 0 is at frame 80 % 24 at GO, and the play's first
+// frame is the one after
+export const COUNTDOWN = 4 * 20;
 
 // The CPUs (0x862026C8): their skills, by the COM level (the first ones go
 // to the CPUs, shuffled); and what each skill does (0x86206D20)
@@ -243,7 +250,7 @@ const setFrame = (f, k) => { f.frame = k - 1; };
 const atLast = (f) => f.frame >= CLIP_LEN[f.clip] - 1; // (0x8003ED14)
 function advance(f) {
   f.frame++;
-  if (f.frame >= CLIP_LEN[f.clip]) f.frame = HOLD[f.clip] ? CLIP_LEN[f.clip] - 1 : 0;
+  if (f.frame >= CLIP_LEN[f.clip]) f.frame = HOLD[f.clip] ? CLIP_LEN[f.clip] - 1 : LOOP[f.clip];
 }
 
 // One round's world. cpus: which seats are CPUs; step() runs a frame from the
@@ -267,8 +274,8 @@ export class World {
     this.p = [0, 1, 2, 3].map((z) => ({
       z, cpu: !!cpus[z], goal: GOALS[z], score: 0, won: false, arrived: false, cheer: false,
       skill: 0, ai: { state: 0, timer: 0, held: 0 },
-      // its Furret (0x86206334): on its spot, popping up (the countdown's 120 frames: its clip's at frame 0 at GO)
-      f: { spot: 0, target: 0, pos: [0, 30, 0], tail: [0, 0, 0], clip: CLIP.up, frame: 0, counter: 0,
+      // its Furret (0x86206334): on its spot, popping up through the countdown (its clip at frame 8 at GO)
+      f: { spot: 0, target: 0, pos: [0, 30, 0], tail: [0, 0, 0], clip: CLIP.up, frame: COUNTDOWN % CLIP_LEN[CLIP.up], counter: 0,
         frozen: true, swing: false, redirect: false, hit: false, layout: 0, cry: 0 },
     }));
     for (const p of this.p) {
