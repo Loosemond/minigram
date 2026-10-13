@@ -135,45 +135,30 @@ i.egg {
 .ee-points img { height: clamp(22px, 5vh, 36px); }
 .game-hud.off .ee-pads { display: none; }
 
-/* Streaming Stampede: the question board (UI layout 133, on the game's 640 x
-   480 layout grid: --u, pixels a unit), its cards' words and pictures (image
-   banks 416, 412-414, the icons), "Let's count ..." and "Stop!", the counts
-   over the booths in portrait, and the Count pad */
+/* Streaming Stampede: its cards (UI layouts 125-131 and 133, on the game's
+   320 x 240 screen: here its 640 x 480 grid, 2 units a pixel; --u, pixels a
+   unit), their words and pictures (image banks 412-416, the icons) coloured
+   as the game's combiner makes them (index.js), "Let's count ...", "Stop!",
+   the counts over the booths in portrait, and the Count pad */
 .ss-screen { position: absolute; width: calc(640 * var(--u)); height: calc(480 * var(--u)); --u: 1px; }
-.ss-screen img, .ss-board div, .ss-board i { position: absolute; display: block; }
-.ss-board { position: absolute; inset: 0; will-change: transform, opacity; --x: 82; --w: 477; --top: 113; --bottom: 426; --chain: 713; }
-.ss-board .chain { top: calc((var(--top) - var(--chain)) * var(--u)); width: calc(16 * var(--u)); height: calc(var(--chain) * var(--u)); margin-left: calc(-8 * var(--u));
-  background: url(assets/stampede/chain.png) center bottom / calc(16 * var(--u)) calc(25 * var(--u)) repeat-y;
-  -webkit-mask-image: linear-gradient(transparent, #000 60px); mask-image: linear-gradient(transparent, #000 60px); }
-.ss-board .chain.left { left: calc((var(--x) + 3) * var(--u)); }
-.ss-board .chain.right { left: calc((var(--x) + var(--w) - 21) * var(--u)); }
-.ss-board .rod { left: calc((var(--x) - 16) * var(--u)); width: calc((var(--w) + 32) * var(--u)); height: calc(16 * var(--u)); border-radius: calc(8 * var(--u));
-  background: url(assets/stampede/rod.png) center / 100% 100%; box-shadow: 0 2px 3px rgba(0, 0, 0, 0.4); }
-.ss-board .rod.top { top: calc((var(--top) - 14) * var(--u)); }
-.ss-board .rod.bottom { top: calc(var(--bottom) * var(--u)); }
-.ss-board .btn { left: calc((var(--x) + var(--w) - 29) * var(--u)); top: calc((var(--bottom) - 32) * var(--u)); width: calc(24 * var(--u)); height: calc(24 * var(--u)); }
-.ss-board[data-mode^="tell"] .btn { display: none; }
-.ss-board .ss-panel { left: calc(var(--x) * var(--u)); top: calc(var(--top) * var(--u)); width: calc(var(--w) * var(--u)); height: calc((var(--bottom) - var(--top)) * var(--u));
-  box-sizing: border-box; border: calc(3 * var(--u)) solid #9cc8f6; border-radius: calc(10 * var(--u));
-  background: linear-gradient(rgba(24, 48, 128, 0.94), rgba(9, 28, 92, 0.96)); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45); }
-.ss-board .ss-card { inset: 0; }
-.ss-board .q, .ss-board .qn { height: calc(27 * var(--u)); }
-.ss-board .last { height: calc(25 * var(--u)); }
-.ss-board .pts { height: calc(18 * var(--u)); }
-.ss-board .ptsn { height: calc(18 * var(--u)); }
-.ss-board .press { height: calc(19 * var(--u)); }
-.ss-board .box { width: calc(51 * var(--u)); height: calc(52 * var(--u)); box-sizing: border-box; border: calc(2 * var(--u)) solid #072c88; background: #9cc8f6; display: grid; place-items: center; }
-.ss-board .box img { position: static; width: calc(40 * var(--u)); height: calc(40 * var(--u)); }
-.ss-board .box.wide { width: calc(92 * var(--u)); }
-.ss-board .box.wide img { width: calc(80 * var(--u)); }
-.ss-board .name { height: calc(15 * var(--u)); }
-.ss-board .who { height: calc(20 * var(--u)); }
-.ss-board .is { height: calc(22 * var(--u)); }
-.ss-board .answer img { height: calc(30 * var(--u)); }
-.ss-board .answer .pk { height: calc(27 * var(--u)); }
-.ss-lets { left: 0; top: 0; height: calc(52 * var(--u)); transform-origin: 0 0; will-change: transform; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.45)); }
-.ss-stop { left: 50%; top: 50%; height: calc(52 * var(--u)); will-change: transform; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.45)); }
-.ss-counts div { position: absolute; display: flex; transform: translate(-50%, -100%); padding: 2px 4px; border-radius: 6px; background: rgba(0, 0, 0, 0.7); }
+.ss-screen img, .ss-card div { position: absolute; display: block; }
+.ss-card { position: absolute; inset: 0; }
+.ss-card .q, .ss-card .qn { height: calc(54 * var(--u)); }
+.ss-card .last { height: calc(50 * var(--u)); }
+.ss-card .pts, .ss-card .ptsn { height: calc(36 * var(--u)); }
+.ss-card .press { height: calc(38 * var(--u)); }
+.ss-card .box { width: calc(102 * var(--u)); height: calc(104 * var(--u)); box-sizing: border-box; border: calc(4 * var(--u)) solid #072c88; background: #9cc8f6; display: grid; place-items: center; }
+.ss-card .box img { position: static; width: calc(80 * var(--u)); height: calc(80 * var(--u)); }
+.ss-card .box.wide { width: calc(184 * var(--u)); }
+.ss-card .box.wide img { width: calc(160 * var(--u)); }
+.ss-card .name { height: calc(30 * var(--u)); }
+.ss-card .who { height: calc(40 * var(--u)); }
+.ss-card .is { height: calc(44 * var(--u)); }
+.ss-card .answer img { height: calc(60 * var(--u)); }
+.ss-card .answer .pk { height: calc(54 * var(--u)); }
+.ss-lets { left: 0; top: 0; height: calc(52 * var(--u)); will-change: transform; }
+.ss-stop { left: 50%; top: 50%; height: calc(24.51 * var(--u)); will-change: transform; }
+.ss-counts div { position: absolute; display: flex; transform: translate(-50%, -100%); padding: 2px 4px; border-radius: 6px; background: #000; }
 .ss-counts img { display: block; width: 18px; height: 18px; }
 .ss-pads { position: absolute; left: 50%; bottom: calc(var(--safe-b) + 14px); transform: translateX(-50%); pointer-events: none; }
 #app:not(.portrait) .ss-pads { left: auto; right: calc(var(--safe-r) + 14px); bottom: auto; top: 58%; transform: translateY(-50%); }

@@ -136,8 +136,9 @@ BANKS = {
     379: "Delibird's Delivery full", 380: "Delibird's Delivery digits", 381: "Delibird's Delivery gift",
     382: "Delibird's Delivery points",
     # Streaming Stampede (module #59): the Pokemon that go by, a sprite in a few
-    # frames each (Diglett and Dugtrio pop up out of the ground), its digits and its words
-    201: "Streaming Stampede dot", 202: "Streaming Stampede Voltorb", 203: "Streaming Stampede Magcargo",
+    # frames each (Diglett and Dugtrio pop up out of the ground), and their
+    # shadow (0x8690B2A8); its digits and its words
+    201: "Streaming Stampede shadow", 202: "Streaming Stampede Voltorb", 203: "Streaming Stampede Magcargo",
     204: "Streaming Stampede Magnemite", 205: "Streaming Stampede Diglett", 206: "Streaming Stampede Doduo",
     207: "Streaming Stampede Dodrio", 208: "Streaming Stampede Dugtrio", 209: "Streaming Stampede Togepi egg",
     210: "Streaming Stampede Psyduck", 211: "Streaming Stampede Electrode", 212: "Streaming Stampede Poke Ball",
@@ -174,8 +175,12 @@ BANKS = {
     # and the clock's balloon, and the swirl round the clock (4 frames)
     223: "Topsy-Turvy ring", 401: "Topsy-Turvy points and clock", 402: "Topsy-Turvy clock swirl",
     412: "Streaming Stampede all", 413: "Streaming Stampede names", 414: "Streaming Stampede answer digits",
-    # shared by menus and boards (by appearance, and Streaming Stampede's question board)
+    # shared by menus and boards (by appearance; 165 and 345 are UI layout
+    # 132's hanging board, which Streaming Stampede doesn't load)
     51: "buttons", 165: "board rod and chain", 345: "arrows",
+    # module #2's sign over a player with a perfect score (0x81900164: Egg
+    # Emergency's 100 eggs, Streaming Stampede's 100 points)
+    433: "PERFECT",
 }
 
 

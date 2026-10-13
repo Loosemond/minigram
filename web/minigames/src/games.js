@@ -76,7 +76,9 @@ export const GAMES = {
     invite: "Count Pokémon with me in Streaming Stampede!",
     store: "stampede_",
     messages: ["count", "ans"],
-    countdown: { step: 25, count: null, go: null }, // (0x869055FC; no sounds: neither module asks for any)
+    // (0x869055FC; no sounds: neither module asks for any; song 29 on the opening move's
+    // frame 25, the countdown's 26th: 0x86905630)
+    countdown: { step: 25, count: null, go: null, song: [26, "intro"] },
     load: () => import("./stampede/index.js"),
   },
   pichu: {

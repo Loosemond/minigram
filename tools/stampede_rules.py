@@ -9,7 +9,8 @@ Pokemon the next ones have), takes the presses the devices report (the
 question and the frame of its counting each was on), checks they could have
 happened then (in the counting, not in the future, not older than the way
 here allows, one a frame, 99 at most), counts the CPUs' itself, and gives
-each answer's points.
+each answer's points: with them, when the next question starts (an answer is
+as long as its points take to go in) and, after the last, the round's end.
 """
 import math
 
@@ -17,11 +18,14 @@ SEATS = 4
 FPS = 30
 QUESTIONS = 5
 MAX_COUNT = 99
+OPENING = 37  # GO to the first card: the opening camera move runs on that long past it
 CARD, TAIL, STOP = 85, 60, 50
-ANSWER, JUDGED = 190, 90
-LAST_ANSWER, LAST_JUDGED = 29 + 290, 29 + 210
+JUDGED = 90
+LAST_STATE8 = 30
+LAST_JUDGED = LAST_STATE8 + 210
 POINTS = [(10, 5, 1), (10, 5, 1), (20, 10, 5), (20, 10, 5), (40, 20, 10)]
-OFF_LEFT = -250
+OFF_LEFT, ON_SCREEN = -250, 135
+POP_GONE = 26
 LEVELS = {"easy": 1, "normal": 2, "hard": 3}
 
 # kind: (name, image bank, scale, w, h, speed a, speed b, z0, z range, x0, x range, shadow, dx, depth)
@@ -69,7 +73,7 @@ CPU_ODDS = [
     [[160, 175, 190, 194, 198, 199, 200], [80, 110, 140, 160, 180, 190, 200], [40, 70, 100, 130, 160, 180, 200], [0, 100, 100, 160, 160, 200, 200]],
     [[190, 192, 194, 196, 198, 199, 200], [120, 145, 170, 180, 190, 195, 200], [60, 90, 120, 150, 180, 190, 200], [0, 100, 100, 160, 160, 200, 200]],
 ]
-CPU_GAP = [25, 21, 18, 14]
+CPU_GAP = [21, 18, 15, 12]  # (NTSC's)
 SALTS = [0x2545F491, 0x6D2B79F5, 0x1B873593, 0x3C6EF372, 0x7F4A7C15]
 
 
@@ -87,6 +91,12 @@ def quad(seed):
 
 def cpu_odds(answer):
     return 20 if answer < 5 else 10 if answer < 15 else 5 if answer < 25 else 3
+
+
+def answer_frames(q, pts):
+    """An answer's length by the most points anyone got in it (rules.js answerFrames)."""
+    p = max([0] + list(pts))
+    return LAST_STATE8 + 210 + 2 * max(p - 1, 0) + 2 if q == QUESTIONS - 1 else max(96, 88 + 2 * p) + 63
 
 
 def setup(level):
@@ -157,11 +167,11 @@ def question(seed, q, state, cpu_totals=(0, 0, 0, 0), com_level=None):
         v = r() % (K[6] + 1) + K[5]
         if o["kind"] in POPS:
             o["speed"] = 0
-            o["gone"] = 25 + o["t2"]
+            o["gone"] = POP_GONE + o["t2"]
         else:
             o["speed"] = max(4, int(v * SPREAD[lv]))
             o["gone"] = math.floor((o["x"] - OFF_LEFT) / o["speed"])
-    last = max(o["gone"] for o in recs)
+    last = max(o["gone"] for o in objects(recs))
     cpu = []
     for total in cpu_totals:
         row = 3 if q == 4 and total == 60 else [0, 0, 1, 1, 2][q]
@@ -246,30 +256,57 @@ def points(q, count, answer):
     return POINTS[q][d] if d < 3 else 0
 
 
-def cpu_presses(Q, level, seat):
+def objects(stream):
+    """Each Pokemon's shadow and itself, as rules.js objects()."""
+    out = []
+    for o in stream:
+        K = KINDS[o["kind"]]
+        for x in (o["x"] - K[12], o["x"]):
+            if o["kind"] in POPS:
+                out.append(dict(pop=True, gone=o["gone"]))
+            else:
+                out.append(dict(pop=False, gone=math.floor((x - OFF_LEFT) / o["speed"]),
+                                on=math.floor((x - ON_SCREEN) / o["speed"])))
+    return out
+
+
+def cpu_presses(Q, level, seat, since=3):
     """The counting frames a CPU seat presses on (rules.js cpuPresses)."""
     r = quad(Q["seed"] ^ 0x51ED270B ^ (Q["q"] << 8) ^ (seat << 16))
     answer = Q["cpu"][seat]
     D, gap = cpu_odds(answer), CPU_GAP[level]
-    gones = sorted(o["gone"] for o in Q["stream"])
+    objs = objects(Q["stream"])
+    moving = [o for o in objs if not o["pop"]]
+    pops = [o for o in objs if o["pop"]]
+    start = min([o["on"] for o in moving] + [o["gone"] for o in pops]) + 1
+    all_on = max(max([o["on"] for o in moving], default=-math.inf) + 1, max([o["gone"] for o in pops], default=-math.inf) + 2)
+    none = max(o["gone"] for o in objs) + 1
     presses = []
-    since, count, f = 3, 0, 0
-    while f < Q["frames"] and count < answer:
-        gone = sum(1 for g in gones if g < f)
-        left = gone < len(gones)
+    count = 0
+    for f in range(Q["frames"]):
         press = False
-        if gone >= 1:
-            if left:
-                press = since > gap and r() % D == 0
+        if f >= start:
+            if f < none:
+                if f < all_on:
+                    press = count != answer and since > gap and r() % D == 0
+                else:
+                    press = count != answer and since >= 4 and r() % D == 0
             else:
-                press = count == 0 or (since >= 4 and r() % D < 2)
+                if count == 0:
+                    press = True
+                if count != answer and since >= 4 and r() % D < 2:
+                    press = True
         since += 1
-        if press:
+        if press and count < MAX_COUNT:
             presses.append(f)
             count += 1
             since = 0
-        f += 1
     return presses
+
+
+def since_after(Q, presses, since):
+    """A CPU's frames since its last press once the counting's over (rules.js sinceAfter)."""
+    return Q["frames"] - 1 - presses[-1] if presses else since + Q["frames"]
 
 
 class Round:
@@ -285,25 +322,25 @@ class Round:
         self.presses = [[[] for _ in range(QUESTIONS)] for _ in range(SEATS)]
         self.verdicts = [None] * QUESTIONS
         self.scores = [0] * SEATS
-        self.end = math.inf  # s after GO, once the last question's made
+        self.since = [3] * SEATS  # each CPU's frames since its last press
+        self.end = math.inf  # s after GO, once the last answer's given
         self.prepare(0)
 
     def prepare(self, q):
+        """Question q, made once the one before is answered (its end is its points')."""
         if q < len(self.qs) or q >= QUESTIONS:
             return
         if q > 0:
             self.states.append(after(self.qs[q - 1]["state"], q - 1, self.scores, self.people))
         Q = question(self.seed, q, self.states[q], list(self.scores), self.com)
-        Q["cpu_presses"] = [cpu_presses(Q, self.com, s) if self.cpus[s] else None for s in range(SEATS)]
+        Q["cpu_presses"] = [cpu_presses(Q, self.com, s, self.since[s]) if self.cpus[s] else None for s in range(SEATS)]
+        for s in range(SEATS):
+            if self.cpus[s]:
+                self.since[s] = since_after(Q, Q["cpu_presses"][s], self.since[s])
         self.qs.append(Q)
-        start = self.at[q - 1]["end"] if q else 0
+        start = self.at[q - 1]["end"] if q else OPENING
         count = start + CARD
-        answer = count + Q["frames"]
-        last = q == QUESTIONS - 1
-        self.at.append(dict(start=start, count=count, answer=answer,
-                            end=answer + (LAST_ANSWER if last else ANSWER)))
-        if last:
-            self.end = self.at[q]["end"] / FPS
+        self.at.append(dict(start=start, count=count, answer=count + Q["frames"], end=None))
 
     def wire(self):
         """The game as a device needs it to rejoin it: the answers so far."""
@@ -350,6 +387,9 @@ class Round:
                 self.scores[s] += pts[s]
             self.verdicts[q] = (counts, pts, list(self.scores))
             out.append((q, counts, pts, list(self.scores)))
+            self.at[q]["end"] = self.at[q]["answer"] + answer_frames(q, pts)
+            if q == QUESTIONS - 1:
+                self.end = self.at[q]["end"] / FPS  # (the winners: as the last points are in)
             self.prepare(q + 1)
         return out
 

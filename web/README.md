@@ -382,9 +382,9 @@ server's copy: the rounds' scripts, the presses and the judging),
 
 Four players stand in their booths at the back of a TV studio, under a
 circus backdrop, and Pokémon go by on the floor in front of them. Before each
-question a board says what to count; tap (or the **Count** pad, Space) once
+question a card says what to count; tap (or the **Count** pad, Space) once
 for each one that goes by. Your count isn't shown till the answer, when every
-booth's screen shows its count in gold and the board gives the right one.
+booth's screen shows its count in gold and the right one comes up.
 Exact is 10 points on the 1st and 2nd questions, 20 on the 3rd and 4th and 40
 on the last; one or two off still score (5, 1; 10, 5; 20, 10). Five
 questions, 100 points at most; the highest total wins, and the winners'
@@ -407,31 +407,37 @@ each number is):
   up, from the totals so far (on every device the same, and on the server).
 - **The CPUs** are the game's: each question they get the right answer, or
   one to three off (on Normal, right 80% of the time on the first two
-  questions, 40% on the 3rd and 4th, 20% on the last), and press as the
-  Pokémon leave the screen, catching up after the last one; with a big
-  answer they can run out of time. The best of three makes about 58 points
-  of 100 on Easy, 60 on Normal and 71 on Hard.
+  questions, 40% on the 3rd and 4th, 20% on the last), and press from when
+  the first Pokémon comes on screen, every 18, 15 or 12 frames or more (Easy,
+  Normal, Hard), quicker once they're all on screen and after the last one's
+  gone; they nearly always get to their answer. The best of three makes about
+  58 points of 100 on Easy, 72 on Normal and 78 on Hard.
 
 The camera is the game's (preset 1 of three: 24°, from (0, 186, 1015)
-looking down at the stage), and the last answer eases to its results view,
-where the booths go up a little a point to show the totals. Portrait looks
-down more, so the stream fills the middle of the screen, and sees as far
-across at the back as the game's screen (the Pokémon go at its edge there, so
-none goes before it's out of sight); the board goes below the stream.
+looking down at the stage): it eases out from a close-up of the booths over
+the countdown, on past GO, and the first question comes 37 frames after it,
+as the game's does; the last answer eases to its results view, where the
+booths go up a little a point to show the totals. At the end the winners'
+booths go up to the top and the others' sink back; PERFECT shows over a
+booth on 100. Portrait looks down more, so the stream fills the middle of the
+screen, and sees as far across at the back as the game's screen (the Pokémon
+go at its edge there, so none goes before it's out of sight); the cards'
+words go below the stream.
 
-**Sound**: the game's (`assets/stampede/sound.bin`, 785 KB): song 29 over
-the countdown (the game's opening), song 30 from the first question, 31 for
+**Sound**: the game's (`assets/stampede/sound.bin`, 785 KB): song 29 in the
+countdown (the game's opening), song 30 from the first question, 31 for
 the results and 32 before the last answer; the effects of bank 3 (a count,
-the cards, "Stop!", the answer, right, no one, the points, a booth going up)
-and the crowd of bank 1.
+the cards, "Stop!", the drum roll and the answer, right, no one, the points,
+a booth going up) and the crowd of bank 1, each when the game asks for it.
+The countdown has no sounds and the end no whistle, as in the game.
 
 What comes from the ROM and what is made up:
 
 | From the game | Made for the remake |
 |---|---|
-| the questions, the streams (every Pokémon's kind, place, speed and timing), the counting, the scoring, how it gets harder, the CPUs' answers and presses (module #59's code) | each answer's points are given 90 frames into it whatever happens online (the server's word, by then), and the game's opening camera move isn't played (song 29 plays over the countdown instead) |
-| the studio (objects 116, 117, 118), the booths (80, 100-102) and their lamps, Cleffa and Igglybuff (114, 119) and their clips and faces, the sprites (image banks 201-220) with their shadows, the camera's presets | Cleffa in 1P and 3P and Igglybuff in 2P and 4P (the game's comes from the Game Pak), the portrait camera, more of the studio's floor and a dark wall past its edges, the title's art (the circus backdrop drawn flat), the backdrop's textures at up to 4 times their size (below) |
-| the board's words and pictures (banks 412-416, the icons, layouts 125-133), the booths' digits (bank 415, gold at the answer), "Let's count …" and "Stop!" and their timing | how the board comes and goes (the layouts' own animation isn't read), its panel (drawn here), the answer's smaller panel, the counts over the booths in portrait, the Count pad |
+| the questions, the streams (every Pokémon's kind, place, speed and timing), the counting, the scoring, how it gets harder, the CPUs' answers and presses, each answer's length by its points and the hand-over (module #59's code) | each answer's points are given 90 frames into it whatever happens online (the server's word, by then) |
+| the studio (objects 116, 117, 118), the booths (80, 100-102) and their lamps, Cleffa and Igglybuff (114, 119) and their clips and faces, the sprites (image banks 201-220) with their shadows, the camera's presets and moves, the lights, the end's show and PERFECT (module #2's, bank 433) | Cleffa in 1P and 3P and Igglybuff in 2P and 4P (the game's comes from the Game Pak), the portrait camera, more of the studio's floor and a dark wall past its edges, the title's art (the circus backdrop drawn flat), the backdrop's textures at up to 4 times their size (below) |
+| the cards (layouts 125-131 and 133: no board) at the game's size, their words and pictures (banks 412-416, the icons) in the game's colours, when each shows, the booths' digits (bank 415, gold at the answer), "Let's count …" and "Stop!", their size and timing | "Stop!" in the middle of the stream (the game's is in the middle of the screen), the cards' words below the stream in portrait, the counts over the booths in portrait, the Count pad |
 | songs 29-32, the effects of bank 3 and the crowd (bank 1) | |
 
 **Textures.** All are the game's. The circus backdrop's are resampled bigger
@@ -1029,7 +1035,9 @@ How it works:
   itself (from the seed, as every device does), and gives each answer's
   counts and points (`ans`) once no press still on its way could change them:
   the devices show its word at the answer, and make the next question from
-  its totals.
+  its totals, and when it comes from its points (an answer is as long as
+  the most points anyone got in it takes to go in; the last one's end, the
+  hand-over, too).
 - **Pichu's Power Plant**: devices send each press (the frame, the direction
   and the button) and the server checks it as Eager Eevee's (no older than
   the way here allows, not in the future: one outside counts as that old, or

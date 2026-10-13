@@ -164,6 +164,8 @@ const shell = {
   send: (t, data) => { if (current?.online) net.send(t, { r: current.round, ...data }, true); },
   get seats() { return seats; },
   get round() { return current; },
+  // s till the round's GO (on its clock: the server's online), < 0 after; null with none dealt
+  toGo: () => (current?.goAt === undefined ? null : (current.goAt - (current.online ? net.now() : performance.now())) / 1000),
 };
 
 function loadGame(id) {

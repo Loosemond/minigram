@@ -132,10 +132,12 @@ UI["title_eevee.png"] = bank(388, 0)
 # 114; 186 is a shiny one, for a Game Pak's shiny Cleffa) and Igglybuff (119;
 # 205 shiny), the studio: 117 (the circus backdrop), 116 (the ramp), 118
 # (books), the players' booths (80 blue, 100 green, 101 purple, 102 yellow:
-# each with a lamp, a three-digit counter and its player's spot), UI layouts 125-133 (0x8004DD4C, archive 0x1E40000),
-# and image banks 201-220 (the Pokemon that go by, each a sprite in a few
-# frames: made into one strip a bank below), 415 (digits) and 416 (its
-# words: "Question", "Let's count ...", "Stop!", "The answer is ..."...).
+# each with a lamp, a three-digit counter and its player's spot), UI layouts
+# 125-131 and 133 (0x86902134: 0x8004DD4C, archive 0x1E40000; 132, the hanging
+# board, isn't loaded), and image banks 201-220 (the Pokemon that go by, each a
+# sprite in a few frames: made into one strip a bank below), 415 (digits, I4:
+# made below) and 416 (its words: "Question", "Let's count ...", "Stop!", "The
+# answer is ..."...: grey, coloured as they're drawn); and module #2's PERFECT (bank 433).
 STAMPEDE = {
     "cleffa.glb": "objects/114_cleffa/114_cleffa.glb",
     "igglybuff.glb": "objects/119_igglybuff/119_igglybuff.glb",
@@ -152,15 +154,13 @@ STAMPEDE = {
     "cleffa_face3.png": "objects/114_cleffa/textures/face/tex03.png",
 }
 STAMPEDE.update({"igglybuff_face%d.png" % i: "objects/119_igglybuff/textures/face/tex%02d.png" % i for i in range(4)})
-STAMPEDE.update({"d%d.png" % i: bank(415, i) for i in range(11)})  # 0-9 and a dot
 STAMPEDE.update({"w%02d.png" % i: bank(416, i) for i in range(2, 20) if i not in (3, 7)})
-# the question board (UI layouts 127-131 and 133): the "ALL" picture (412),
-# the Pokemon's names (413), the answer's digits (414), the A button (51), the
-# rod it hangs from, its caps and chain (165) and the arrow on it (345)
+# the cards (UI layouts 125-131 and 133): the "ALL" picture (412), the
+# Pokemon's names (413), the answer's digits (414); the A button (51, the
+# Count pad's) and PERFECT over a booth on 100 at the end (433, module #2's)
 STAMPEDE.update({"name%02d.png" % i: bank(413, i) for i in range(18)})
 STAMPEDE.update({"a%d.png" % i: bank(414, i) for i in range(10)})
-STAMPEDE.update({"all.png": bank(412, 0), "button_a.png": bank(51, 0), "rod.png": bank(165, 0),
-                 "rod_end.png": bank(165, 4), "chain.png": bank(165, 3), "arrow.png": bank(345, 4)})
+STAMPEDE.update({"all.png": bank(412, 0), "button_a.png": bank(51, 0), "perfect.png": bank(433, 0)})
 # the question board shows what to count by the Pokemon's icon (the icons
 # archive, by national dex number: the module asks for 25 for Pikachu, 172
 # Pichu, ...; 0x8690581C)
@@ -572,7 +572,7 @@ SOUNDS = {
         "lastCard": _sound(0x73, 127, 8, 0x0001),  # 0x3F0B, the last question's
         "cardOn": _sound(0x23, 105, 4, 0x0002, sfx=[28]),  # 0x3F03, 36 frames into the card
         "stop": _sound(0x28, 105, 8, 0x0001, sfx=[33]),  # 0x3F08, "Stop!"
-        "drum": _sound(0x20, 105, 5, 0x0002),  # 0x3000, a frame before the answer shows
+        "drum": _sound(0x20, 105, 5, 0x0002),  # 0x3000, the drum roll, asked for every frame from the answer's 30th to its 58th
         "answer": _sound(0x21, 105, 5, 0x0002, sfx=[26]),  # 0x3F01, the answer shows
         "right": _sound(0x25, 105, 4, 0x0010, sfx=[30]),  # 0x3F05, someone's count is right
         "nobody": _sound(0x24, 105, 0, 0x0010, sfx=[29]),  # 0x3F04, nobody scored
@@ -1008,14 +1008,19 @@ def build():
             with open(os.path.join(site, "stampede", "s%d.png" % b), "wb") as fh:
                 fh.write(png.encode_rgba(w * len(frames), h, b"".join(rows)))
         print("stampede: %d sprite strips (image banks %d-%d)" % (len(STAMPEDE_SPRITES), STAMPEDE_SPRITES[0], STAMPEDE_SPRITES[-1]))
-        # the booths' digits in gold, as the counts show at an answer (prim colour FFC800: 0x8690D000)
-        for k, w, h, rgba in images.bank_images(rom, 415)[:10]:
-            px = bytearray(rgba)
-            for o in range(0, len(px), 4):
-                px[o + 1] = px[o + 1] * 200 // 255
-                px[o + 2] = 0
-            with open(os.path.join(site, "stampede", "g%d.png" % k), "wb") as fh:
-                fh.write(png.encode_rgba(w, h, bytes(px)))
+        # the booths' digits (bank 415, I4) through FC30FFFF FFFFF238 (0x8690DBA8):
+        # prim x the texel's grey, its alpha the grey (dark is clear); prim white
+        # for the totals, FFC800 for the counts at an answer (0x8690DBC8)
+        for k, w, h, rgba in images.bank_images(rom, 415):
+            for name, prim in (("d", (255, 255, 255)), ("g", (255, 200, 0))):
+                if name == "g" and k > 9:
+                    continue
+                px = bytearray()
+                for o in range(0, len(rgba), 4):
+                    i = rgba[o]
+                    px += bytes(c * i // 255 for c in prim) + bytes([i])
+                with open(os.path.join(site, "stampede", "%s%d.png" % (name, k)), "wb") as fh:
+                    fh.write(png.encode_rgba(w, h, bytes(px)))
         # Pichu's Power Plant's sparks (bank 224, drawn white) and lightning (225,
         # yellow): the game's combiner makes a texel's colour prim + (1 - prim) x
         # its grey, and its alpha the grey (0x86600160, 0x86600020); and module

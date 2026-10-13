@@ -232,16 +232,20 @@ Streaming Stampede's (module #59) are bank 3's, the minigame's own
 | `0x3F07`, `0x3F0B` | `0x27`, `0x73` | 32; instrument 43 | a question's card; the last question's |
 | `0x3F03` | `0x23` | 28 | 36 frames into the card |
 | `0x3F08` | `0x28` | 33 | "Stop!", 50 frames after the last Pokémon's gone |
-| `0x3000`, `0x3F01` | `0x20`, `0x21` | 25, 26 | the frame before the answer shows, and as it does |
+| `0x3000`, `0x3F01` | `0x20`, `0x21` | 25, 26 | a drum roll, asked for every frame from the answer's 30th to its 58th (its layer loops: it lasts while it's asked for); the answer, at its 60th (not the last's: only song 32 then) |
 | `0x3F05`, `0x3F04` | `0x25`, `0x24` | 30, 29 | someone's count is right; no one scored |
-| `0x3F06`, `0x310A` | `0x26`, `0x5F` | 31, 30 | the points going in (the last question's) |
-| `0x3209` | `0x5E` | 66 | a booth going up a point |
+| `0x3F06`, `0x310A` | `0x26`, `0x5F` | 31, 30 | the points going in (the last question's), a step every other frame, while some are still to come after it (`0x869099C8`, `0x8690A5D8`): not on the last step |
+| `0x3209` | `0x5E` | 66 | a booth going up a point: in the last answer every other frame, asked for again on the frame after (G+0x194); at the end every frame a winner's goes up |
 
 Sounds `0x21`-`0x28` share a script (at `0x43F` of sequence 9) that reads
 the sound number from its channel's IO port 5 and writes its note into itself
 (effect = sound − 0x21 + 0x1A, `c7 1a 04 53`): the effects above are read off
 that, and `tools/web_assets.py` lists them by hand. The crowd after an answer
-is bank 1's (`0x1C07`-`0x1E09`, above). A channel that never sets an
+is bank 1's (`0x1C07`-`0x1E09`, above), asked for every frame from the points
+to the next card (after the last answer, till 50 frames after the hand-over).
+The countdown has no sounds, and the end no whistle (the game plays `0xCF0B`
+only as you leave the instructions); song 29 starts on the opening camera
+move's frame 25, the countdown's 26th. A channel that never sets an
 instrument plays drums (it starts on them: instOrWave 0); song 30 (sequence 69)
 has five such channels, so the web pack takes their notes as drums.
 

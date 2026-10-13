@@ -27,7 +27,7 @@ const DEALS = { 1: "845261658a294406", 12345: "dcaad7cc4c79a603", 2147483647: "8
 // Eager Eevee's deal() for levels 1-3: the same as JS_EEVEE in tools/test_rooms.py
 const EEVEE = { 1: "d54a9e4e6d7d05ec", 12345: "e4663aef5698855e", 2147483647: "60c971ff1eb41fe2" };
 // Streaming Stampede's questions (and the CPUs' answers and presses) for levels 1-3: the same as JS_STAMPEDE in tools/test_rooms.py
-const STAMPEDE = { 1: "84a6cb28cd987d1d", 12345: "2a9b704b839d8309", 2147483647: "15649380292b011a" };
+const STAMPEDE = { 1: "c33c69d5058f2c41", 12345: "8bad5c3faf1e1fa4", 2147483647: "ff29a0ea8c1ddc98" };
 // Pichu's Power Plant's Electrodes and CPUs for c 0-3: the same as JS_PICHU in tools/test_rooms.py
 const PICHU = { 1: "85b689e086341c65", 12345: "7a2d41e41a9793ae", 2147483647: "2f91d5687bee0e4b" };
 // Tumbling Togepi: a race with seat 0 on TOGEPI_SCRIPT ([frame, x, y]) and three normal CPUs, every lane
@@ -107,7 +107,7 @@ function deliPad(z, t, w) {
 // the frame the first of three CPUs gets to full charge, the middle of 41 rounds (rules.js cpuPresses)
 const CHARGE_TARGETS = { easy: [500, 590], normal: [365, 420], hard: [295, 345] };
 // the best of the three CPUs' totals in a game, on average (Streaming Stampede: rules.js cpuPresses)
-const COUNT_TARGETS = { easy: [54, 62], normal: [56, 65], hard: [67, 76] };
+const COUNT_TARGETS = { easy: [54, 63], normal: [67, 76], hard: [74, 83] };
 // how soon after the basket comes up the CPUs dash (frames, on average), by level (rules.js cpuPlan)
 const DASH_TARGETS = { easy: [23.5, 26.5], normal: [18.5, 21.5], hard: [15.5, 18.5] };
 // what it takes to win a solo round: the best of the three CPUs, on average
@@ -789,10 +789,11 @@ await test("Streaming Stampede: the questions are the same as the server's copy 
   for (const [seed, want] of Object.entries(STAMPEDE)) {
     let s = "";
     for (const level of [1, 2, 3]) {
-      let st = R.setup(level);
+      let st = R.setup(level), since = [3, 3, 3, 3];
       const totals = [0, 0, 0, 0];
       for (let q = 0; q < R.QUESTIONS; q++) {
-        const Q = R.question(+seed, q, st, totals, level), presses = [0, 1, 2, 3].map((z) => R.cpuPresses(Q, level, z));
+        const Q = R.question(+seed, q, st, totals, level), presses = [0, 1, 2, 3].map((z) => R.cpuPresses(Q, level, z, since[z]));
+        since = presses.map((p, z) => R.sinceAfter(Q, p, since[z]));
         s += `${Q.answer},${Q.frames},${Q.code},${Q.cpu.join("/")},${presses.map((p) => p.length).join("/")};`;
         s += Q.stream.map((o) => `${o.kind},${o.role},${hex(o.x)},${o.z},${o.t2},${o.speed},${o.gone};`).join("");
         presses.forEach((p, z) => { totals[z] += R.points(q, p.length, Q.answer); });
@@ -809,6 +810,9 @@ await test("Streaming Stampede: a count scores as in the game; CPU levels", asyn
   const pts = [5, 4, 6, 3, 7, 2, 0].map((c) => R.points(0, c, 5)).join();
   assert(pts === "10,5,5,1,1,0,0", "question 1, answer 5: " + pts);
   assert(R.points(2, 9, 9) === 20 && R.points(4, 27, 25) === 10 && R.points(4, 0, 1) === 0, "questions 3 and 5");
+  // an answer's length by its points (the same as tools/test_rooms.py has)
+  const lengths = [[0, [0, 0, 0, 0]], [1, [10, 5, 0, 1]], [3, [20, 0, 0, 0]], [4, [0, 0, 0, 0]], [4, [40, 20, 0, 0]]].map(([q, p]) => R.answerFrames(q, p)).join();
+  assert(lengths === "159,171,191,242,320", "the answers' lengths: " + lengths);
   // the questions: one kind, then look-alikes, then all of them; never a family twice
   const Q = [];
   let st = R.setup(2);
@@ -819,11 +823,15 @@ await test("Streaming Stampede: a count scores as in the game; CPU levels", asyn
     const L = R.LEVELS[level];
     let best = 0;
     for (let s = 1; s <= 300; s++) {
-      const seed = s * 7717 + 3, totals = [0, 0, 0, 0];
+      const seed = s * 7717 + 3, totals = [0, 0, 0, 0], since = [3, 3, 3, 3];
       let state = R.setup(L);
       for (let q = 0; q < 5; q++) {
         const qq = R.question(seed, q, state, totals, L);
-        for (let z = 1; z < 4; z++) totals[z] += R.points(q, R.cpuPresses(qq, L, z).length, qq.answer);
+        for (let z = 1; z < 4; z++) {
+          const p = R.cpuPresses(qq, L, z, since[z]);
+          since[z] = R.sinceAfter(qq, p, since[z]);
+          totals[z] += R.points(q, p.length, qq.answer);
+        }
         state = R.after(qq.state, q, totals, false);
       }
       best += Math.max(totals[1], totals[2], totals[3]);

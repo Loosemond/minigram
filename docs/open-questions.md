@@ -14,10 +14,13 @@ What isn't known yet, roughly by how useful it would be.
   their elements are read, not their animation) and fonts (`0x437AD0`)
   ([rom-map.md](rom-map.md)).
 - **Streaming Stampede's loose ends** (its rules are read: [minigames.md](minigames.md#streaming-stampede)):
-  how its question board comes and goes, and when each card's words show
-  (the UI layouts' own animation); whether a player without a Game Pak is
-  Cleffa or Igglybuff (decided outside module #59; the remake has both, 1P
-  and 3P Cleffa).
+  whether a player without a Game Pak is Cleffa or Igglybuff (decided outside
+  module #59; the remake has both, 1P and 3P Cleffa); whether the scene
+  "Stop!" is drawn in (geo layout `0x8690E158`, its own camera) clears the
+  depth first (the remake draws it over everything); where module #2 puts
+  PERFECT in depth (its object's z isn't set: the remake draws it over the
+  scene, as Egg Emergency's). (Its cards are settled: they're drawn still, on
+  the frames the code draws them, and layout 132's hanging board isn't loaded.)
 - **Barrier Ball's loose ends** (its rules are read: [minigames.md](minigames.md#barrier-ball)):
   object 146 (loaded by module #51, but nothing found draws it); two geo
   layouts in the module that nothing points to (`0x86307088`: a 120 × 60

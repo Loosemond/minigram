@@ -62,7 +62,7 @@ JS_EEVEE = {1: "d54a9e4e6d7d05ec", 12345: "e4663aef5698855e", 2 ** 31 - 1: "60c9
 # levels 1-3, each question made from the totals the CPUs' counts give: its
 # answer, counting frames, code, the CPUs' answers and presses, and every
 # Pokemon in its stream (web/minigames/tests.js has the same)
-JS_STAMPEDE = {1: "84a6cb28cd987d1d", 12345: "2a9b704b839d8309", 2 ** 31 - 1: "15649380292b011a"}
+JS_STAMPEDE = {1: "c33c69d5058f2c41", 12345: "8bad5c3faf1e1fa4", 2 ** 31 - 1: "ff29a0ea8c1ddc98"}
 # pattern() and cpuPresses() in web/minigames/src/pichu/rules.js, for c 0-3
 # over 3000 frames: every Electrode (its direction, button and frames) and the
 # CPUs' presses and finishes (web/minigames/tests.js has the same)
@@ -412,10 +412,11 @@ def stampede_digest(seed):
     s = ""
     for level in (1, 2, 3):
         st = stampede_rules.setup(level)
-        totals = [0] * 4
+        totals, since = [0] * 4, [3] * 4
         for q in range(stampede_rules.QUESTIONS):
             Q = stampede_rules.question(seed, q, st, totals, level)
-            presses = [stampede_rules.cpu_presses(Q, level, z) for z in range(4)]
+            presses = [stampede_rules.cpu_presses(Q, level, z, since[z]) for z in range(4)]
+            since = [stampede_rules.since_after(Q, presses[z], since[z]) for z in range(4)]
             s += "%d,%d,%d,%s,%s;" % (Q["answer"], Q["frames"], Q["code"], "/".join(map(str, Q["cpu"])),
                                       "/".join(str(len(p)) for p in presses))
             s += "".join("%d,%d,%s,%d,%d,%d,%d;" % (o["kind"], o["role"], struct.pack(">d", o["x"]).hex(), o["z"], o["t2"],
@@ -433,6 +434,8 @@ def _():
     P = stampede_rules.points
     assert [P(0, c, 5) for c in (5, 4, 6, 3, 7, 2, 0)] == [10, 5, 5, 1, 1, 0, 0]
     assert [P(2, 9, 9), P(3, 8, 9), P(4, 27, 25), P(4, 0, 1)] == [20, 10, 10, 0]
+    F = stampede_rules.answer_frames  # (an answer's length by its points, as rules.js answerFrames)
+    assert [F(0, [0] * 4), F(1, [10, 5, 0, 1]), F(3, [20, 0, 0, 0]), F(4, [0] * 4), F(4, [40, 20, 0, 0])] == [159, 171, 191, 242, 320]
     st = stampede_rules.after(stampede_rules.setup(1), 0, [10, 10, 10, 10], True)  # four people, all perfect
     assert (st["bonus"], st["level"]) == (2, 2), st
     st = stampede_rules.after(st, 1, [20, 20, 15, 0], True)  # only two perfect: no more
@@ -815,12 +818,12 @@ def _():
         stream = [dict(kind=0, role=0, x=300.0, z=300, t2=0, speed=60, gone=9) for _ in range(3)]
         return dict(q=q, special=False, k=0, code=0, what=[0], members=[0], stream=stream, answer=3, last=9,
                     frames=20, cpu=[3, 3, 2, 4], seed=seed, state=dict(state))
-    def presses(Q, level, seat):  # (the CPUs count to their answers once the stream's gone)
+    def presses(Q, level, seat, since=3):  # (the CPUs count to their answers once the stream's gone)
         return list(range(10, 10 + Q["cpu"][seat]))
-    saved = (stampede_rules.question, stampede_rules.cpu_presses, stampede_rules.CARD, stampede_rules.ANSWER,
-             stampede_rules.LAST_ANSWER)
+    saved = (stampede_rules.question, stampede_rules.cpu_presses, stampede_rules.OPENING, stampede_rules.CARD,
+             stampede_rules.answer_frames)
     stampede_rules.question, stampede_rules.cpu_presses = short, presses
-    stampede_rules.CARD, stampede_rules.ANSWER, stampede_rules.LAST_ANSWER = 3, 12, 12
+    stampede_rules.OPENING, stampede_rules.CARD, stampede_rules.answer_frames = 0, 3, lambda q, pts: 12
     try:
         a, b = Client("SA"), Client("SB")
         a.send("hello", id="sa", name="Sam", game="stampede")
@@ -865,8 +868,8 @@ def _():
         b.close()
         a.close()
     finally:
-        (stampede_rules.question, stampede_rules.cpu_presses, stampede_rules.CARD, stampede_rules.ANSWER,
-         stampede_rules.LAST_ANSWER) = saved
+        (stampede_rules.question, stampede_rules.cpu_presses, stampede_rules.OPENING, stampede_rules.CARD,
+         stampede_rules.answer_frames) = saved
 
 
 @check("Pichu's Power Plant: the server checks the presses, says who finished first and stops cheats", together=True)

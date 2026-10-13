@@ -114,7 +114,7 @@ wobble that dies away. Once the countdown's over GO is squeezed away, its width
 | Barrier Ball | 20 | `0x2F00`, `0x2F01` | at GO, song 35 (`0x863036A4`) |
 | Pichu's Power Plant | 20 | `0x2F00`, `0x2F01` | at GO, song 21 (`0x866049B4`) |
 | Rampage Rollout | 20 | `0x5F07`, `0x5F08` | at GO; song 34 30 frames on (`0x86406994`: `0x86408CA0(34, 30)`) |
-| Streaming Stampede | 25 | none: neither module asks for one | at GO (`0x86901D24`) |
+| Streaming Stampede | 25 | none: neither module asks for one | 37 frames after GO, when the opening camera move it runs over ends (`0x86905630`; song 29 on its frame 25, the countdown's 26th; state 3, at GO, `0x86901D24`, is never entered) |
 | Tumbling Togepi | 20 | `0x5F07`, `0x5F08` | at GO, song 46 (`0x86709108`) |
 | Delibird's Delivery | 20 | `0x2F00`, `0x2F01` | at GO, song 52 (`0x86A0184C`) |
 | Egg Emergency | 20 | `0x7F03`, `0x7F04` (`0x868066B8`) | 31 frames after GO, song 45 with it (`0x86806E94`) |
@@ -160,7 +160,7 @@ audits of each module; `0x87F0A098`'s callers):
 | Furret's Frolic | after the 40-frame fade at the time-up (`0x8620392C`, `0x86204A9C`) | faded |
 | Pichu's Power Plant | 130 frames after the finish (`0x8660429C`) | plays on |
 | Rampage Rollout | when the race's end is called (`0x8640633C`, `0x8640687C`) | plays on |
-| Streaming Stampede | 2 frames after the last points are in (`0x8690B89C`) | its own (songs 31, 32) |
+| Streaming Stampede | 2 frames after the last points are in (`0x8690A5AC`, `0x8690B89C`) | plays on (song 32; song 55 takes its place) |
 | Delibird's Delivery | as soon as the tally's counted (`0x86A07124`) | plays on (no fade, no whistle) |
 | Egg Emergency | 31 frames after the last drop is gone (`0x868058C0`, `0x86804C5C`; `0xCF06` at 5) | plays on |
 | Eager Eevee | after the tally (`0x86B09148`) | not faded (its fades are the instructions', its set-up's and the basket's) |
@@ -760,12 +760,18 @@ still earn points for getting close."
 
 **The states** (`0x86901AA8`, switch at `0x8690F04C`; the drawing
 `0x86901414`): 0-2 the instructions (`0xCF0B` as you start), 4 the opening
-camera move (136 frames, song 29 at frame 25), 5 a question's card (85
-frames, `0x8690581C`), 6 the counting (`0x86901640`), 7 the answer
-(`0x8690941C`), 8-10 the last answer, the results and the menu
-(`0x86909FAC`). The logic runs once a frame and counts in frames; on PAL
-(`0x8690F998` = 0) the speeds are 1.2× and the CPUs' gaps their own. The
-remake uses 30 frames a second (*assumed*, as for the others).
+camera move (`0x86905630`: preset 0 to 1 over 135 frames, (1 − cos)/2, then
+the first card; song 29 at its frame 25), 5 a question's card (85 frames,
+`0x8690581C`), 6 the counting (`0x86901640`), 7 the answer (`0x8690941C`),
+8-10 the last answer, the results and the menu (`0x86909FAC`). The
+countdown runs over the opening move: `0x869054D4` starts it (a step of 25,
+`0x869055FC`) as it goes to state 4, so GO comes on the move's frame 99
+(0.835 of the way to preset 1) and the move goes on 36 frames past it; the
+first card comes 37 frames after GO. State 3 (`0x86901D18`: state 4 at GO)
+is never entered. The logic runs once a frame and counts in frames; on PAL
+(`0x8690F998` = 0, `0x86900758`: tv_rate isn't 60) the speeds are 1.2× and
+the CPUs' gaps their own. The remake uses NTSC's, at 30 frames a second
+(*assumed*, as for the others).
 
 **The level** (G+0x78) is the COM level byte; with four people (all four bits
 of `+0x2182`, G+0x7C = 1) it starts at 1. It sets how many Pokémon (×0.6,
@@ -821,11 +827,16 @@ before it, or too close in depth (13, 13, 13, 10, 7 by question,
 `0x8690EB28`) within 640 across, is placed again; 201 tries and the question
 starts over. In the counting each moves left by its speed every frame
 (`0x8690ABCC`: rand % (b + 1) + a, times the level's factor, at least 4) and
-is gone once x < −250; a pop-up is gone 25 frames after its t2 (its age, from
-−25 − t2). Each is an upright quad of its picture's size and its kind's scale
-at (x, 0, z), facing the camera's way, with a shadow (image bank 201, grey at
-half strength, flat) at (x − dx, −depth, z) (`0x8690E7BC`: its scale, dx and
-depth; some have none). Its picture changes every 2 frames (`0x8690B2A8`:
+is gone once x < −250; a pop-up is gone 26 frames after its t2 (its age, from
+−25 − t2, is past 0: `0x8690ABCC` looks before `0x87F0277C` counts it up).
+Each is two objects (`0x8690AD3C`): its shadow, at x − dx with the same
+speed, and itself, and the counting's tail waits for both (Psyduck's,
+Doduo's and Dodrio's shadows go up to a frame after them). Each is an
+upright quad of its picture's size and its kind's scale at (x, 0, z), facing
+the camera's way, with a shadow (image bank 201, flat) at (x − dx, −depth, z)
+(`0x8690E7BC`: its scale, dx and depth; some have none) drawn through
+`FC50FFFF FFFFF238` with env C0C0C0 (`0x8690B2A8`): env × its grey (0x91:
+6D6D6D), its alpha its own (IA4: all or nothing), so it's solid. Its picture changes every 2 frames (`0x8690B2A8`:
 ((frame + t2) / 2) mod n of its frame list; Magcargo's is 0, 1, 2, 3, 2, 3);
 Voltorb, Electrode, the Poké Ball, Magnemite and Magneton play theirs
 backwards for odd t2s, so they roll both ways; Diglett and Dugtrio show
@@ -838,33 +849,56 @@ adds 1 up to 99, plays `0x3F02` panned to the player and lights its booth's
 lamp for the frame; B does nothing, and there's no wait between presses. The
 player dips 3, then 1, then 0.5 on the frames after. The counts aren't shown
 while counting (the booths show the totals). The players turn towards the
-middle of the Pokémon on show (`0x8691AB78`), 273/65536 of a turn a frame at
-most (the code subtracts the player's x from both averages: its z is off).
-Once none are left: 50 frames on, `0x3F08` ("Stop!"), and at 60 the answer
-(state 7). Presses count till then.
+middle of every Pokémon still in the stream as the frame before left it
+(`0x86901840`: the spots at `0x8691AB78`, set by each one's move, on screen or
+not, a pop-up's before it's up), 273/65536 of a turn a frame at most (the
+code subtracts the player's x from both the x and the z it aims at: its z is
+off). On the frame none are left, and after, they turn back to the front,
+0x444 a frame. 50 frames into that, `0x3F08` ("Stop!"), and at 60 the answer
+(state 7). Presses count till then. A player doesn't blink on a card (the
+blinks are in states 3, 4 and 6-8: `0x8690F034`).
 
 **The points** (`0x869053B4`), by how far off the count is: 10, 5, 1 on the
 1st and 2nd questions, 20, 10, 5 on the 3rd and 4th, 40, 20, 10 on the last;
 3 or more off, nothing, and a count of 0 scores nothing. The most is 100.
 
-**The answer** (state 7, 190 frames): the booths show the counts in gold
-(G+0x70, `0x8690D000`: prim `FFC800FF`); at 30 "The answer is …" (UI layout
-131's PP6C); `0x3000` at 59; at 60 `0x3F01` and the answer's digits (image
-bank 414) with "Pokémon"; at 90 the points: `0x3F05` if anyone's count is
-right, `0x3F04` if no one scored, and each player, after a random 0-5 frames
-(`0x8691AD80`), cheers (clip 2 from frame 11) if right or is let down (clip 3,
-an Igglybuff with face 2) if 3 or more off. The points go in one every other
-frame, the lamp lit, with `0x3F06`; the crowd (`0x1D08` if anyone was right,
-else `0x1E09`) is asked for every frame from 90 to 189. At 190 the next card.
-The last question's answer: 29 frames, then state 8: song 31, the camera
+**The answer** (state 7, `0x8690941C`): the booths show the counts in gold
+(G+0x70, `0x8690D000`: prim `FFC800FF`) till frame 89; "The answer is …"
+(layout 133) from 30 to 89; `0x3000` asked for every frame from 30 to 58 (a
+drum roll: the sound's layer loops till it isn't asked for); at 60 `0x3F01`
+and the answer's digits (image bank 414) with "Pokémon" (layout 130 or 131)
+to 89; at 90 the points: `0x3F05` if anyone's count is right, `0x3F04` if no
+one scored, and each player, after a random 0-5 frames (`0x8691AD80`), cheers
+(clip 2 from frame 11) if right or is let down (clip 3, an Igglybuff with face
+2) if 3 or more off. The points go in one every other frame, the lamp lit,
+with `0x3F06` while some are still to come (not on the last step, nor at all
+for 1 point: `0x869099C8`); once they're all in, from frame 96, it skips to
+its frame 129 (`0x869099D8`: G+0x4C = 0x81), and the next card comes after
+its 190th: max(159, 151 + 2P) frames in all, P the most points anyone got
+(191 when someone got 20, 171 for 10). The crowd (`0x1D08` if anyone was
+right, else `0x1E09`; only if someone scored) is asked for every frame from
+90 to the end. The last question's answer: 30 frames of state 7 (at its 29th
+it goes to state 8), then state 8 (`0x86909FAC`): song 31 at 0, the camera
 eases to the results view over 120 frames while the booths go up 0.61 a point
-to the totals so far (`0x3209`); from 120 the counts and "Who is correct?"
-(layout 126); song 32 at 180 with the answer's digits; at 210 the points,
-going up a point every other frame (`0x310A`, `0x3209`), the crowd `0x1C07`;
-at 290 the winners: everyone on the top total (`0x8690B89C`). From 340 their
-booths go up to the height of 100 points, their lamps flashing every 3 frames,
-cheering (clip 2 from frame 10); the others' sink, faster and faster, and spin
-8° a frame (`0x869004AC`), let down (clip 1, face 1).
+to the totals so far, a point every other frame with the lamp and `0x3209`
+(asked for again the frame after: G+0x194); from 120 to 209 the counts,
+"Who is correct?" (layout 125) and "The answer is …" (133); song 32 at 180
+(nothing else) and the answer's digits; at 210 the points (`0x3F05` /
+`0x3F04` as above), up a point every other frame (`0x3209` and its echo,
+`0x310A` while some are still to come), the crowd `0x1C07`; once they're all
+in it skips to its frame 289 (`0x8690A5AC`), and on the frame after, 290, the
+winners: everyone on the top total, and module #64's results start
+(`0x8690B89C`, the hand-over): 2 frames after the last point, 212 + 2 (P − 1)
+frames into state 8 (290 only when someone got 40). The song plays on (song
+55 takes its place). The crowd is asked for till 339. From 340 the winners'
+booths go up to the height of 100 points, a point a frame with `0x3209`, their
+lamps flashing every 3 frames, cheering (clip 2 from frame 10); the others'
+sink back to where they started, 1, 2, 3… points a frame (`0x8691AD98`),
+spinning 8° a frame for ever (`0x869004AC`), let down (clip 1, face 1).
+From 341, once none is moving (G+0x170), the booth callback (`0x869004AC`)
+puts module #2's PERFECT (`0x81900164`: image bank 433, as Egg Emergency's,
+in its player's colours) over a booth on 100, 36.4 under its height, 1.76 ×
+(|sin a| + 1) / 2 with a up 0x800 a frame.
 
 **The CPUs.** Their answer is set when the question's made (`0x8690C20C`):
 the right one plus an error of 0, −1, +1, −2, +2, −3, +3 (`0x8690EF78`) drawn
@@ -877,14 +911,20 @@ on 60 before the last question (perfect so far) uses a row that's never right:
 | Normal | 80% | 40% | 20% |
 | Hard | 95% | 60% | 30% |
 
-Their presses (`0x8690B984`): nothing till a Pokémon has gone; while some are
-left, one when more than 21, 18, 14 frames (Easy, Normal, Hard; 25 at level
-0) have passed since the last and rand % D is 0 (D 20 for an answer under 5,
-10 under 15, 5 under 25, else 3); once none are left, one straight away if at
-0, then when 4 or more frames have passed and rand % D < 2; never past its
-answer. A CPU with a big answer can run out of time and end lower, so on the
-whole the best of three CPUs makes about 58 of 100 on Easy, 60 on Normal and
-71 on Hard (simulated).
+Their presses (`0x8690B984`, first in each counting frame, from what the
+frame before left): nothing till something's been on screen (G+0x80: an
+object, a Pokémon or its shadow, left of x 135 after its move, `0x8690AC48`,
+or a pop-up gone); while some are left, one when more than 18, 15, 12 frames
+(Easy, Normal, Hard; 21 at level 0; PAL's 21, 18, 14 and 25: `0x8690BB38`)
+have passed since its last and rand % D is 0 (D 20 for an answer under 5, 10
+under 15, 5 under 25, else 3), or once all those left are on screen (G+0x84:
+no pop-up left, nor one gone the frame before) when 4 have and rand % D is
+0; once none are left, one at once if it's at 0, and one when 4 have passed
+and rand % D < 2; never past its answer. Its frames since its last press
+(G+0..0xC) start at 3 as the game does (`0x8690E990`) and run on through
+every counting, question to question. So a CPU nearly always gets to its
+answer (95-98%), and the best of three makes about 58 of 100 on Easy, 72 on
+Normal and 78 on Hard (simulated).
 
 **The scene** (`0x8690073C`, geo layout `0x8690EBC0`). The camera
 (`0x86900020`) is three presets at `0x8690EB4C` (distance d, angle a, height
@@ -898,35 +938,59 @@ steps at the stage's front, and four hanging over the booths). The booths
 (80, 100, 101, 102: blue, green, purple, yellow) stand at x −157.5, −52.5,
 52.5, 157.5, y 10, 0.1×; each has a lamp (its face clip: dark and bright
 blue, green, red and yellow for 1P-4P, so the purple booth's is red), three
-digit places on bones 1-3 (the screen: the total in white, 16×16 digits of
-image bank 415, or the count in gold) and its player's spot on bone 4. The
+digit places on bones 1-3 (the screen: 16×16 I4 digits of image bank 415
+through `FC30FFFF FFFFF238`, `0x8690DBA8`: prim × the grey, its alpha the
+grey, so dark is clear; prim white for the total, `FFC800` for the count)
+and its player's spot on bone 4. The
 players stand in them at 0.075×: Cleffa (114, or 186 if shiny) or Igglybuff
 (119, or 205) by the Game Pak's Pokémon (species 173, 174; which one a player
 gets without one is decided outside the module, *unknown*); their clips are 0
 idle, 1 let down, 2 a cheer, 3 off. A 1-in-300 chance a frame of a blink
-(`0x8003F028`, *by appearance*).
+(`0x8003F028`, *by appearance*). The lights (the geo layout): 646464 all
+round, and two the game turns with the camera each frame: white at the
+eye's pitch + 45°, yaw − 45° (`0x869000D0`), and 808080 at −45° − the pitch,
+yaw + 135° (`0x86900138`), the other way.
 
-**The words.** The cards are UI layouts (`0x1E40000` records 125-133, loaded
-by `0x8004DD4C`; see [images-and-text.md](images-and-text.md)): a board hung on
-two chains (133), the question about one, two or three kinds (127, 130, 128)
-or all of them (129: the ALL picture, bank 412), each box showing the
-Pokémon's icon (the icons archive, by dex number: the module asks for 25,
-172, 54…) and its name (bank 413), "Question 1"-"4" or "Last Question", "10",
-"20" or "40" "pts. for perfect" and "Press the A Button to count!" (bank 416).
-"Let's count …" (bank 416) slides in from the right over frames 12-36 of the
-card and out to the left over 60-84 (`0x869090A0`, y 76 on the 320 × 240
-screen); "Stop!" pops up to twice its size over 10 frames, 50 frames after the
-last Pokémon's gone, and shrinks away 20-30 frames into the answer
-(`0x8690DC88`). How the board comes and goes is in the layouts' own animation
-(*not read*), as is when each card shows.
+**The words.** The cards are UI layouts (archive `0x1E40000`), loaded by
+`0x86902134` (`0x8004DD4C`): 126, 129, 127 (the question about one, two or
+three kinds), 128 (the last: all of them), 130 and 131 (the answer's one or
+two digits and "Pokémon"), 125 ("Who is correct?") and 133 ("The answer is
+…"); 132, a board hung on two chains, isn't loaded by any code module. Each
+box shows the Pokémon's icon (the icons archive, by dex number: the module
+asks for 25, 172, 54…; `0x8690C7F0`) and its name (bank 413); then "Question
+1"-"4" or "Last Question", "10", "20" or "40" "pts. for perfect", "Press the
+A Button to count!" (bank 416) and the ALL picture (bank 412). The elements
+sit at their places on the 320 × 240 screen and are drawn still, as they
+are, on the frames the game draws them: the card from its first frame to its
+84th (`0x86907614`), the answer's as above (`0x86909EAC`, `0x8690AA64`); the
+layouts' own animation isn't used. Their colours are set on each element
+(`0x87F0A6C8`) for the layouts' mode 2 (`FC309661 552EFF7F`, `0x8004FBF4`:
+(prim − env) × the grey + env, alpha its own × prim's): "Question n" and
+"Last Question" white / `9B0078`, "pts. for perfect" and its number white /
+`006400`, "Press the A Button" white / `000082` (`0x8690768C`), the names
+white / `960000` (`0x8690C6C4`), "Who is correct?", "The answer is …", the
+digits and "Pokémon" `FFB400` / `000096` (`0x86909EF4`, `0x8690CA50`).
+"Let's count …" (bank 416, `E6F0FF` / `000050` the same way) slides in from
+the right over frames 12-36 of the card and out to the left over 60-84
+(`0x869090A0`, y 76 on the 320 × 240 screen). "Stop!" (bank 416's picture
+19, `FFBEF0` / `460028`: `0x8690DF90`) is a quad made as the Pokémon's are, at
+(0, 0, 50), in a scene of its own (geo layout `0x8690E158`, called after the
+studio's) whose camera is its node's (command 0x0B, `0x8003FF98`: 1000 from
+the origin at angles 0, 0, a fov of 30, no callback): so it's in the middle
+of the screen, 24.5 lines of 480 tall at 1×. It pops up to 2.0526× over 10
+frames 50 frames into the tail (sin 9° a frame) and shrinks away (3 − 3 sin)
+× 0.6842 20-30 frames into the answer (`0x8690DC88`; 2.0526 is the double at
+`0x8690F900`).
 
 **Sounds** (bank 3 of the effect table: [audio.md](audio.md)): `0x3F02` a
 press, `0x3F07` a card (`0x3F0B` the last one's), `0x3F03` 36 frames into it,
-`0x3F08` "Stop!", `0x3000` and `0x3F01` the answer, `0x3F05` someone's right,
-`0x3F04` no one scored, `0x3F06` the points going in (`0x310A` on the last
-question), `0x3209` a booth going up; the crowd is bank 1's (Clear Cut
-Challenge's). Songs 29 (the opening), 30 (from the first card), 31 (the
-results) and 32 (before the last answer).
+`0x3F08` "Stop!", `0x3000` the drum roll and `0x3F01` the answer, `0x3F05`
+someone's right, `0x3F04` no one scored, `0x3F06` the points going in
+(`0x310A` on the last question), `0x3209` a booth going up; the crowd is bank
+1's (Clear Cut Challenge's). Songs 29 (the opening, on its frame 25), 30
+(from the first card), 31 (the results) and 32 (before the last answer). The
+countdown has no sounds (neither module asks for any) and the end no
+whistle: the game's only `0xCF0B` is as you leave the instructions.
 
 ## Pichu's Power Plant
 

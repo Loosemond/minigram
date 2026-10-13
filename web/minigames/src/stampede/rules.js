@@ -22,19 +22,34 @@
 export const FPS = 30;
 export const QUESTIONS = 5;
 export const MAX_COUNT = 99;
+// The game's opening camera move (state 4, 0x86905630) runs over the countdown:
+// 136 frames from its start, GO coming on its frame 99 (module #64's 100th, a
+// step of 25), so the first card comes 37 frames after GO
+export const OPENING = 37;
 export const CARD = 85; // a question's card (frames), before the counting (state 5)
-export const TAIL = 60; // the counting goes on this long after the last Pokemon's gone...
-export const STOP = 50; // ..."Stop!" (0x3F08) this far in
-export const ANSWER = 190; // the answer and its points (state 7)
-export const JUDGED = 90; // the points are given this far into the answer
-// the last answer: 29 frames (state 7), then the columns go up to the totals
-// so far (state 8: 120 frames), the counts and the answer show, and the
-// points go in, to the winners at frame 290 of it
-export const LAST_ANSWER = 29 + 290;
-export const LAST_JUDGED = 29 + 210;
-export const LAST_COUNTS = 29 + 120; // (the counts show from here)
+export const TAIL = 60; // the counting goes on this long after the last one's gone...
+export const STOP = 50; // ..."Stop!" (0x3F08) this far in (the frame it goes is the tail's 0th)
+export const JUDGED = 90; // the points are given this far into the answer (state 7)
+// the last answer: 30 frames of state 7, then state 8 (0x86909FAC): the columns
+// go up to the totals so far (120 frames), the counts and the answer show, and
+// at its 210 the points go in
+export const LAST_STATE8 = 30;
+export const LAST_JUDGED = LAST_STATE8 + 210;
 export const POINTS = [[10, 5, 1], [10, 5, 1], [20, 10, 5], [20, 10, 5], [40, 20, 10]];
-export const OFF_LEFT = -250; // a Pokemon's gone once it's left of this
+export const OFF_LEFT = -250; // a Pokemon (or its shadow) is gone once it's left of this...
+export const ON_SCREEN = 135; // ...and on screen once it's left of this (0x8690AC48)
+export const POP_GONE = 26; // a pop-up's gone this many frames after its t2 (its age, from -25 - t2, past 0)
+
+// How long an answer is, by the most points anyone got in it (pts: each
+// seat's). The points go in one every other frame from its 90th (210th of
+// state 8 in the last), and once they're all in (0x869099C8) the game skips
+// on: a question's answer (state 7) to its frame 129 if it's 96 or more, then
+// 61 more to the next card (191 in all when someone got 20); the last (state
+// 8) to its frame 289 (0x8690A5AC), the winners on the frame after (0x8690B89C).
+export function answerFrames(q, pts) {
+  const P = Math.max(0, ...pts);
+  return q === QUESTIONS - 1 ? LAST_STATE8 + 210 + 2 * Math.max(P - 1, 0) + 2 : Math.max(96, 88 + 2 * P) + 63;
+}
 
 // The 17 kinds that go by (0x8690E438: image bank, frame list; 0x8690E558:
 // scale, picture size, speed a + 0..b a frame, z from z0 over zr, x from x0
@@ -108,8 +123,8 @@ const CPU_ODDS = [
   [[190, 192, 194, 196, 198, 199, 200], [120, 145, 170, 180, 190, 195, 200], [60, 90, 120, 150, 180, 190, 200], [0, 100, 100, 160, 160, 200, 200]],
 ];
 // how often a CPU presses as the Pokemon go (0x8690B984): more than this many
-// frames apart, by level...
-const CPU_GAP = [25, 21, 18, 14];
+// frames apart, by level (NTSC's, 0x8690BB38: PAL's are 25, 21, 18, 14)...
+const CPU_GAP = [21, 18, 15, 12];
 // ...and then a chance of 1 in D a frame, D by its answer
 const cpuOdds = (answer) => (answer < 5 ? 20 : answer < 15 ? 10 : answer < 25 ? 5 : 3);
 
@@ -147,8 +162,9 @@ export function after(state, q, totals, allPeople) {
 // CPUs' answers); comLevel: the COM level byte (0 with no CPUs). Returns
 // { q, special, k, code, what (the kinds counted), stream: [{kind, role, x,
 // z, t2, speed, gone (counting frame it's gone on)}], answer, last (the
-// counting frame the last one's gone on), frames (the counting's length),
-// cpu: [each seat's answer if it were a CPU], state (for the next question) }.
+// counting frame the last one, or its shadow, is gone on), frames (the
+// counting's length), cpu: [each seat's answer if it were a CPU], state (for
+// the next question) }.
 export function question(seed, q, state, cpuTotals = [0, 0, 0, 0], comLevel = state.level) {
   const r = quad(seed ^ [0x2545f491, 0x6d2b79f5, 0x1b873593, 0x3c6ef372, 0x7f4a7c15][q]);
   const lv = state.level;
@@ -182,9 +198,10 @@ export function question(seed, q, state, cpuTotals = [0, 0, 0, 0], comLevel = st
     const K = KINDS[o.kind];
     const v = (r() % (K.b + 1)) + K.a;
     o.speed = K.pops ? 0 : Math.max(4, Math.trunc(v * SPREAD[lv]));
-    o.gone = K.pops ? 25 + o.t2 : Math.floor((o.x - OFF_LEFT) / o.speed); // (the counting frame it goes on: 0x8690ABCC)
+    o.gone = K.pops ? POP_GONE + o.t2 : Math.floor((o.x - OFF_LEFT) / o.speed); // (the counting frame it goes on: 0x8690ABCC)
   }
-  const last = Math.max(...recs.map((o) => o.gone));
+  // (each is two objects, its shadow and itself: the counting goes on till both have gone)
+  const last = Math.max(...objects(recs).map((o) => o.gone));
   // the CPUs' answers (0x8690C20C)
   const cpu = cpuTotals.map((total) => {
     const row = q === 4 && total === 60 ? 3 : [0, 0, 1, 1, 2][q];
@@ -255,42 +272,76 @@ export function points(q, count, answer) {
   return d < 3 ? POINTS[q][d] : 0;
 }
 
+// The objects a question's stream is (0x8690AD3C): each Pokemon's shadow (x -
+// dx, its own speed) and itself, each with the counting frame it's gone on
+// and (moving ones) the one it's first on screen after (x < 135, 0x8690AC48)
+export function objects(stream) {
+  const out = [];
+  for (const o of stream) {
+    const K = KINDS[o.kind];
+    for (const x of [o.x - K.dx, o.x]) {
+      if (K.pops) out.push({ pop: true, gone: o.gone });
+      else out.push({ pop: false, gone: Math.floor((x - OFF_LEFT) / o.speed), on: Math.floor((x - ON_SCREEN) / o.speed) });
+    }
+  }
+  return out;
+}
+
 // The CPUs' presses as the stream goes by (0x8690B984): for each seat, the
-// counting frames it presses on, to its answer. They start once the first
-// Pokemon has gone, keep along at about one each gap frames, and catch up
-// after the last one; one that doesn't get there in time ends lower.
-// level: the COM level (the game's G+0x78).
-export function cpuPresses(Q, level, seat) {
+// counting frames it presses on, to its answer. Each frame it goes by what the
+// frame before left (it runs before the stream moves): nothing till an object
+// has come on screen (G+0x80: one left of x 135 after its move, or a pop-up
+// gone); while some are left, one when more than gap frames have passed since
+// its last and rand % D is 0 (once all those left are on screen, G+0x84, when
+// 4 have); once none are left, one at once if it's at 0, and one when 4 have
+// passed and rand % D < 2; never past its answer. since: the frames since its last press
+// as the counting starts (G+0..0xC: 3 as a game starts, then on from question
+// to question: sinceAfter). level: the COM level (the game's G+0x78).
+export function cpuPresses(Q, level, seat, since = 3) {
   const r = quad(Q.seed ^ 0x51ed270b ^ (Q.q << 8) ^ (seat << 16));
   const answer = Q.cpu[seat], D = cpuOdds(answer), gap = CPU_GAP[level];
-  const goneBy = (f) => Q.stream.filter((o) => o.gone < f).length; // (what the game knows on frame f: a frame late)
+  const objs = objects(Q.stream), moving = objs.filter((o) => !o.pop), pops = objs.filter((o) => o.pop);
+  const most = (list, k) => list.reduce((m, o) => Math.max(m, o[k]), -Infinity);
+  // the first frame it goes by something on screen; the first that all left are
+  // (no pop-up left, nor one gone the frame before: they count as gone, not as
+  // on screen); and the first with none left
+  const from = Math.min(...moving.map((o) => o.on), ...pops.map((o) => o.gone)) + 1;
+  const allOn = Math.max(most(moving, "on") + 1, most(pops, "gone") + 2);
+  const none = Math.max(...objs.map((o) => o.gone)) + 1;
   const presses = [];
-  let since = 3, count = 0;
-  for (let f = 0; f < Q.frames && count < answer; f++) {
-    const gone = goneBy(f), left = gone < Q.stream.length;
+  let count = 0;
+  for (let f = 0; f < Q.frames; f++) {
     let press = false;
-    if (gone >= 1) {
-      if (left) press = since > gap && r() % D === 0;
-      else press = count === 0 || (since >= 4 && r() % D < 2);
+    if (f >= from) {
+      if (f < none) {
+        if (f < allOn) press = count !== answer && since > gap && r() % D === 0;
+        else press = count !== answer && since >= 4 && r() % D === 0;
+      } else {
+        if (count === 0) press = true;
+        if (count !== answer && since >= 4 && r() % D < 2) press = true;
+      }
     }
     since++;
-    if (press) { presses.push(f); count++; since = 0; }
+    if (press && count < MAX_COUNT) { presses.push(f); count++; since = 0; }
   }
   return presses;
 }
+// a CPU's frames since its last press once a question's counting is over
+export const sinceAfter = (Q, presses, since) => (presses.length ? Q.frames - 1 - presses[presses.length - 1] : since + Q.frames);
 
 // how long after an answer's judged each seat reacts (0x8691AD80: rand % 6 frames)
 export const reactDelay = (seed, q, z) => quad(seed ^ 0x2c1b3c6d ^ (q << 4) ^ (z << 12))() % 6;
 
 // A game's timeline (frames from GO), as the questions come: question q's
 // card starts at at[q], its counting at at[q] + CARD and its answer at
-// at[q] + CARD + frames.
-export function times(questions) {
+// at[q] + CARD + frames; it ends by its points (pts[q]: each seat's).
+export function times(questions, pts) {
   const at = [];
-  let t = 0;
+  let t = OPENING;
   for (const Q of questions) {
     const start = t, count = start + CARD, answer = count + Q.frames;
-    at.push({ start, count, answer, judged: answer + (Q.q === 4 ? LAST_JUDGED : JUDGED), end: answer + (Q.q === 4 ? LAST_ANSWER : ANSWER) });
+    at.push({ start, count, answer, judged: answer + (Q.q === QUESTIONS - 1 ? LAST_JUDGED : JUDGED),
+              end: answer + answerFrames(Q.q, pts[Q.q] || []) });
     t = at[at.length - 1].end;
   }
   return at;

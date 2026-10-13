@@ -1,13 +1,15 @@
 // Loads Streaming Stampede's files (tools/web_assets.py puts them in
 // assets/stampede/): the studio (the circus backdrop, the ramp, the books),
 // the four booths, Cleffa and Igglybuff with their faces, a strip of
-// pictures for each Pokemon that goes by, and the booths' digits. The question
-// board's pictures are loaded by the page. Lighting is done on the textures'
-// display values, as the N64 does (see src/egg/assets.js, docs/colours.md).
+// pictures for each Pokemon that goes by, the booths' digits and PERFECT. The
+// cards' pictures (and "Stop!") are loaded by the page. Lighting is done on the
+// textures' display values, as the N64 does (see src/egg/assets.js,
+// docs/colours.md).
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { retry, attemptURL, fetchRetry } from "../retry.js";
+import { tint } from "../tint.js";
 import { KINDS } from "./rules.js";
 
 const FPS = 30; // the game's animation rate
@@ -21,6 +23,14 @@ const texture = (url) => retry((n) => texLoader.loadAsync(attemptURL(url, n)), u
   return t;
 });
 
+// A lit part as the RSP lights it: its shade the ambient and the lights' N.L
+// (index.js: the game's), held to 1, times the texel; never brighter than its
+// texture (as Delibird's Delivery's: src/delibird/assets.js)
+const holdShade = (sh) => {
+  sh.fragmentShader = sh.fragmentShader.replace(
+    "vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + totalEmissiveRadiance;",
+    "vec3 outgoingLight = min(reflectedLight.directDiffuse + reflectedLight.indirectDiffuse, diffuseColor.rgb) + totalEmissiveRadiance;");
+};
 function n64Material(src) {
   if (src.isMeshBasicMaterial) {
     if (src.map) src.map.colorSpace = THREE.NoColorSpace;
@@ -32,7 +42,16 @@ function n64Material(src) {
   });
   if (m.map) m.map.colorSpace = THREE.NoColorSpace;
   m.userData = src.userData;
+  m.onBeforeCompile = holdShade;
+  m.customProgramCacheKey = () => "stampede-shade";
   return m;
+}
+// a copy of a part's material, lit the same (clone() leaves onBeforeCompile behind)
+export function copyMaterial(m) {
+  const c = m.clone();
+  c.onBeforeCompile = m.onBeforeCompile;
+  c.customProgramCacheKey = m.customProgramCacheKey;
+  return c;
 }
 function prepare(scene) {
   scene.traverse((o) => {
@@ -61,7 +80,7 @@ export async function loadAssets(base, onProgress = () => {}) {
   let done = 0;
   const job = (p) => { jobs.push(p); return p.then((x) => { onProgress(++done / jobs.length); return x; }); };
   const banks = [...new Set(KINDS.map((k) => k.bank)), 201];
-  const [props, booths, players, infos, strips, digits, gold] = await Promise.all([
+  const [props, booths, players, infos, strips, digits, gold, perfect] = await Promise.all([
     Promise.all(PROPS.map((m) => job(gltf(base + m + ".glb")))),
     Promise.all([0, 1, 2, 3].map((i) => job(gltf(base + "booth" + i + ".glb")))),
     Promise.all(PLAYERS.map((m) => job(gltf(base + m + ".glb")))),
@@ -69,8 +88,9 @@ export async function loadAssets(base, onProgress = () => {}) {
     Promise.all(banks.map((b) => job(texture(base + "s" + b + ".png")))),
     Promise.all([...Array(10).keys()].map((i) => job(texture(base + "d" + i + ".png")))), // image bank 415
     Promise.all([...Array(10).keys()].map((i) => job(texture(base + "g" + i + ".png")))), // and in gold, for the counts
+    job(texture(base + "perfect.png")), // PERFECT (bank 433, module #2's)
   ]);
-  const out = { sprites: {}, digits, gold };
+  const out = { sprites: {}, digits, gold, perfect: perfect.image };
   PROPS.forEach((name, i) => { out[name] = prepare(props[i].scene); });
   out.booths = booths.map((g) => prepare(g.scene));
   banks.forEach((b, i) => { out.sprites[b] = strips[i]; });
@@ -101,7 +121,7 @@ export function makeModel(a, s) {
   const faceMats = [];
   model.traverse((o) => {
     if (o.isMesh && o.material.userData.ps2_face) {
-      o.material = o.material.clone();
+      o.material = copyMaterial(o.material);
       faceMats.push(o.material);
     }
   });
@@ -165,14 +185,31 @@ export function makeSprite(assets, kind) {
   return mesh;
 }
 
-// its shadow: image bank 201's grey dot, flat on the ground, grey at half
-// strength (the game's prim colour 192, 192, 192, 128)
+// its shadow: image bank 201's dot, flat on the ground. The game draws it
+// through FC50FFFF FFFFF238 with env C0C0C0 (0x8690B2A8): its colour env x the
+// texel's grey (0x91: 6D6D6D), its alpha the texel's own (IA4: all or nothing),
+// so it's solid; env's alpha (0x80) isn't used
 export function makeShadow(assets, kind) {
-  const mat = new THREE.MeshBasicMaterial({ map: assets.sprites[201], color: 0xc0c0c0, transparent: true, opacity: 0.5, depthWrite: false });
+  const mat = new THREE.MeshBasicMaterial({ map: assets.sprites[201], color: 0xc0c0c0, transparent: true, depthWrite: false });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), mat);
   mesh.rotation.x = -Math.PI / 2;
   mesh.scale.setScalar(kind.shadow);
   mesh.visible = kind.shadow > 0;
   mesh.frustumCulled = false;
   return mesh;
+}
+
+// PERFECT (module #2: 0x81900164, drawn by 0x81900214 from its own list, over
+// the scene here): bank 433's picture, 64 x 26, through FC30B3FF 5FFEFE38,
+// (prim - env) x its grey + env in the player's colours (0x81900784, as Egg
+// Emergency's: src/egg/fx.js)
+const PERFECT_COLOURS = [[[200, 200, 255], [0, 80, 200]], [[200, 255, 200], [0, 80, 0]],
+  [[255, 200, 200], [200, 0, 70]], [[255, 240, 190], [230, 90, 0]]];
+export function makePerfect(assets, z) {
+  const tex = new THREE.CanvasTexture(tint(assets.perfect, ...PERFECT_COLOURS[z]));
+  tex.colorSpace = THREE.NoColorSpace;
+  const sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false }));
+  sign.renderOrder = 10;
+  sign.visible = false;
+  return sign;
 }
