@@ -32,6 +32,9 @@ const BALL_SPEED = 4; // "BALL SPEED": the most a ball goes in a step (each boun
 const SMASH_DEC = 1; // "SMASH DEC": what a smash's push keeps each step
 
 export const STEPS = 3; // the play runs three steps a frame (0x86302404)
+// the results come up 8 frames after the end (0x863024A8 counts them on the
+// balls' counter, which a ball going puts back to 0: then a frame later)
+export const AFTER = 8;
 export const HURRY = 30 * FPS; // the last 30 s: the tune speeds up (0x8630352C)
 const MORE_AFTER = 3 * FPS; // after 3 s with too few balls, one more may come (0x863031A4)...
 const MOST_BALLS = 3; // ...up to three at once
@@ -125,6 +128,8 @@ export class World {
     this.seed = seed >>> 0; // the game's random numbers' state (rnd())
     this.t = -1; // the last frame run
     this.end = null; // the frame the play ended on
+    this.handOver = null; // and the frame the results came up on
+    this.onStep = null; // (the scene's: told after each step, to see where things were; not the rules')
     this.ids = 0;
     this.events = [];
     this.time = TIME; // frames left
@@ -148,7 +153,7 @@ export class World {
   rnd() { return (this.seed = (Math.imul(this.seed, 1664525) + 1013904223) >>> 0); }
   u() { return this.rnd() / U; }
 
-  // ---- a frame (0x8630352C; after the end 0x863024A8, which only runs the steps) ----
+  // ---- a frame (0x8630352C; after the end 0x863024A8, which counts to the results, then runs the steps) ----
   // pads: each person's [stick (-64-64, along their lane: + is +x), A pressed this frame] (null: none)
   step(t, pads = []) {
     this.t = t;
@@ -158,7 +163,11 @@ export class World {
       if (this.clock > MORE_AFTER) { this.want = Math.min(this.want + 1, MOST_BALLS); this.clock = 0; }
       if (this.balls.length < this.want) this.addBall();
     }
-    for (let k = 0; k < STEPS; k++) this.substep(pads, playing);
+    if (!playing && ++this.clock === AFTER && this.handOver === null) this.handOver = t;
+    for (let k = 0; k < STEPS; k++) {
+      this.substep(pads, playing);
+      if (this.onStep) this.onStep(t, k);
+    }
     if (!playing) return;
     // the clock and the points (0x8630328C)
     this.time--;
@@ -295,7 +304,9 @@ export class World {
   }
   // on its way (0x86306710; once the play's over, slowing: 0x86306AC0): its
   // curl turns it, a smash's push adds on, then the walls; past the court,
-  // a goal (it fades and goes); a hit counts once it's in the middle
+  // a goal (it fades and goes); a hit counts once it's in the middle. The
+  // goal has no check on the play: in the first step after the end (the
+  // ball's not slowed yet: that's set after, 0x86306A74) one still counts
   fly(b, playing, slow) {
     b.lastx = b.x;
     b.lasty = b.y;
@@ -322,7 +333,7 @@ export class World {
           this.want = 1;
           this.clock = 0;
         }
-      } else if (playing && (b.x < -COURT || b.x > COURT || b.y < -COURT || b.y > COURT)) {
+      } else if (b.x < -COURT || b.x > COURT || b.y < -COURT || b.y > COURT) {
         this.goal(b);
         b.out = true;
         b.spinx = 0;
@@ -479,8 +490,8 @@ export class World {
   save() {
     const copy = (o) => ({ ...o });
     return {
-      t: this.t, end: this.end, ids: this.ids, seed: this.seed, time: this.time, clock: this.clock, want: this.want,
-      m: this.m.map(copy), balls: this.balls.map(copy),
+      t: this.t, end: this.end, handOver: this.handOver, ids: this.ids, seed: this.seed, time: this.time, clock: this.clock,
+      want: this.want, m: this.m.map(copy), balls: this.balls.map(copy),
     };
   }
   load(s) {

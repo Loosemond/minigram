@@ -275,6 +275,9 @@ BARRIER = {
     **{name + ".glb": _BB % name for name in ("floor", "lines", "hole", "wall_top", "wall_left", "wall_bottom", "wall_right")},
     "glow.png": bank(151, 0),
     "button_a.png": bank(51, 0),  # (the menus' A button: the smash button on a phone)
+    # Mr. Mime's (129) mouth, shut and open: its texture clip 0, which the end puts on (0x86301374)
+    "mime_face9.png": "objects/129_mr_mime/textures/face/tex09.png",
+    "mime_face10.png": "objects/129_mr_mime/textures/face/tex10.png",
 }
 UI["title_barrier.png"] = bank(374, 0)
 

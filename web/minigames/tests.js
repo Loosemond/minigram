@@ -41,9 +41,12 @@ const TOGEPI_SCRIPT = [[0, 0, -60], [100, 45, -60], [160, 0, -60], [260, -60, -4
 const GOLBAT = { 1: "ef999629c57bfe9c", 12345: "fd9fbc24e01eae26", 2147483647: "a1db3b0f2ef6720e" };
 const GOLBAT_LEVEL = { 1: "normal", 12345: "hard", 2147483647: "easy" };
 // Barrier Ball: a round with seats 0 and 2 on barrierPad() and two CPUs (normal, hard, easy), the
-// world's digest() every 50 frames, the end and the points: the same as JS_BARRIER in tools/test_rooms.py
-const BARRIER = { 1: "ca35d34d47129b07", 12345: "75e7b264d9ec3e9b", 2147483647: "fb92cf612a8219ec" };
-const BARRIER_LEVEL = { 1: "normal", 12345: "hard", 2147483647: "easy" };
+// world's digest() every 50 frames on to the results, the end, the results' frame and the points;
+// and two with four CPUs (normal): one with a goal after the end, one whose results come a frame
+// later (a ball went just after it): the same as JS_BARRIER and JS_BARRIER_CPU in tools/test_rooms.py
+const BARRIER = { 1: "baed3467350c0520", 12345: "46d69816c8c7591b", 2147483647: "7181b8b79a86077e" };
+const BARRIER_CPU = { 22: "66c104cfdcadda70", 250: "420c8089c67e52e1" };
+const BARRIER_LEVEL = { 1: "normal", 12345: "hard", 2147483647: "easy", 22: "normal", 250: "normal" };
 const barrierPad = (z, t) => (z === 0 ? [[64, 0, -64, 32, -32, 0][Math.floor(t / 40) % 6], t % 23 === 0 || t % 61 === 7]
   : [[-64, 64][Math.floor(t / 70) % 2], t % 19 === 0]);
 const golbatPad = (z, t) => (z === 0 ? [[64, 0, -64, 32, -32, 0][Math.floor(t / 90) % 6], t % 12 === 0 || t % 47 === 5]
@@ -1193,17 +1196,24 @@ await test("Gutsy Golbat: a finger on the left steers, a tap on the right flaps"
 
 await test("Barrier Ball: the world and the CPUs are the same as the server's copy of them", async () => {
   const R = await moduleOf(solo, "./src/barrier/rules.js");
-  for (const [seed, want] of Object.entries(BARRIER)) {
-    const w = new R.World(+seed, BARRIER_LEVEL[seed], [false, true, false, true]), parts = [];
-    for (let t = 0; w.end === null; t++) {
-      w.step(t, [barrierPad(0, t), null, barrierPad(2, t), null]);
+  const late = {};
+  for (const [seed, want, cpus] of [...Object.entries(BARRIER).map(([s, d]) => [s, d, [false, true, false, true]]),
+    ...Object.entries(BARRIER_CPU).map(([s, d]) => [s, d, [true, true, true, true]])]) {
+    const w = new R.World(+seed, BARRIER_LEVEL[seed], cpus), parts = [];
+    late[seed] = 0;
+    for (let t = 0; w.handOver === null; t++) {
+      w.step(t, cpus[0] ? [] : [barrierPad(0, t), null, barrierPad(2, t), null]);
+      if (w.end !== null && t > w.end) late[seed] += w.events.filter((e) => e[0] === "goal").length;
       w.events = [];
       if (t % 50 === 0) parts.push(w.digest());
     }
-    parts.push(w.end + ":" + w.scores.join(","));
+    parts.push(`${w.end}:${w.handOver}:${w.scores.join(",")}`);
     const got = await sha16(parts.join(";"));
     assert(got === want, `seed ${seed}: ${got}; tools/barrier_rules.py expects ${want} (update both, and the digests)`);
+    assert(w.handOver - w.end === (+seed === 250 ? R.AFTER + 1 : R.AFTER), `seed ${seed}: the results ${w.handOver - w.end} frames on`);
   }
+  // a goal in the first step after the end still counts (0x86306710 doesn't check the play)
+  assert(late[22] === 1, "goals after the end: " + JSON.stringify(late));
   // its sines are the main program's table's (0x80087FB0), to the last bit
   const s = [0, 1024, 2048, 3072, 512].map((i) => R.sine(i));
   assert(s.join() === `0,1,0,-1,${Math.fround(Math.SQRT1_2)}`, "sines " + s);

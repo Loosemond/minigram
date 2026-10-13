@@ -707,7 +707,9 @@ is):
   steps a frame, as the game does, with its tuning (BALL SPEED 4, GOAL SCORE
   5, TIME 60): more balls as the play goes on (up to three), a ball's curl,
   the walls' edges and posts, the barriers (a hit sends the ball off from Mr.
-  Mime through the spot it hit; a smash's push) and the scoring.
+  Mime through the spot it hit; a smash's push) and the scoring. The game's
+  quirk is kept: a ball past a corner in the first step after the end still
+  counts.
 - **The CPUs** are the game's: each step they go for the ball they reckon
   reaches their line first, if it's no faster than their level lets them
   handle, aiming a little off their barrier's middle, and smash near one
@@ -716,28 +718,36 @@ is):
 
 The screen is the game's view from straight above, turned so your own
 corner is at the bottom and your lane runs across (the game's has 1P's at
-the top left). Each player's badge and points are in the court's corner just
-round from their goal; the clock is beside the court (below it in portrait).
-On a phone: slide a finger anywhere to slide Mr. Mime (half as far as the
-finger goes), and the A button smashes. With a mouse Mr. Mime follows it and
-a click smashes; with a keyboard, ← → move and Space (or ↑) smashes. In the
-countdown the Mr. Mime mime, then put up their barriers; at the end the
-winners dance and the others flop.
+the top left), lit as the game lights it. Each player's badge and points
+(the game's big digits in their colours) are in the court's corner just
+round from their goal; the clock (its digits in blue, no label) is beside the
+court (below it in portrait). On a phone: slide a finger anywhere to slide
+Mr. Mime (half as far as the finger goes), and the A button smashes. With a
+mouse Mr. Mime follows it and a click smashes; with a keyboard, ← → move and
+Space (or ↑) smashes. In the countdown the four Mr. Mime come on miming
+together, then put up their barriers; in the play they stand in step (a
+smash starts the standing clip again). Each ball's glow is in its last
+hitter's colour, and it leaves a copy every step, 8 fading in a row: its
+hitter's colour faded to white. At the end the glows go and the Mr. Mime
+turn to their dance or flop (one in a smash finishes it first), mouths
+opening after 40 frames; 8 frames on, the results come up over the scene,
+which runs on. It's drawn a frame behind the world, between its steps, so
+nothing moves at the game's 30 a second.
 
 **Sound**: the game's (`assets/barrier/sound.bin`, 554 KB): song 35 from GO,
-18 beats a minute faster over the last 30 s as the game makes it, bank 6's
-effects (the smash, the hits by how much they curl the ball, the walls, the
-goals, a ball coming up and flying off), placed by where they happen, the
-count and GO (Pichu's Power Plant's) and the shared count for the last three
-seconds.
+18 beats a minute faster over the last 30 s as the game makes it, and on
+(not faded) till the results' own; bank 6's effects (the smash, the hits by
+how much they curl the ball, the walls, the goals, a ball coming up and
+flying off), placed by where they happen, the count and GO (Pichu's Power
+Plant's) and the shared count for the last three seconds.
 
 What comes from the ROM and what is made up:
 
 | From the game | Made for the remake |
 |---|---|
-| the court, the balls (their coming, spin and serve, curl, bounces and speed), the barriers and smashes, the scoring, the clock, the CPUs, the tune's hurry (module #51's code) | the view turned to your corner, the countdown's 80 frames shown as miming, then the barrier going up, the trail's copies (where and how often: by eye), the barrier's colour track and scroll run at 30 frames a second, the winners' dance's length |
-| Mr. Mime (218, 129) and their clips, the barrier (141), the court (120), the Poké Ball (154), the glow (151) and its size, how the barrier, the glow and its trail are coloured and blended (their combiners, colours and fade), the badges (434), the camera | the touch slide and A button (the menus' A, bank 51), the mouse, the title's art (the court, flat) |
-| song 35, bank 6's effects, the count | |
+| the court, the balls (their coming, spin and serve, curl, bounces and speed), the barriers and smashes, the scoring (a goal just after the end too), the clock, the CPUs, the tune's hurry, the end and the results 8 frames on (module #51's code) | the view turned to your corner, drawn between the game's steps (at 60 a second), the barrier's colour track and scroll run on the clock, not frame by frame |
+| Mr. Mime (218, 129) and their clips and when each plays (the countdown's, the play's in step, the end's and its face), the barrier (141), the court (120), the Poké Ball (154) and its smash's colour, the glow (151) and its size, the trail (a copy a step, 8 steps), how the barrier, the glow and its trail are coloured and blended (their combiners, colours and fade), the light, the badges (434) and digits (429) in each player's colours, the camera | the touch slide and A button (the menus' A, bank 51), the mouse, the title's art (the court, flat), the hint, where the clock and cards go |
+| song 35 (on to the results' own), bank 6's effects, the count | |
 
 Code: `src/barrier/rules.js` has the world (and `tools/barrier_rules.py`, the
 server's copy, line for line), `src/barrier/game.js` the game (the pads,
@@ -1096,8 +1106,10 @@ How it works:
   (`AFTER`), the round's end it waits for.
 - **Barrier Ball**: the same as Gutsy Golbat (`pad`, `won`), with
   `tools/barrier_rules.py`; the play can end on any frame (a fifth point), so
-  the server looks again every half second, and says each one's points
-  (`won`).
+  the server looks again every half second. Once it has, the server runs the
+  world on to the results (no pad counts after the end, but a goal in its
+  first step still does), 8 frames (9 if a ball went just then), and says
+  each one's points then (`won`).
 - **Rampage Rollout**: the same (`pad`: the D-pad held, and A), with
   `tools/rollout_rules.py`; the race is over the frame after the last one's
   in, and the server says when, the frame each came in on and the places
@@ -1332,7 +1344,7 @@ in, how far it had got the frame before (the game's tie-break); `pad` as above,
 passed on to the others, and to its own device with `o`, the frame it said, if
 it counts on another one; `won` (`r`, `f`, `h`), Gutsy Golbat's end: the
 frame the play ended on and each seat's hearts; `won` (`r`, `f`, `p`),
-Barrier Ball's end: the frame the play ended on and each seat's points;
+Barrier Ball's end: the frame the play ended on and each seat's points as the results come up;
 `won` (`r`, `f`, `fin`, `p`), Rampage Rollout's end: the frame the race ended
 on, the frame each seat came in on (null: not in) and each one's place;
 `won` (`r`, `f`, `s`), Topsy-Turvy's, Furret's Frolic's and Delibird's Delivery's end: the frame the play ended on and

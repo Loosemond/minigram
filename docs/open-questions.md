@@ -25,12 +25,21 @@ What isn't known yet, roughly by how useful it would be.
   object 146 (loaded by module #51, but nothing found draws it); two geo
   layouts in the module that nothing points to (`0x86307088`: a 120 × 60
   quad that flashes red with a smash; `0x86307158`: a big triangle with image
-  bank 147's star); the trail's colour (its combiner takes K5, the convert
-  constant, which nothing seems to set: the remake takes it as 0, so env's
-  colour); and the barrier panel's shade (its recipe takes the lit vertex's
-  colour, which the remake takes as white: the battle lighting below). (The
-  countdown's length is settled: module #64's 20 frames a count, GO at 80,
-  [minigames.md](minigames.md#the-shared-module-64-the-countdown-and-the-results).)
+  bank 147's star); the barrier panel's shade (its recipe takes the lit
+  vertex's colour, which the remake takes as white: the battle lighting
+  below); where a clip's frame is moved on (taken as once a frame, in the
+  draw, not each step: the smash's clip is then still on frame 8 when it
+  goes back to standing); whether the end's clips and its face clip go
+  round or hold (the remake: the dance round, the flop held, the face held
+  open; the results' ranking comes before it'd matter), and whether +0x68's
+  0x40 is 1×; the two models of 218 and 129 `0x87F0AD50` picks between by
+  player (only one was extracted); and whether `0x87F025B8` puts a new ball
+  first or last (only the CPUs' ties and the random numbers' order). (Settled:
+  the countdown's length, module #64's 20 frames a count, GO at 80,
+  [minigames.md](minigames.md#the-shared-module-64-the-countdown-and-the-results);
+  the trail's colour, whose combiner takes the prim LOD fraction, not K5:
+  the hitter's colour faded to white; and the light, geo command 0x14's
+  degrees.)
 - **Rampage Rollout's loose ends** (its rules are read: [minigames.md](minigames.md#rampage-rollout)):
   image bank 343 (Gutsy Golbat's glow: loaded by module #52, but nothing
   found draws it); the Donphan that run in from by the camera before the

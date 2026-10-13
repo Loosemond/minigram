@@ -22,6 +22,7 @@ SMASH_DEC = 1
 AHEAD = 4  # frames ahead of now a pad may be for (a device sends its player's up to 3 ahead: src/lag.js leadFor)
 
 STEPS = 3
+AFTER = 8  # the results 8 frames after the end (0x863024A8; a ball going puts it back a frame)
 HURRY = 30 * FPS
 MORE_AFTER = 3 * FPS
 MOST_BALLS = 3
@@ -53,9 +54,7 @@ POSTS = [(0, (0, -1)), (3, (1, 0)), (6, (0, 1)), (9, (-1, 0))]
 
 U = 4294967296.0
 
-# How long after the play's end a round is over (made for the remake: the
-# winners' dance), and the latest the play can end
-AFTER = 60
+# The latest the play can end
 LONGEST = TIME + 1
 
 
@@ -145,6 +144,7 @@ class World:
         self.seed = seed & 0xFFFFFFFF
         self.t = -1
         self.end = None
+        self.hand_over = None  # the frame the results came up on
         self.ids = 0
         self.events = []
         self.time = TIME
@@ -180,6 +180,10 @@ class World:
                 self.clock = 0
             if len(self.balls) < self.want:
                 self.add_ball()
+        if not playing:
+            self.clock += 1
+            if self.clock == AFTER and self.hand_over is None:
+                self.hand_over = t
         for _ in range(STEPS):
             self.substep(pads, playing)
         if not playing:
@@ -369,7 +373,7 @@ class World:
                     self.balls.remove(b)
                     self.want = 1
                     self.clock = 0
-            elif playing and (b.x < -COURT or b.x > COURT or b.y < -COURT or b.y > COURT):
+            elif b.x < -COURT or b.x > COURT or b.y < -COURT or b.y > COURT:  # (after the end too: 0x86306A04)
                 self.goal(b)
                 b.out = True
                 b.spinx = 0
@@ -590,7 +594,7 @@ class Round:
         self.pads = [[] for _ in range(SEATS)]  # each person's pad changes: [frame, stick x, A]
         self.at = [0] * SEATS  # where each one's list has been read to
         self.done = None  # how it ended, once decided: dict(f, p)
-        self.end = (LONGEST + AFTER) / FPS  # s after GO it's over (sooner once decided)
+        self.end = (LONGEST + AFTER + 1) / FPS  # s after GO it's over: the results (sooner once decided)
 
     def pad_at(self, s, t):
         """Seat s's [stick x, A] on frame t (frames are run in order)."""
@@ -649,9 +653,15 @@ class Round:
         if safe < 0:
             return None
         self.run_to(min(safe, LONGEST))
-        if self.world.end is not None:
-            self.done = dict(f=self.world.end, p=self.world.scores)
-            self.end = (self.world.end + AFTER) / FPS
+        w = self.world
+        if w.end is not None:
+            # on to the results (no pad counts after the end): a goal in the first step after it still
+            # counts, and they show the points then
+            while w.hand_over is None:
+                w.step(w.t + 1, [None] * SEATS)
+                w.events = []
+            self.done = dict(f=w.end, p=w.scores)
+            self.end = w.hand_over / FPS
             return self.done
         return None
 

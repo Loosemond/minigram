@@ -89,9 +89,12 @@ def golbat_pad(z, t):
 
 # web/minigames/src/barrier/rules.js: a round with seats 0 and 2 on
 # barrier_pad() and two CPUs (normal, hard and easy), the world's digest()
-# every 50 frames, the end and the points (web/minigames/tests.js has the same)
-JS_BARRIER = {1: "ca35d34d47129b07", 12345: "75e7b264d9ec3e9b", 2 ** 31 - 1: "fb92cf612a8219ec"}
-BARRIER_LEVEL = {1: "normal", 12345: "hard", 2 ** 31 - 1: "easy"}
+# every 50 frames on to the results, the end, the results' frame and the
+# points; and two with four CPUs (normal): one with a goal after the end, one
+# whose results come a frame later (web/minigames/tests.js has the same)
+JS_BARRIER = {1: "baed3467350c0520", 12345: "46d69816c8c7591b", 2 ** 31 - 1: "7181b8b79a86077e"}
+JS_BARRIER_CPU = {22: "66c104cfdcadda70", 250: "420c8089c67e52e1"}
+BARRIER_LEVEL = {1: "normal", 12345: "hard", 2 ** 31 - 1: "easy", 22: "normal", 250: "normal"}
 
 
 def barrier_pad(z, t):
@@ -1139,23 +1142,29 @@ def _():
         golbat_rules.TIME, golbat_rules.BACKDROPS_AT, golbat_rules.MEADOW_STOP, golbat_rules.END = saved
 
 
-def barrier_digest(seed):
-    w = barrier_rules.World(seed, BARRIER_LEVEL[seed], [False, True, False, True])
-    parts, t = [], 0
-    while w.end is None:
-        w.step(t, [barrier_pad(0, t), None, barrier_pad(2, t), None])
+def barrier_digest(seed, cpus=(False, True, False, True)):
+    """The digest, the frames from the end to the results, and the goals after the end."""
+    w = barrier_rules.World(seed, BARRIER_LEVEL[seed], list(cpus))
+    parts, t, late = [], 0, 0
+    while w.hand_over is None:
+        w.step(t, [] if cpus[0] else [barrier_pad(0, t), None, barrier_pad(2, t), None])
+        if w.end is not None and t > w.end:
+            late += sum(1 for e in w.events if e[0] == "goal")
         w.events = []
         if t % 50 == 0:
             parts.append(w.digest())
         t += 1
-    parts.append("%d:%s" % (w.end, ",".join(map(str, w.scores))))
-    return hashlib.sha256(";".join(parts).encode()).hexdigest()[:16]
+    parts.append("%d:%d:%s" % (w.end, w.hand_over, ",".join(map(str, w.scores))))
+    return hashlib.sha256(";".join(parts).encode()).hexdigest()[:16], w.hand_over - w.end, late
 
 
 @check("Barrier Ball: the world (the CPUs too) matches the browser's, bit for bit; the round", together="Barrier")
 def _():
     for seed, want in JS_BARRIER.items():
-        assert barrier_digest(seed) == want, seed
+        assert barrier_digest(seed) == (want, barrier_rules.AFTER, 0), seed
+    # a goal in the first step after the end still counts; a ball going then puts the results back a frame
+    assert barrier_digest(22, [True] * 4) == (JS_BARRIER_CPU[22], barrier_rules.AFTER, 1)
+    assert barrier_digest(250, [True] * 4) == (JS_BARRIER_CPU[250], barrier_rules.AFTER + 1, 0)
     # the ball table's sines, as the main program has them (0x80087FB0): a few, and none of the last bits off
     assert [barrier_rules.sine(i) for i in (0, 1024, 2048, 3072, 512)] == [0, 1, 0, -1, barrier_rules.fround(0.5 ** 0.5)]
     # the harder CPUs let fewer goals in (the people's seat holds still)
@@ -1223,7 +1232,7 @@ def _():
         want.pads = [[[0, 64, 1]], [[late, -64, 1]], [], []]
         said = {k: won[k] for k in ("f", "p")}
         assert want.settle(100, 0) == said and said["f"] == barrier_rules.TIME, (won, want.done)
-        assert g.end == (barrier_rules.TIME + barrier_rules.AFTER) / barrier_rules.FPS
+        assert g.end == g.world.hand_over / barrier_rules.FPS and g.world.hand_over >= barrier_rules.TIME + barrier_rules.AFTER
         a.send("pad", r=r, s=0, f=won["f"] + 5, x=-64, a=1)  # after the end: nothing
         a.send("done", r=r)
         b.send("done", r=r)

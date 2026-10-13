@@ -2,13 +2,15 @@
 // turned so this device's player's corner is at the bottom; the controls (on
 // a phone: slide a finger anywhere to slide Mr. Mime, the A button to smash;
 // with a mouse, Mr. Mime follows it and a click smashes; or the keys); its
-// HUD (the clock, the hint and the A button) and its online messages ("pad",
-// "won"). The rules are in rules.js, the game in game.js.
+// HUD (the clock, each one's points on its card, the hint and the A button)
+// and its online messages ("pad", "won"). The rules are in rules.js, the game
+// in game.js.
 import * as THREE from "three";
 import { loadAssets } from "./assets.js";
-import { Game, CAMERA } from "./game.js";
+import { Game, CAMERA, INTRO } from "./game.js";
 import { SEATS } from "./rules.js";
 import { meMark } from "../mark.js";
+import { tintURL } from "../tint.js";
 
 export const SOUNDS = {
   url: "assets/barrier/sound.bin",
@@ -42,15 +44,26 @@ const GAIN = 0.5;
 // the arrow at your Mr. Mime: from behind it (this far, towards its goal),
 // pointing up at it; over it is its barrier, where the balls come
 const BEHIND = 35;
+// the HUD's numbers (0x8630271C) in module #64's big digits (image bank 429,
+// 0x87F06240) through FC30B261 5566FF7F (a texel env + (prim - env) x its
+// grey): each one's points at 0.57 in its player's prim and env, the seconds
+// left at 0.78 in 37A0FF and white, no label, the same to the end
+const POINTS = [[0x00009b, 0xaaf5ff], [0x006400, 0xc8ff9b], [0x780000, 0xffa0be], [0xd25a00, 0xffff8c]];
+const CLOCK = [0x37a0ff, 0xffffff];
+// the scene's light (geo layout 0x86306EA0: command 0x14, 0x80040324): white,
+// 43 degrees up and 18 round (0x8003AE84's way: sin yaw cos pitch, sin pitch,
+// cos yaw cos pitch, towards it), and 155/255 all round (16 9B9B9B); the
+// shade's held to 1 (assets.js)
+const deg = Math.PI / 180, LIGHT_WAY = [Math.sin(18 * deg) * Math.cos(43 * deg), Math.sin(43 * deg), Math.cos(18 * deg) * Math.cos(43 * deg)];
 
 export async function create(shell, onProgress) {
   const assets = await loadAssets("assets/barrier/", onProgress);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x101018);
-  // the game's lights (geo layout 0x86306EA0): a grey ambient (155) and a white one from above
-  scene.add(new THREE.AmbientLight(0xffffff, 0.61 * Math.PI));
-  const sun = new THREE.DirectionalLight(0xffffff, 0.55 * Math.PI);
-  sun.position.set(0.3, -0.4, 1);
+  // the game's lights (LIGHT_WAY): x PI, three's lights being physical
+  scene.add(new THREE.AmbientLight(0xffffff, (155 / 255) * Math.PI));
+  const sun = new THREE.DirectionalLight(0xffffff, Math.PI);
+  sun.position.set(...LIGHT_WAY);
   scene.add(sun);
   const game = new Game(scene, assets);
 
@@ -58,13 +71,28 @@ export async function create(shell, onProgress) {
   const hud = document.createElement("div");
   hud.className = "game-hud bb";
   hud.innerHTML = `
-    <div class="bb-time"><small>TIME</small><b>60</b></div>
+    <div class="bb-time"></div>
     <div class="bb-hint" hidden></div>
     <div class="bb-pads" hidden>
       <div class="bb-smash"><img src="assets/barrier/button_a.png" alt="A"></div>
     </div>`;
   shell.hud.append(hud);
-  const timeEl = hud.querySelector(".bb-time"), timeNum = timeEl.querySelector("b");
+  const timeEl = hud.querySelector(".bb-time");
+  // the digits, each one's and the clock's, as they come
+  const digitPics = POINTS.map(() => []), clockPics = [];
+  POINTS.forEach(([prim, env], z) => {
+    for (let d = 0; d < 10; d++) tintURL(`assets/ui/big${d}.png`, prim, env).then((url) => { digitPics[z][d] = url; });
+  });
+  for (let d = 0; d < 10; d++) tintURL(`assets/ui/big${d}.png`, CLOCK[0], CLOCK[1]).then((url) => { clockPics[d] = url; });
+  // (put in an element as imgs, once all are in: false till then)
+  const showDigits = (el, n, pics, cls) => {
+    if (el.dataset.bb === String(n) && el.firstElementChild?.classList.contains(cls)) return true;
+    const urls = String(n).split("").map((d) => pics[d]);
+    if (urls.some((u) => !u)) return false;
+    el.innerHTML = urls.map((u, i) => `<img class="${cls}" src="${u}" alt="${String(n)[i]}">`).join("");
+    el.dataset.bb = n;
+    return true;
+  };
   const hint = hud.querySelector(".bb-hint"), pads = hud.querySelector(".bb-pads"), smashEl = hud.querySelector(".bb-smash");
   const mark = meMark(hud, shell.me, { below: true }), spot = new THREE.Vector3();
 
@@ -85,11 +113,9 @@ export async function create(shell, onProgress) {
       if (mine(z)) shell.haptic(name === "hitSmash" ? "medium" : "light");
     });
   }
-  game.on("goal", (z, pan, scorer) => { // (0x6F05, 0x6F0B)
+  game.on("goal", (z, pan, scorer) => { // (0x6F05, 0x6F0B; nothing on the HUD: 0x863001BC)
     shell.sound("goal", { pan });
     shell.sound("goal2", { pan });
-    shell.flash(z, "hurt");
-    if (scorer >= 0 && scorer !== z) shell.flash(scorer, "bump");
     if (mine(z)) shell.haptic("heavy");
     else if (mine(scorer)) shell.haptic("light");
   });
@@ -144,7 +170,7 @@ export async function create(shell, onProgress) {
     return !pads.hidden && r.width && Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)) < r.width * 0.75;
   };
 
-  let view = null, box = null, portrait = false;
+  let view = null, box = null, portrait = false, cardEls = [];
   const api = {
     game, scene, assets,
     get views() { return view ? [view] : []; },
@@ -186,6 +212,7 @@ export async function create(shell, onProgress) {
       pads.style.setProperty("--room", Math.max(150, H - (view.y + view.h)) + "px");
       // each player's card in the court's corner just round from its goal (going clockwise)
       const r = [n[1], -n[0]];
+      cardEls = cards;
       cards.forEach((c, z) => {
         c.classList.toggle("mini", portrait || box.w < 640);
         const d = SEATS[z].n.map((v) => -v); // (where its goal is)
@@ -216,12 +243,17 @@ export async function create(shell, onProgress) {
       shell.stopSound();
     },
     go() { game.start(); shell.music("main"); }, // song 35, from GO
-    finish() { shell.music(null, 40); },
+    finish() {}, // (song 35 plays on till the results' own: module #51 never fades it, 0x863024A8)
     stop() { game.stop(); },
     setControl(z, c) { game.setControl(z, c); },
     get state() { return game.state; },
     get time() { return game.time; },
-    step(dt) { game.update(dt); },
+    step(dt) {
+      // (the countdown's frame by the time to GO: online, by the server's clock, however late the start came)
+      const left = shell.toGo();
+      if (game.state === "ready" && left !== null && left >= 0) game.intro = Math.max(0, INTRO - (left + dt) * 30);
+      game.update(dt);
+    },
     animate() {},
     score(i) { return game.pointsOf(i); },
     setScores(scores) { game.scores = scores.map((x) => (Number.isInteger(x) && x >= 0 ? x : 0)); },
@@ -286,8 +318,9 @@ export async function create(shell, onProgress) {
     const playing = game.state === "play" || game.state === "ready";
     pads.hidden = !playing || !coarse?.matches;
     const s = game.secondsLeft();
-    if (timeNum.textContent !== String(s)) timeNum.textContent = s;
-    timeEl.classList.toggle("low", game.state === "play" && s <= 10);
+    showDigits(timeEl, s, clockPics, "bb-clock");
+    // each one's points, in its colours (over the shell's plain digits)
+    cardEls.forEach((c, z) => showDigits(c.querySelector(".num"), Math.max(0, game.pointsOf(z)), digitPics[z], "bb-big"));
     hint.hidden = !(game.state === "ready" || (game.state === "play" && game.lastFrame < SHOW_HINT));
     hint.textContent = coarse?.matches ? "Slide a finger to move · A to smash" : "Mouse or ← → to move · click or Space to smash";
     // which Mr. Mime is yours (the four look the same; yours is at the bottom)

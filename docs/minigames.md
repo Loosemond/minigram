@@ -1911,8 +1911,13 @@ keeps each step); the scoring is type 2 (below).
 **The scene** (geo layout `0x86306EA0`): the camera (command 0x0B) 2000
 straight above the middle, fov 15, 320 × 240: the court is the plane z = 0,
 seen from above (x −351 to 351, y −263 to 263), and the models stand up out
-of it (Mr. Mime turned up by a fixed matrix, `0x86300EF8`). A white light and
-a grey (155) ambient one.
+of it (Mr. Mime turned up by a fixed matrix, `0x86300EF8`). Its light (geo
+command 0x14, `14000000 002B0012 FFFFFFFA`, read by `0x80040324`: two
+halfwords in degrees, × 32768 / 180, then the colour) is white at a pitch of
+43° and a yaw of 18°, which `0x8003AE84` makes the way (sin yaw × cos pitch,
+sin pitch, cos yaw × cos pitch) towards it: from the top of the screen and
+the front; module #51 never turns it. All round it's 155/255 (`169B9B9B`).
+The shade is the ambient and the light's N·L, held to 1.
 
 - **The court** (object 120 at 0.1, `0x863006F8`): its floor, lines and the
   hole in the middle (layouts 0-2), and four walls (3-6), wedges pointing in
@@ -1925,20 +1930,59 @@ a grey (155) ambient one.
   behind its barrier, 1 a smash); for the countdown and the end, object 129
   (0 miming, 1 putting up its barrier, 2 a win, 3 a loss at 0x28/0x40 of the
   speed). The barrier's clips: 0 a smash, 1 coming up, 2 held, 3 and 4 gone.
+  A clip runs on a frame at a time (in the draw), 16.16 at the node's +0x4C
+  (`0x8003EC54`); a new clip starts from its first frame (`0x8003EBDC`; the
+  same one again carries on), and one is done once it's at its last
+  (`0x8003ED14`).
+  - The countdown (state 3): the four come on with it (`0x863035B0`), 129
+    miming at 2× (`0x86301BD0`, `0x20000`: clip 0's 70 frames in 35), all in
+    step; their barriers are made then (`0x86300FE4`) but with no model
+    till Mr. Mime's clip 0 is done: then 129's clip 1 and the barrier's
+    model with its clip 1, 39 frames (`0x863010A8`); then 218 standing and the
+    barrier held (clip 2), both at 1× (`0x863011A4`), 75 frames in, 5 before GO.
+  - The play: still all four in step. A smash (`0x86301858`) puts 218 on
+    clip 1 and the barrier on 0; on the step its timer's 25 (`0x86301814`)
+    they go back to 0 and 2, the standing clip from its start.
+  - The end (state 5: Mr. Mime's callback only calls `0x86301250`): on its
+    first step, if its clip is 0 (or a smash's that's done), it turns to
+    129, by the points then (`0x86300074`): a winner clip 2 at 0x40 and the
+    barrier 3, a loser clip 3 at 0x28 and the barrier 4, and both face
+    (texture) clip 0 (`0x8003F49C`, `0x86301374`): the mouth shut (9) for
+    40 frames, then open (10). One caught in its smash's clip lets it finish
+    first (frame 10, a few frames on), and goes by the points then.
 - **A ball** (object 154's Poké Ball) flies 100 above the court, with a glow
   (image bank 151 at 2.6 × the ball) in its last hitter's colour (grey for
-  nobody: `0x86306FB8`) and a trail of 8 fading copies.
+  nobody: `0x86306FB8`) and a trail of 8 fading copies. A smashed one
+  (`0x863063C0`, from its flight, each step) has a colour over it, the
+  object's +0xC4 (as Gutsy Golbat's: the draw's fog colour, laid over the
+  model by its alpha): white for its first 3 steps, then by its hitter
+  (AAAAFF, AAFFAA, FFAAAA, FFFFAA; white for none), its alpha 255 − its
+  steps / 60 × 255, gone after 60.
 - **How the glow and trail are drawn.** Each is an object of its own
   (`0x86304544`, `0x86304318`) on a quad (`0x87F08E3C`), queued in render
   layer 9 (geo layouts `0x86306F50`, `0x86306F84`: `ZB_CLD_SURF`, blended by
-  its alpha, never added on), its callback setting the combiner.
+  its alpha, never added on), its callback setting the combiner from the
+  object (`0x80094A7C` is its node, the object's +0x24).
   - The colours: `0x86306FB8` holds 8 bytes a colour, prim then env (grey;
     then 1P-4P, as Topsy-Turvy's).
+  - The glow is made with the ball (`0x86304544`). Each step, after the
+    balls and the barriers (`0x863043E4`), it goes where the ball is, takes
+    2.6 × its scale and its hitter's colours, and leaves a copy there
+    (`0x86304318`, called at `0x863044FC`): 0.8 × its size, its prim the
+    hitter's (`0x863043C8`-`0x863043D0`). So there's a copy each step, from
+    the ball's first (in the hole too). In state 5 the glow leaves one more
+    and goes (`0x86304510`-`0x8630452C`); with its ball gone it goes too.
   - The glow (`0x86303F50`, `G_SETCOMBINE FC309BFF 5FFEFE38`): colour env +
     (prim − env) × I, alpha I × env's, which is the object's own, 0xFF.
-  - The trail (`0x863040C4`, `FC371BFF 5FFEFE38`): the same, but with K5 for
-    the picture, which nothing sets (so env's colour). Its alpha is 200 ×
-    (1 − its age / 7), 8 steps. A copy is 0.8 × the glow.
+  - A copy (`0x863040C4`, `FC371BFF 5FFEFE38`): its colour's C is 14,
+    `G_CCMUX_PRIM_LOD_FRAC` (not K5, 15), and its `G_SETPRIMCOLOR` puts the
+    object's alpha (its +0x41) in the LOD fraction; its env is white with
+    that alpha (`0x863041C4`-`0x863041E4`: `0xFFFFFF00 | alpha`). So a texel
+    is white + (prim − white) × alpha, its alpha I × alpha: the hitter's prim
+    over white by its alpha, 78% when new (1P's 6987FF comes out 89A1FF),
+    fading whiter as well as clearer. Its alpha (`0x8630421C`) is 200 × (1 −
+    its age in steps / 7), cut to a whole number, and it goes at 8: seven to
+    be seen at a time, each a step behind the last.
 - **The barrier** (object 141) is two material callbacks, both on I8
   pictures:
   - In layer 8, two quads that pulse: alpha (the vertex's − I × env's) ×
@@ -1997,19 +2041,32 @@ uses x's numbers). Near one (within 42 of the line) they smash with a chance
 of 0.4, 0.7 or 1. With none to go for they wander to a random spot in their
 lane and wait there. With four people the level is Easy.
 
-**The end** (state 5, `0x863024A8`): the steps run on (the balls slow, × 0.975
-a step); 8 frames on, the results. The most points win (a four-way tie: no
-one): they dance (clip 2), the others flop (clip 3).
+**The end** (state 5, `0x863024A8`): each frame a counter adds one, then the
+steps run on (the balls slow, × 0.975 a step). It's the balls' counter
+(+0x8F2C), which the end set to 0 (`0x863032F8`); at 8 the results come up
+(`0x87F0A098`) over the scene, the winners by the points then (`0x86300074`).
+A ball going (past ±350, or faded: `0x86306998`) sets the counter back to 0,
+which can happen only in the first step after the end: then the results come
+a frame later, at 9. That first step still flies the balls the play's way:
+the goal test (`0x86306A04`) doesn't look at the state, and the slow flag is
+set after it (`0x86306A74`), so a ball past ±250 then is still a goal (its
+sounds too), and counts in the results. The most points win (a four-way tie:
+no one): they dance (clip 2), the others flop (clip 3), as above. Song 35
+isn't faded: it plays on till the results bring theirs.
 
 **The HUD** (`0x8630271C`): the badges (bank 434 at 0.8) in the screen's
-corners, each player's points beside them in its colour, and the seconds left
-at the right. The song is 35 (sequence 74), from GO; the count and GO are
+corners, each player's points beside them (`0x86302634`: module #64's big
+digits, bank 429, at 0.57, 13 apart, through `FC30B261 5566FF7F` in its prim
+and env: 00009B and AAF5FF, 006400 and C8FF9B, 780000 and FFA0BE, D25A00 and
+FFFF8C), and the seconds left at the right (bank 429 at 0.78, 17 apart, prim
+37A0FF, env white), with no label and the same to the end. A goal has no
+effect on it (`0x863001BC`). The song is 35 (sequence 74), from GO; the count and GO are
 0x2F00 and 0x2F01 ([audio.md](audio.md)). Its name banner is image bank 374
 (by appearance; 375 is Delibird's Delivery's).
 
 **The states** (`0x863036FC`): 0-2 the instructions and the fade, 3 the
-countdown (Mr. Mime mimes, then puts up its barrier), 4 the play, 5 the end,
-6 the results, 7 the menu after.
+countdown (module #64's, 20 frames a count, GO at 80: Mr. Mime mimes, then
+puts up its barrier), 4 the play, 5 the end, 6 the results, 7 the menu after.
 
 The browser remake runs this world on every device and on the server, from
 everyone's pads (the CPUs think in it), and turns the view so each player's

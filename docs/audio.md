@@ -315,7 +315,10 @@ sets `0x80090D14` to 7, which `0x80027628` turns into audio command 0x49
 (the song's tempo change, in beats a minute) one higher every 25 frames
 (450 / 18, the 7th entry of `0x800A3B30`'s table), for 450 frames: the tune
 ends up 18 beats a minute faster. The remake does the same
-(`musicTempo` in `web/minigames/src/audio.js`).
+(`musicTempo` in `web/minigames/src/audio.js`). At the end there's no
+whistle and no fade: song 35 plays on (at its last tempo) till the results'
+song takes over, 8 frames on (`0x863024A8`). A goal in the first step after
+the end still sounds `0x6F05` and `0x6F0B` (`0x86306A4C`).
 
 Rampage Rollout's (module #52) are bank 5's (`0x5F00`-`0x5F0A`; it also asks
 for `0x5001` and `0x5404`, the same entries), placed by where the Donphan is
