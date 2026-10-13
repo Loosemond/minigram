@@ -23,9 +23,10 @@ PILE = 10
 UNIT = 9000  # a radian
 TURN = 56549  # 2 pi
 SPIN = (144, 172)  # the ring's turn a frame (0.016, 0.0191111 in the final round)
+LEAD = 16  # round 1's call, frames after GO (0x86B08B74)
 INTRO = 28
 LID, RUN, WINDOW = 4, 4, 99
-AFTER = 150
+AFTER = 150  # (the remake's: one length every device agrees on)
 FEINT, BONK = (11, 12), (87, 109)
 BLOWN_CLIPS, WALK_IN = 115, 42
 PINECO_CLOSE = 24
@@ -47,9 +48,11 @@ def quad(seed):
     return rnd
 
 
-def deal(seed, level):
+def deal(seed, level, outs=()):
     """Each round's script: what's under the basket, the open (frames into
-    its race) and Aipom's fakes (deal() in rules.js)."""
+    its race) and Aipom's fakes (deal() in rules.js). outs[n]: a mask of the
+    seats outside the ring as round n is dealt; O is drawn again for each
+    (0x86B0B2C8)."""
     q = quad(seed)
     rounds = []
     last = [-1, -1]
@@ -70,8 +73,10 @@ def deal(seed, level):
             opened = q() % 141 + 60
         else:
             opened = q() % 21 + 30
-        if n > 0 and rounds[n - 1]["kind"] == PINECO:
-            opened = q() % 51 + 70
+        mask = outs[n] if n < len(outs) and outs[n] else 0
+        for s in range(SEATS):
+            if mask >> s & 1:
+                opened = q() % 51 + 70
         fakes = []
         if opened >= 60:
             r = q() % 100
@@ -90,7 +95,7 @@ def deal(seed, level):
 def timeline(rounds):
     """When each round starts, its race starts (play), the basket comes up
     (open), A stops working (close) and it ends: frames from GO."""
-    out, t = [], 0
+    out, t = [], LEAD
     for rd in rounds:
         start = t
         play = start + INTRO
@@ -110,11 +115,25 @@ def round_at(times, t):
 
 
 def ring(times, t):
-    """How far the ring's turned by the end of frame t (units)."""
-    if t < 0:
+    """How far the ring's turned by the end of frame t (units): from the first call."""
+    if t < LEAD:
         return 0
     f = times[ROUNDS - 1]["start"]
-    return SPIN[0] * min(t + 1, f) + SPIN[1] * max(0, t + 1 - f)
+    return SPIN[0] * (min(t + 1, f) - LEAD) + SPIN[1] * max(0, t + 1 - f)
+
+
+def tally_frames(top):
+    """The end's tally (0x86B08F20): k more on its frame k, till the most
+    anyone has (top) is in; the frames before the hand-over (0x86B09148)."""
+    k = 0
+    while k * (k + 1) // 2 < top:
+        k += 1
+    return k
+
+
+def handover(times, top):
+    """The frame (from GO) the game hands over to the results."""
+    return times[ROUNDS - 1]["end"] + 1 + tally_frames(top)
 
 
 class Runner:
@@ -122,8 +141,30 @@ class Runner:
 
     def __init__(self, times, rounds):
         self.times, self.rounds = times, rounds
-        self.ready = 0
+        self.after = 0  # A and B work from this frame, after a feint or the basket
         self.got_in = [None] * ROUNDS
+        self.pineco = None  # the frame it dashed at its last Pineco
+        self.cache = None
+
+    def retime(self, times, rounds):
+        """The rounds dealt again."""
+        self.times, self.rounds, self.cache = times, rounds, None
+
+    @property
+    def ready(self):
+        return self.after if self.pineco is None else max(self.after, self.back() + WALK_IN)
+
+    def back(self):
+        """Blown away: the frame its place comes round to it (then it walks in)."""
+        if self.pineco is None:
+            return None
+        if self.cache is None or self.cache[0] is not self.times or self.cache[1] != self.pineco:
+            self.cache = (self.times, self.pineco, self.blown_back(self.pineco) - WALK_IN)
+        return self.cache[2]
+
+    def outside(self, s):
+        """Outside the ring on frame s: blown away or waiting for its place."""
+        return self.pineco is not None and self.pineco + RUN <= s < self.back()
 
     def can(self, t, closed=None):
         n = round_at(self.times, t)
@@ -138,14 +179,14 @@ class Runner:
         n = round_at(self.times, t)
         tm, fin = self.times[n], 1 if self.rounds[n]["final"] else 0
         if k == "b":
-            self.ready = t + FEINT[fin]
+            self.after = t + FEINT[fin]
             return n, False, None
         if t < tm["open"] + LID:
-            self.ready = t + BONK[fin]
+            self.after = t + BONK[fin]
             return n, True, None
         self.got_in[n] = t + RUN
         if self.rounds[n]["kind"] == PINECO:
-            self.ready = self.blown_back(t)
+            self.pineco = t
         return n, False, t + RUN
 
     def blown_back(self, t):
@@ -154,6 +195,11 @@ class Runner:
         while ring(self.times, u) - start < TURN - SPIN[1 if u >= fin else 0]:
             u += 1
         return u + WALK_IN
+
+
+def outside_mask(runners, s):
+    """Who's outside as a round is dealt on frame s (a mask of seats)."""
+    return sum(1 << z for z, r in enumerate(runners) if r.outside(s))
 
 
 def eat(rd, ins, t=None, pts=None):
@@ -196,18 +242,51 @@ class Round:
     """One game's rounds, presses and scores, on the server."""
 
     def __init__(self, seed, level="normal", cpus=True):
+        self.seed = seed
         self.level = level_code(level, cpus)
+        # who's outside the ring as each round is dealt (a mask of seats: deal's
+        # outs), once the round has started (None till then; round 1's is no one)
+        self.outs = [0] + [None] * (ROUNDS - 1)
         self.rounds = deal(seed, self.level)
         self.times = timeline(self.rounds)
         self.runners = [Runner(self.times, self.rounds) for _ in range(SEATS)]
         self.scores = [0] * SEATS
         self.prizes = [[None] * ROUNDS for _ in range(SEATS)]
         self.decided = [None] * ROUNDS  # the rounds whose prizes are given: the frame each was decided
-        self.end = self.times[-1]["end"] / FPS  # s after GO
+        self.dealt = []  # (round, mask) dealt and not yet told to the devices
+
+    @property
+    def end(self):
+        """s after GO: the hand-over, after the tally of the points."""
+        return handover(self.times, max(self.scores)) / FPS
 
     def wire(self):
         """The game as a device needs it to rejoin it."""
-        return dict(ee=dict(level=self.level, scores=self.scores, prizes=self.prizes))
+        return dict(ee=dict(level=self.level, scores=self.scores, prizes=self.prizes, out=self.outs))
+
+    def deal_to(self, here):
+        """Deal each round that's started by frame here (0x86B0B04C, as it
+        starts): who's outside then, from the presses here so far, decides its
+        open, and so when the rounds after it come. The devices are told
+        (dealt), so all of them have the server's."""
+        for n in range(1, ROUNDS):
+            if self.outs[n] is not None:
+                continue
+            if here < self.times[n]["start"]:
+                break
+            m = outside_mask(self.runners, self.times[n]["start"])
+            self.outs[n] = m
+            self.dealt.append((n, m))
+            if m:
+                self.rounds = deal(self.seed, self.level, [o or 0 for o in self.outs])
+                self.times = timeline(self.rounds)
+                for r in self.runners:
+                    r.retime(self.times, self.rounds)
+
+    def take_dealt(self):
+        """The rounds dealt since last asked, [(n, mask)]."""
+        out, self.dealt = self.dealt, []
+        return out
 
     def press(self, s, k, f, now, allow):
         """Seat s pressed k on frame f (its device's word); it came in at
@@ -217,6 +296,7 @@ class Round:
             return None
         here = int(now * FPS)
         f = min(max(f, here - int(allow * FPS)), here + 1)  # (no older than the way here allows; not in the future)
+        self.deal_to(max(here, f))
         n = round_at(self.times, f)
         res = self.runners[s].press(k, f, self.decided[n])
         return None if res is None else f
@@ -227,6 +307,7 @@ class Round:
         totals, decided)]."""
         out = []
         here = int(now * FPS)
+        self.deal_to(here)
         for n, rd in enumerate(self.rounds):
             if self.decided[n] is not None:
                 continue
@@ -250,11 +331,14 @@ class Round:
         return out
 
     def next_settle(self, allow):
-        """When (round time, s) the next prize could be given, or None."""
+        """When (round time, s) the next prize could be given, or the next
+        round dealt, or None."""
+        at = [self.times[n]["start"] / FPS for n in range(1, ROUNDS) if self.outs[n] is None][:1]
         for n, rd in enumerate(self.rounds):
             if self.decided[n] is not None:
                 continue
             res = judge(rd, [r.got_in[n] for r in self.runners])
             if res is not None:
-                return (res[1] + int(allow * FPS) + 1) / FPS
-        return None
+                at.append((res[1] + int(allow * FPS) + 1) / FPS)
+                break
+        return min(at) if at else None

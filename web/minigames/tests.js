@@ -24,8 +24,9 @@ function eggScript(z, g, d) {
 }
 // Clear Cut Challenge's deal() for every level code: the same as JS_DEALS in tools/test_rooms.py
 const DEALS = { 1: "845261658a294406", 12345: "dcaad7cc4c79a603", 2147483647: "8c853818348d493e" };
-// Eager Eevee's deal() for levels 1-3: the same as JS_EEVEE in tools/test_rooms.py
-const EEVEE = { 1: "d54a9e4e6d7d05ec", 12345: "e4663aef5698855e", 2147483647: "60c971ff1eb41fe2" };
+// Eager Eevee's deal() for levels 1-3, with no one outside and with EEVEE_OUTS: the same as JS_EEVEE in tools/test_rooms.py
+const EEVEE = { 1: "1d47aa9501e2a387", 12345: "d330183e33ae66eb", 2147483647: "708a50a8a21e7b38" };
+const EEVEE_OUTS = [0, 1, 9, 6, 15];
 // Streaming Stampede's questions (and the CPUs' answers and presses) for levels 1-3: the same as JS_STAMPEDE in tools/test_rooms.py
 const STAMPEDE = { 1: "c33c69d5058f2c41", 12345: "8bad5c3faf1e1fa4", 2147483647: "ff29a0ea8c1ddc98" };
 // Pichu's Power Plant's Electrodes and CPUs for c 0-3: the same as JS_PICHU in tools/test_rooms.py
@@ -690,7 +691,7 @@ await test("Eager Eevee: the rounds are the same as the server's copy of them", 
   const R = await moduleOf(solo, "./src/eevee/rules.js");
   for (const [seed, want] of Object.entries(EEVEE)) {
     let s = "";
-    for (const level of [1, 2, 3]) for (const rd of R.deal(+seed, level)) s += `${rd.kind},${rd.fruit},${rd.piles},${rd.open},${rd.fakes.join("/")};`;
+    for (const level of [1, 2, 3]) for (const outs of [[], EEVEE_OUTS]) for (const rd of R.deal(+seed, level, outs)) s += `${rd.kind},${rd.fruit},${rd.piles},${rd.open},${rd.fakes.join("/")};`;
     const got = await sha16(s);
     assert(got === want, `seed ${seed}: ${got}; tools/eevee_rules.py expects ${want} (update both, and the digests)`);
   }
@@ -719,6 +720,29 @@ await test("Eager Eevee: a dash, a feint, the basket and a Pineco, as in the gam
   const three = R.judge({ kind: R.BERRIES, piles: 3 }, null, [null, 50, null, null]);
   assert(three.pts.join() === "0,3000,0,0" && three.decided === 59, "three piles: " + three.pts);
   assert(R.reaction(T, o + 10, 1) === 19, "the reaction time's 3 (f - O - 4) + its random 0-2");
+});
+
+await test("Eager Eevee: Aipom waits for an Eevee outside the ring, and the tally at the end", async () => {
+  const R = await moduleOf(solo, "./src/eevee/rules.js");
+  // round 1's call 16 frames after GO (0x86B08B74)
+  const rs = R.deal(12345, 2), times = R.timeline(rs);
+  assert(times[0].start === 16 && R.ring(times, 15) === 0 && R.ring(times, 16) === 144, "the first call, and the ring's first turn: " + times[0].start);
+  // the Pineco (round 4): blown away, outside as round 5 starts, so its open is drawn again: 70-120
+  const r = new R.Runner(times, rs), P = times[3];
+  r.press("a", P.open + 6);
+  assert(!r.outside(P.open + 9) && r.outside(P.open + 10) && r.outside(times[4].start) && !r.outside(r.back()), "outside: from in at the Pineco to " + r.back());
+  const others = [0, 1, 2].map(() => new R.Runner(times, rs)), mask = R.outsideMask([...others, r], times[4].start);
+  assert(mask === 8, "the mask of who's outside: " + mask);
+  for (let s = 0; s < 40; s++) for (const level of [1, 2, 3]) {
+    const plain = R.deal(s, level), outs = R.deal(s, level, [0, 0, 0, 5]);
+    assert(plain.slice(0, 3).every((rd, n) => rd.open === outs[n].open), "an earlier round changed");
+    assert(outs[3].open >= 70 && outs[3].open <= 120, `seed ${s}: an open of ${outs[3].open} with two outside`);
+  }
+  // the tally: k more a frame, the hand-over the frame it's all in (0x86B08F20)
+  assert(R.tallyFrames(0) === 0 && R.tallyFrames(1) === 1 && R.tallyFrames(1000) === 45 && R.tallyFrames(7000) === 118, "the tally's frames");
+  assert(R.tallied(500, 3) === 6 && R.tallied(5, 3) === 5, "a total as the tally shows it");
+  assert(R.handover(times, 3000) === times[4].end + 1 + 77, "the hand-over: " + R.handover(times, 3000));
+  return `round 5's open with 4P outside: ${R.deal(12345, 2, [0, 0, 0, 0, 8])[4].open} (else ${rs[4].open})`;
 });
 
 await test("Eager Eevee: CPU levels, how soon after the basket's up they dash", async () => {
@@ -2325,8 +2349,11 @@ lane(2, (f) => test("online: an Eager Eevee game, the same on both devices, and 
     await until(() => [ann, bob].every((w) => w.mg.game.lastFrame > w.mg.game.times[1].open + 40), "the second race", 30000);
     await sleep(1000);
     const totals = (w) => w.mg.game.players.map((p) => p.total).join();
-    const prizes = (w) => w.mg.game.players.map((p) => p.prizes.slice(0, 2).join("/")).join(" ");
+    const prizes = (w) => w.mg.game.players.map((p) => p.won.map((x) => x.what).join("/")).join(" ");
     assert(totals(ann) === totals(bob), `totals: ${totals(ann)} / ${totals(bob)}`);
+    // the rounds as dealt so far: who was outside, and the opens (the server's word on both)
+    const dealt = (w) => w.mg.game.rounds.slice(0, 3).map((rd, n) => `${w.mg.game.outs[n]}:${rd.open}`).join(" ");
+    assert(dealt(ann) === dealt(bob), `the rounds dealt: ${dealt(ann)} / ${dealt(bob)}`);
     const rd = g.rounds[0], v = ann.mg.game.verdict[0];
     // the fruit is Ann's; strawberries are shared, but Ann's had some before Bob got there
     if (rd.kind === 0) assert(v && v.got[0] && !v.got[1], `the fruit should be Ann's: ${JSON.stringify(v)}; a claim got through?`);

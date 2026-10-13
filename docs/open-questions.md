@@ -125,6 +125,25 @@ What isn't known yet, roughly by how useful it would be.
   isn't decoded: with the ambient at 250/255 they barely show); and PAL's 25
   frames a second (the module asks `tv_rate` and doesn't scale its speeds,
   so on a PAL console it runs 20% slower; the remake runs NTSC's 30).
+- **Eager Eevee's loose ends** (its rules are read: [minigames.md](minigames.md#eager-eevee)):
+  the basket's shadow's alpha (`0x86B0B7B4`: the lift writes the model's +0x14
+  byte, which its draw, `0x86B0BA28`, puts in env's alpha; the call and the
+  rest write +0x1D, the model's own alpha, which that draw doesn't read: so
+  the lift's last, about 64, stays, as the remake has it; whether the renderer
+  uses +0x1D for it some other way wasn't checked); the blast's size (203,
+  204 and 207 at 1.914 on models some 500 units across fill the screen at this
+  camera: from the numbers, not compared with the console); where the smoke
+  behind a blown-away Eevee goes up and down (its model's +0xB0, read as y:
+  the Eevee are set up with +0x28 at 50, `0x86B02040`, so *by context* its y
+  in the world isn't 0; the remake puts the smoke at its feet); the shared
+  quad the shadows are drawn on (`0x87F08DF8`, taken as the picture's size,
+  as Tumbling Togepi's coin's); the strawberry copies' starting places (the
+  pile's 16-byte records at +0x160 − 16 × left, taken as its bones 1-10); the
+  states after a winner's hop at the end (22, 23: `0x86B07584`,
+  `0x86B07BF0`, read only as far as the remake shows, under the results); the
+  race's real end (from O + 100 once all are back: the remake's races are
+  O + 150, for online play); and PAL's numbers (`0x86B0E0A0` clear: the
+  remake uses NTSC's).
 - **Audio:** the voices' codec (5, in sample banks 4–6), the reverb
   settings, the game's custom sequence function (`0x800275D8`), and the
   0x28-byte records at `0x49B780` ([audio.md](audio.md)).

@@ -115,16 +115,28 @@ i.egg {
 .cc-points img { position: absolute; top: 0; display: block; width: calc(var(--s) * 14px); height: calc(var(--s) * 18px); }
 .cc-burst img { position: absolute; left: 0; top: 0; display: block; width: 100%; height: 100%; }
 
-/* Eager Eevee: each player's prizes (image bank 389), the reaction time's box
-   (393, digits 394), "ROUND 1" ... (392), and the Dash and Feint pads */
+/* Eager Eevee: each player's prizes won (image bank 389; the strawberries in
+   bank 390's digits), the reaction time's box (393, digits 394), "ROUND 1" ...
+   (392, grown and faded as the game does), the points at the end (429 and
+   "Points" 430, at 0.57: a winner's in a colour going round), and the Dash
+   and Feint pads */
 .ee-prizes { position: absolute; display: flex; gap: 2px; }
-.ee-prizes i { width: 27px; height: 27px; border-radius: 6px; background: rgba(20, 14, 10, 0.45); display: grid; place-items: center; }
+.ee-prizes i { position: relative; width: 27px; height: 27px; border-radius: 6px; background: rgba(20, 14, 10, 0.45); display: grid; place-items: center; }
 .ee-prizes img { width: 24px; height: 24px; image-rendering: pixelated; }
+.ee-prizes .ee-n { position: absolute; right: 0; bottom: 0; display: flex; }
+.ee-prizes .ee-n img { width: 8px; height: 9px; }
 .ee-secs { --k: 1.5; position: absolute; width: calc(72px * var(--k)); height: calc(17px * var(--k)); }
 .ee-secs img { position: absolute; image-rendering: pixelated; }
 .ee-secs .box { left: 0; top: 0; width: 100%; height: 100%; }
 .ee-secs .d { width: calc(8px * var(--k)); height: calc(11px * var(--k)); }
-.ee-round { position: absolute; left: 50%; top: 16%; transform: translateX(-50%); height: clamp(48px, 11vh, 96px); image-rendering: pixelated; filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.5)); }
+.ee-round { position: absolute; left: 50%; top: 16%; transform: translateX(-50%); transform-origin: 50% 50%; height: clamp(48px, 11vh, 96px); image-rendering: pixelated; }
+.card .num img.ee-big, .card .num .ee-d { width: calc(var(--k) * 13.7px); height: calc(var(--k) * 18.2px); object-fit: fill; }
+.card .num img.ee-big + img.ee-big, .card .num .ee-d + .ee-d { margin-left: calc(var(--k) * -0.7px); }
+.card .num .ee-pts { width: calc(var(--k) * 18.2px); height: calc(var(--k) * 11.4px); align-self: flex-end; margin-left: calc(var(--k) * 2px); }
+.ee-d { position: relative; display: block; background: var(--env);
+  -webkit-mask: var(--a) 0 0 / 100% 100% no-repeat; mask: var(--a) 0 0 / 100% 100% no-repeat; }
+.ee-d::after { content: ""; position: absolute; inset: 0; background: var(--prim);
+  -webkit-mask: var(--i) 0 0 / 100% 100% no-repeat; mask: var(--i) 0 0 / 100% 100% no-repeat; }
 .ee-pads { position: absolute; left: 50%; bottom: calc(var(--safe-b) + 14px); transform: translateX(-50%); display: flex; gap: 12px; pointer-events: none; }
 .ee-pads .pad { pointer-events: auto; }
 /* landscape: at the sides, where the thumbs are, clear of the ring */
@@ -132,7 +144,6 @@ i.egg {
 .ee-pads .pad { width: 84px; height: 52px; font-size: 18px; }
 .ee-pads .ee-feint { background: rgba(40, 140, 60, 0.45); }
 .ee-pads .ee-dash { width: 108px; background: rgba(50, 90, 210, 0.5); }
-.ee-points img { height: clamp(22px, 5vh, 36px); }
 .game-hud.off .ee-pads { display: none; }
 
 /* Streaming Stampede: its cards (UI layouts 125-131 and 133, on the game's

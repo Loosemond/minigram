@@ -604,13 +604,17 @@ def tell_cuts(room, s, results):
 
 def prizes(room, now=None):
     """Eager Eevee: give the prizes that are decided (no press still on its way
-    could change them), and set a timer for the next."""
+    could change them), say who was outside as each round started (its open
+    hangs on it: every device deals it the server's way), and set a timer for
+    the next."""
     g = room.game
     if room.state != "playing" or not isinstance(g, eevee_rules.Round):
         return
     allow = room.allow()
     for n, pts, totals, decided in g.settle(room.now() if now is None else now, allow):
         room.broadcast(dict(t="got", r=room.round, n=n, p=pts, e=totals, d=decided))
+    for n, m in g.take_dealt():
+        room.broadcast(dict(t="out", r=room.round, n=n, m=m))
     if room.timer:
         room.timer.cancel()
         room.timer = None

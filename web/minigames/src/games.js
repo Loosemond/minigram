@@ -56,7 +56,7 @@ export const GAMES = {
     unit: (n) => `${n}<small>pts</small>`,
     invite: "Race to the fruit with me in Eager Eevee!",
     store: "eevee_",
-    messages: ["dash", "got"],
+    messages: ["dash", "got", "out"],
     // Pichu's Power Plant's count (0x2F00), no GO sound, and song 53 at frame 65 (0x86B01BB0-0x86B01BF0)
     countdown: { go: null, song: [65, "main"] },
     load: () => import("./eevee/index.js"),

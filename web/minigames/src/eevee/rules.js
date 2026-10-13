@@ -37,6 +37,11 @@ export const TURN = 56549; // 2 pi
 export const SPIN = [144, 172];
 export const CATCH = 288; // an Eevee behind its place catches up 0.032 a frame (0x86B05D2C); A works within that
 
+// The first round's call starts 16 frames after GO: the module's phase 4
+// counts 15 frames from the countdown's GO before it deals the round (G+0x284,
+// 0x86B08B74; the Eevee are set walking at its 14th), and the call comes the
+// frame after. The ring doesn't turn till then (phase 4 has no 0x86B057B0).
+export const LEAD = 16, WALK_FROM = 14;
 // A round's frames: Aipom's call (its clip 2), then the race, from the play's
 // frame 0. The basket comes up at frame O (the open); a dash on frame f gets
 // past it if f >= O + LID (the basket's up: 0x86B018F0) and gets in on frame
@@ -44,7 +49,12 @@ export const CATCH = 288; // an Eevee behind its place catches up 0.032 a frame 
 // till O + 99 (0x86B0590C), or till the round's won.
 export const INTRO = 28;
 export const LID = 4, RUN = 4, WINDOW = 99;
-export const AFTER = 150; // the round goes on this long after the open: the eating, the walk back (*the remake's*)
+// The race goes on this long after the open: the eating, the walk back. (*The
+// remake's*: the game ends it from O + 100 once every Eevee is back at its
+// place or outside and the Pineco's done, 0x86B01900-0x86B019EC, which hangs
+// on every press; online a press can still be on its way then, so the remake
+// keeps one length that every device and the server agree on.)
+export const AFTER = 150;
 // frames till A and B work again: after a feint (out to 100 and back: 0x86B06484,
 // 0x86B06674), after running into the basket (bounced back, clip 8, then the
 // walk to its place) and after a Pineco (blown away, three clips, then
@@ -60,10 +70,14 @@ export function quad(seed) {
 }
 
 // ---- the rounds ----
-// Each round's script (0x86B0B04C): what's under the basket, when it comes up
-// (O), and Aipom's fakes before that (frames). From the round's seed, the same
-// as tools/eevee_rules.py.
-export function deal(seed, level) {
+// Each round's script (0x86B0B04C, called as the round starts: 0x86B08CC4):
+// what's under the basket, when it comes up (O), and Aipom's fakes before that
+// (frames). From the round's seed, the same as tools/eevee_rules.py. outs[n]:
+// which Eevee are outside the ring as round n is dealt, a mask of seats (blown
+// away by a Pineco, states 16-18, or waiting outside till their place comes
+// round, state 0); for each one, O is drawn again, Q % 51 + 70, after the
+// usual draw (0x86B0B2C8-0x86B0B318), so Aipom waits for them. None missing.
+export function deal(seed, level, outs = []) {
   const Q = quad(seed);
   const rounds = [];
   let last = [-1, -1];
@@ -80,9 +94,7 @@ export function deal(seed, level) {
       piles = 3;
     }
     let open = level <= 1 || Q() % 100 >= 20 ? Q() % 141 + 60 : Q() % 21 + 30;
-    // after a Pineco round Aipom waits longer: the game does when an Eevee
-    // isn't back yet (0x86B0B2C8; here always after one)
-    if (n > 0 && rounds[n - 1].kind === PINECO) open = Q() % 51 + 70;
+    for (let s = 0; s < 4; s++) if ((outs[n] | 0) & (1 << s)) open = Q() % 51 + 70;
     const fakes = [];
     if (open >= 60) {
       const r = Q() % 100;
@@ -98,7 +110,7 @@ export function deal(seed, level) {
 // when each round starts (Aipom's call), its race starts (play), the basket
 // comes up (open), A stops working (close) and it ends: frames from GO
 export function timeline(rounds) {
-  let t = 0;
+  let t = LEAD;
   return rounds.map((rd) => {
     const start = t, play = start + INTRO, open = play + rd.open, end = open + AFTER;
     t = end;
@@ -112,12 +124,27 @@ export function roundAt(times, t) {
   return times.length - 1;
 }
 
-// how far the ring has turned by the end of frame t (units)
+// how far the ring has turned by the end of frame t (units): from the first
+// call on
 export function ring(times, t) {
-  if (t < 0) return 0;
+  if (t < LEAD) return 0;
   const f = times[ROUNDS - 1].start; // the final round turns faster
-  return SPIN[0] * Math.min(t + 1, f) + SPIN[1] * Math.max(0, t + 1 - f);
+  return SPIN[0] * (Math.min(t + 1, f) - LEAD) + SPIN[1] * Math.max(0, t + 1 - f);
 }
+
+// The end (0x86B08F20): the frame after the last race's end the points show
+// (G+0x19C) and count up from 0, k more on the tally's frame k (0x86B18218:
+// 0, 1, 2 ...), till they're all in (0x86B090C0); that frame the game hands
+// over to the results (0x86B09148). top: the most anyone has.
+export function tallyFrames(top) {
+  let k = 0;
+  while ((k * (k + 1)) / 2 < top) k++;
+  return k;
+}
+// what a total shows on the tally's frame k (from 0), and the frame it's all in
+export const tallied = (total, k) => Math.min(total, (k * (k + 1)) / 2);
+// the frame (from GO) of the hand-over
+export const handover = (times, top) => times[ROUNDS - 1].end + 1 + tallyFrames(top);
 
 // ---- a seat's presses ----
 // Whether a press works, and what comes of it. A and B work while the Eevee's
@@ -127,10 +154,33 @@ export class Runner {
   constructor(times, rounds) {
     this.times = times;
     this.rounds = rounds;
-    this.ready = 0; // A and B work from this frame (from GO)
+    this.after = 0; // A and B work from this frame (from GO), after a feint or the basket
     this.in = rounds.map(() => null); // the frame it got in, by round
-    this.blown = rounds.map(() => null);
+    this.pineco = null; // the frame it dashed at its last Pineco
+    this.cache = null;
   }
+  // the rounds dealt again (a round's O from who's outside as it starts)
+  retime(times, rounds) {
+    this.times = times;
+    this.rounds = rounds;
+    this.cache = null;
+  }
+  // A and B work from this frame: after a feint or the basket, or once it's
+  // back from a Pineco (worked out from the rounds as they are now)
+  get ready() { return this.pineco === null ? this.after : Math.max(this.after, this.back() + WALK_IN); }
+  set ready(t) { this.after = t; this.pineco = null; }
+  // blown away by a Pineco: the frame its place comes round to it, outside
+  // the ring (it then walks in: back), or null
+  back() {
+    if (this.pineco === null) return null;
+    if (this.cache?.times !== this.times || this.cache.t !== this.pineco) {
+      this.cache = { times: this.times, t: this.pineco, u: this.blownBack(this.pineco) - WALK_IN };
+    }
+    return this.cache.u;
+  }
+  // outside the ring on frame s: blown away (got in at the Pineco) or waiting
+  // for its place, as the game's states 16-18 and 0 are (0x86B0B2C8)
+  outside(s) { return this.pineco !== null && s >= this.pineco + RUN && s < this.back(); }
   // can it press at frame t? (closed: the frame its round was won, if it has been)
   can(t, closed = null) {
     const n = roundAt(this.times, t), T = this.times[n];
@@ -142,15 +192,15 @@ export class Runner {
     if (!this.can(t, closed)) return null;
     const n = roundAt(this.times, t), T = this.times[n], fin = this.rounds[n].final ? 1 : 0;
     if (k === "b") {
-      this.ready = t + FEINT[fin];
+      this.after = t + FEINT[fin];
       return { k, t, n };
     }
     if (t < T.open + LID) {
-      this.ready = t + BONK[fin];
+      this.after = t + BONK[fin];
       return { k, t, n, bonk: true };
     }
     this.in[n] = t + RUN;
-    if (this.rounds[n].kind === PINECO) this.ready = this.blownBack(t);
+    if (this.rounds[n].kind === PINECO) this.pineco = t;
     return { k, t, n, in: t + RUN };
   }
   // blown away by a Pineco it dashed at on frame t: back at its place when the
@@ -162,6 +212,9 @@ export class Runner {
     return u + WALK_IN;
   }
 }
+
+// who's outside as a round is dealt on frame s (a mask of seats: deal's outs)
+export const outsideMask = (runners, s) => runners.reduce((m, r, z) => m | (r.outside(s) ? 1 << z : 0), 0);
 
 // ---- who gets what ----
 // A round's race from when each seat got in (frames from GO, or null), as

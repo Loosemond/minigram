@@ -55,9 +55,11 @@ JS_EGG_ROUNDS = {1: "b18f7fd09f89d7e1", 12345: "bc1c8b3550f4dcb3", 2 ** 31 - 1: 
 # deal() in web/minigames/src/clearcut/rules.js, for every level code: each log's
 # target, wait and the bits of its line (web/minigames/tests.js has the same)
 JS_DEALS = {1: "845261658a294406", 12345: "dcaad7cc4c79a603", 2 ** 31 - 1: "8c853818348d493e"}
-# deal() in web/minigames/src/eevee/rules.js, for levels 1-3: each round's
-# kind, fruit, piles, open and fakes (web/minigames/tests.js has the same)
-JS_EEVEE = {1: "d54a9e4e6d7d05ec", 12345: "e4663aef5698855e", 2 ** 31 - 1: "60c971ff1eb41fe2"}
+# deal() in web/minigames/src/eevee/rules.js, for levels 1-3, with no one
+# outside the ring and with EEVEE_OUTS: each round's kind, fruit, piles, open
+# and fakes (web/minigames/tests.js has the same)
+JS_EEVEE = {1: "1d47aa9501e2a387", 12345: "d330183e33ae66eb", 2 ** 31 - 1: "708a50a8a21e7b38"}
+EEVEE_OUTS = [0, 1, 9, 6, 15]
 # question() and cpuPresses() in web/minigames/src/stampede/rules.js, for
 # levels 1-3, each question made from the totals the CPUs' counts give: its
 # answer, counting frames, code, the CPUs' answers and presses, and every
@@ -406,11 +408,19 @@ def _():
 def _():
     for seed, want in JS_EEVEE.items():
         s = "".join("%d,%d,%d,%d,%s;" % (rd["kind"], rd["fruit"], rd["piles"], rd["open"], "/".join(map(str, rd["fakes"])))
-                    for level in (1, 2, 3) for rd in eevee_rules.deal(seed, level))
+                    for level in (1, 2, 3) for outs in ((), EEVEE_OUTS) for rd in eevee_rules.deal(seed, level, outs))
         assert hashlib.sha256(s.encode()).hexdigest()[:16] == want, seed
     rs = eevee_rules.deal(12345, 2)
     assert [(r["kind"], r["open"], r["fakes"]) for r in rs][:2] == [(1, 165, [29, 70, 145]), (0, 132, [])], rs
     assert all(r["kind"] != eevee_rules.PINECO for s in range(50) for r in eevee_rules.deal(s, 1)[:1])  # (none first on Easy)
+    # Aipom waits for an Eevee outside the ring: O drawn again, 70-120, for each (0x86B0B2C8)
+    for s in range(40):
+        for level in (1, 2, 3):
+            plain, outs = eevee_rules.deal(s, level), eevee_rules.deal(s, level, [0, 0, 0, 5])
+            assert [r["open"] for r in plain[:3]] == [r["open"] for r in outs[:3]] and 70 <= outs[3]["open"] <= 120, (s, level)
+    times = eevee_rules.timeline(rs)
+    assert times[0]["start"] == 16 and eevee_rules.ring(times, 15) == 0 and eevee_rules.ring(times, 16) == 144
+    assert eevee_rules.tally_frames(1000) == 45 and eevee_rules.handover(times, 3000) == times[4]["end"] + 78
 
 
 def stampede_digest(seed):
@@ -500,6 +510,8 @@ def _():
     t3 = times[3]  # a Pineco: blown away, back once the ring's been round
     r3 = eevee_rules.Runner(times, rs)
     assert r3.press("a", t3["open"] + 6)[2] == t3["open"] + 10 and r3.ready == r3.blown_back(t3["open"] + 6) > t3["end"] + 200
+    assert not r3.outside(t3["open"] + 9) and r3.outside(t3["open"] + 10) and r3.outside(times[4]["start"])
+    assert not r3.outside(r3.back()) and eevee_rules.outside_mask([r, r, r, r3], times[4]["start"]) == 8
     melon = dict(kind=eevee_rules.FRUIT, fruit=eevee_rules.MELON, piles=1)
     assert eevee_rules.judge(melon, [30, 30, 31, None]) == ([1000, 1000, 0, 0], 30)  # a tie shares it
     berries = dict(kind=eevee_rules.BERRIES, fruit=0, piles=1)
@@ -755,7 +767,7 @@ def _():
                                             (eevee_rules.PINECO, 0, 1), (eevee_rules.FRUIT, eevee_rules.GRAPES, 1),
                                             (eevee_rules.BERRIES, 0, 3)])]
     saved = eevee_rules.deal, eevee_rules.INTRO, eevee_rules.AFTER
-    eevee_rules.deal, eevee_rules.INTRO, eevee_rules.AFTER = (lambda seed, level: [dict(r) for r in short]), 3, 30
+    eevee_rules.deal, eevee_rules.INTRO, eevee_rules.AFTER = (lambda seed, level, outs=(): [dict(r) for r in short]), 3, 30
     try:
         a, b = Client("EA"), Client("EB")
         a.send("hello", id="ea", name="Eve", game="eevee")
@@ -767,7 +779,8 @@ def _():
         b.drain()
         a.send("start")
         st = a.wait("start")
-        assert st["game"] == "eevee" and st["ee"] == dict(level=2, scores=[0] * 4, prizes=[[None] * 5] * 4), st
+        assert st["game"] == "eevee" and st["ee"] == dict(level=2, scores=[0] * 4, prizes=[[None] * 5] * 4,
+                                                          out=[0, None, None, None, None]), st
         go, r = st["go"], st["round"]
         times = eevee_rules.timeline(short)  # (rounds of 45 frames: the open at 15)
 
@@ -804,9 +817,12 @@ def _():
         while got["n"] < 3:
             got = a.wait("got", timeout=4)
         assert (got["n"], got["p"]) == (3, [0, 0, 500, 0]), got
-        a.s.settimeout(8)
-        res = a.wait("results", timeout=8)
+        a.s.settimeout(14)
+        res = a.wait("results", timeout=14)  # (after the tally: 56 frames for 1500)
         g = rooms.rooms[code].game
+        # who was outside as each round started, told to the devices: the two blown away by the Pineco
+        outs = [(m["n"], m["m"]) for m in a.inbox if m["t"] == "out"]
+        assert outs == [(1, 0), (2, 0), (3, 9), (4, 9)] and g.outs == [0, 0, 0, 9, 9], (outs, g.outs)
         assert res["scores"] == g.scores == [600, 1400, 1500, 0], (res, g.scores)
         assert g.prizes[0][:4] == [None, "berries", "pineco", None] and g.prizes[3][2] == "pineco", g.prizes
         assert g.runners[3].got_in[3] is None or g.runners[3].got_in[3] >= o + 20 - int(rooms.ALLOW_GUESS * eevee_rules.FPS) + 4

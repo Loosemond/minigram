@@ -67,6 +67,10 @@ OBJECTS = {
     194: "Whirlwind (red)", 195: "Ring (red)", 196: "Ring (yellow)", 197: "Ring (blue)", 198: "Ring (green)",
     199: "Spark", 200: "Flash", 124: "Hitmontop (white)",
     201: "Pikachu", 202: "Dash Arrow", 205: "Igglybuff (shiny)", 206: "Omanyte", 208: "Orange",
+    # Eager Eevee's Pineco going off (module #61, 0x86B052BC, 0x86B05484): the
+    # flash (its glow, a starburst and sparkles), the fire puffs thrown round
+    # it (a flipbook) and the dark smoke after, also trailing a blown-away Eevee
+    203: "Blast Flash", 204: "Fire Puff", 207: "Smoke Cloud",
     209: "Melon", 210: "Bananas", 211: "Strawberry", 212: "Apple", 213: "Grapes", 214: "Lab Room",
     215: "Peach", 216: "Strawberries", 217: "Green Glow Panel", 218: "Mr. Mime", 219: "Grey Panel",
     221: "Rainbow Ring", 222: "Dark Disc", 223: "Girafarig", 224: _TV + " (space)",
@@ -169,7 +173,9 @@ BANKS = {
     151: "Barrier Ball glow", 260: "player labels",
     # Rampage Rollout (module #52): a dust cloud (a whirlwind, 16 frames), the
     # dust a running Donphan kicks up (8 frames), and the stars over a Donphan
-    # (one for each cloud it has), the clouds and stars in each player's colours
+    # (one for each cloud it has), the clouds and stars in each player's colours.
+    # 159 is module #64's particle (0x87F03BB0 loads it, 0x87F04018 draws it): Eager
+    # Eevee's dash and feint kick it up too (0x86B065D4)
     150: "Rampage Rollout cloud", 159: "Rampage Rollout dust", 384: "Rampage Rollout star",
     # Topsy-Turvy (module #47): the ring (its background picture: the bowl in
     # a brick floor), the points (a grey dot, then one in each player's colour)

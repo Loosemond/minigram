@@ -340,9 +340,19 @@ is):
   it and bounces back: A works again 2.9 s later, after it's walked on to its
   place on the ring. A feint costs 0.37 s. A Pineco costs no points, but the
   Eevee it blows up waits outside the ring till its place comes round again,
-  about 13 s: it usually misses the next race.
+  about 13 s: it usually misses the next race, and while it's away Aipom
+  waits longer to lift the basket (70-120 frames, drawn again for each Eevee
+  outside as the round starts). Its blast fills the screen with fire and
+  smoke, the game's objects 203, 204 and 207 in their own colours.
 - **The reaction time** of each dash shows by the player's card, as the
-  game's ". sec." box has it: from the moment the basket's up.
+  game's ". sec." box has it (in the player's colour, 80 frames): from the
+  moment the basket's up.
+- **The points** are hidden till the end, as in the game: then they count up
+  on the cards in each player's colours, with the game's tick, and the
+  winners' go round six colours. Each player's prizes won show by its card,
+  one slot each in the order they came (a Pineco has none), with the
+  strawberries counted in. The winners eat and the others sulk; the results
+  come as the count's done.
 - **The CPUs** are the game's: each round they plan their reaction times and
   whether they fall for Aipom's fakes (dashing into the basket, or feinting),
   and they can be fooled into a dash by someone else's feint soon after a
@@ -365,13 +375,14 @@ front of the clearing and Aipom's rope goes on up out of sight (in the game it
 ends just above the screen). A small arrow in your colour marks
 your Eevee, as in the other games (the game's four look the same).
 
-**Sound**: the game's (`assets/eevee/sound.bin`, 489 KB): song 54 as Aipom
+**Sound**: the game's (`assets/eevee/sound.bin`, 510 KB): song 54 as Aipom
 calls each round (song 101, the same 40 beats a minute faster, for the final
 one), song 53 (a held roll) after each prize, the effects of bank 10 (the
 dash, the basket, running into it, the prize, bouncing back, a Pineco, a
-blown-away Eevee coming down), the eating, Pichu's Power Plant's count (no
-GO sound, and song 53 starts 15 frames before GO), the shared finish whistle,
-and the results' songs. As in the game, the basket's sound is
+blown-away Eevee coming down), each placed by where its Eevee is, the eating
+(the round's first 25 frames of it), Pichu's Power Plant's count (no
+GO sound, and song 53 starts 15 frames before GO), the tally's tick and its
+end (Delibird's Delivery's), and the results' songs; no whistle at the end. As in the game, the basket's sound is
 for the real lift only (frame 5), when the song stops; for a fake the music
 and the effects hush, from 5 frames before it till the basket's back down.
 
@@ -379,10 +390,10 @@ What comes from the ROM and what is made up:
 
 | From the game | Made for the remake |
 |---|---|
-| the rules, the timings, the scoring, the rounds' scripts, the presses and the CPUs (module #61's code) | each round's length, fixed (the race goes on 150 frames after the basket's up; the game's ends once every Eevee's back), so every device agrees; after a Pineco round the next basket always waits 70-120 frames (the game does when an Eevee's still away) |
-| Eevee (object 143) and which clip it plays for what, Aipom and its basket (150), the fruit (209, 213, 216), Pineco (151); the fruit going as an Eevee gets in, a copy of it popping up | the effects (the game's are objects 203, 204 and 207, drawn by its code, and image bank 307; these use bank 307), a strawberry flying off a pile isn't shown, the piles shrink instead, and a sparkle as they're got |
-| the camera, the field (background picture 44: its ring, ground and trees, measured), the Eevee's places, the prize slots (bank 389), "ROUND 1" … (392), the ". sec." box (393, 394) | the field in 3D (the forest round the front of the clearing, which the game's camera never sees, is made up), the rope's top, the portrait camera, the arrow over your Eevee, the Dash and Feint pads |
-| songs 53, 54 and 101, the effects (bank 10 of the effect table) | |
+| the rules, the timings, the scoring, the rounds' scripts (each dealt as it starts, Aipom waiting for an Eevee outside), the presses and the CPUs (module #61's code); the end's tally and when it hands over | each race's length, fixed (it goes on 150 frames after the basket's up; the game's ends once every Eevee's back), so every device agrees |
+| Eevee (object 143), which clip it plays for what and how fast (the grab 1.5, the walk by its steps), its face's texture clips, Aipom and its basket (150) and its blink, the fruit (209, 213, 216, a strawberry 211 flying off a pile for each one eaten, the piles' pictures going down), Pineco (151); the fruit going as an Eevee gets in, a copy of it popping up; the shadows (bank 307); the blast (objects 203, 204, 207 in their recipes) and the dash's dust (module #64's, bank 159) | the end's hop is read only as far as the results show it |
+| the camera (fixed: no shake), the field (background picture 44: its ring, ground and trees, measured), the Eevee's places, the prize slots (bank 389) and their strawberry counts (390), "ROUND 1" … (392) in the game's colours, growing and fading, the ". sec." box (393, 394) in each player's colour, the points at the end (429, 430) | the field in 3D (the forest round the front of the clearing, which the game's camera never sees, is made up), the rope's top, the portrait camera, the HUD's places, the arrow over your Eevee, the Dash and Feint pads |
+| songs 53, 54 and 101, the effects (bank 10 of the effect table, placed by where each Eevee is), the munch's 25 frames, the tally's sounds | |
 
 Code: `src/eevee/rules.js` has the rules (and `tools/eevee_rules.py`, the
 server's copy: the rounds' scripts, the presses and the judging),
@@ -1153,7 +1164,12 @@ How it works:
   on their catches sets their counts.
 - **Eager Eevee shows the others' dashes as they get here**, a little after
   they happened; who gets the prize is the server's word, and an Eevee that's
-  got there grabs at it till then (as the game's do, for a second and a half).
+  got there grabs at it till then (as the game's do, for a second). Each
+  round's open hangs on who's outside the ring as it starts (blown away by a
+  Pineco: a dash at least 51 frames before, so every device has it by then);
+  each device deals the round itself, and the server tells all of them who
+  it had outside (`out`), which every device then deals by (and a device
+  that rejoins gets the rounds dealt so far).
 - **Clear Cut Challenge shows every lane on the round's clock**, so the four
   logs come up and fall together, as on the game's one screen. The others'
   swings are shown as they get here, a little after they happened: a late
@@ -1281,7 +1297,9 @@ again from them up to there). Clear Cut Challenge:
 `c`, the level code the logs are dealt for (the devices deal them from the
 seed), and to rejoin, `scores` and `cuts`, each seat's `[f, points]` by log, `[f, points, 1]` for a miss it may still follow up.
 Eager Eevee: `ee`, with `level` (the level code the rounds are dealt for) and,
-to rejoin, `scores` and `prizes`, each seat's by round. Streaming Stampede:
+to rejoin, `scores`, `prizes`, each seat's by round, and `out`, who was
+outside the ring as each round started (a mask of seats; null for a round
+not started yet). Streaming Stampede:
 `ss`, with `told`, the answers so far as `ans` gives them, to rejoin. Pichu's
 Power Plant: `pp`, with `done`, the finish as `won` gives it (null till then),
 and `presses`, the people's so far, `[f, d, b]` by seat, to rejoin; and in a
@@ -1299,7 +1317,8 @@ again; the total leaves it out); `dash` as above, passed on to the others
 (back to its own device too if it counts on a later frame than it said);
 `got` (`r`, `n`, `p`, `e`, `d`), Eager Eevee's prize for round `n`: the
 points by seat, the totals after, and the frame it was decided (A stops
-working after it); `count` as above, passed on to the others; `ans` (`r`,
+working after it); `out` (`r`, `n`, `m`), who was outside the ring as Eager
+Eevee's round `n` started (a mask of seats: its open is drawn again for each); `count` as above, passed on to the others; `ans` (`r`,
 `n`, `c`, `p`, `e`), Streaming Stampede's answer to question `n`: each seat's
 count, points and total after; `press` as above, passed on to the others, and
 to its own device with `o`, the frame it said, if it counts on another one

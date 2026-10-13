@@ -116,18 +116,33 @@ CLEARCUT.update({"cut%d.png" % (i + 1): bank(399, i) for i in range(5)})
 # field, not drawn: the remake's is src/eevee/field.js, built from background
 # picture 44), 150 (Aipom on its rope, with the basket), 151 (Pineco), the
 # fruit 209 (melon), 213 (grapes), 216 (a pile of strawberries) and 211 (one
-# strawberry), the effects 203, 204 and 207, background picture 44 and image
-# banks 307 (sparkles and puffs), 389 (each round's prize, for the tally:
-# grapes, Pineco, melon, strawberries), 390 and 394 (digits), 392 ("ROUND 1"
-# ... "FINAL ROUND"), 393 (the reaction time's ". sec." box) and 430 ("Points").
+# strawberry, a copy of which flies to each Eevee that eats one), the Pineco's
+# blast 203, 204 and 207 (below, FX), background picture 44 and image banks
+# 307 (its first picture is the shadows'), 389 (the prizes won, by each
+# player's badge: grapes, Pineco, melon, strawberries), 390 and 394 (digits),
+# 392 ("ROUND 1" ... "FINAL ROUND"), 393 (the reaction time's ". sec." box)
+# and 430 ("Points"). The dust a dash kicks up is module #64's particle (bank
+# 159, below).
 EEVEE = {
     "backdrop.jpg": "images/backgrounds/44.jpg",  # the field from the game's camera (for the title and lobby)
     "eevee.glb": "objects/143_eevee/143_eevee.glb",
+    "eevee.json": "objects/143_eevee/143_eevee.json",  # its clips' lengths and face (texture) clips
+    "eevee_face7.png": "objects/143_eevee/textures/face/tex07.png",  # its eyes half closed...
+    "eevee_face8.png": "objects/143_eevee/textures/face/tex08.png",  # ...and closed
     "aipom.glb": "objects/150_aipom_on_a_rope/150_aipom_on_a_rope.glb",
+    "aipom.json": "objects/150_aipom_on_a_rope/150_aipom_on_a_rope.json",  # its blink
+    "aipom_face5.png": "objects/150_aipom_on_a_rope/textures/face/tex05.png",
+    "aipom_face6.png": "objects/150_aipom_on_a_rope/textures/face/tex06.png",
     "pineco.glb": "objects/151_pineco/151_pineco.glb",
     "melon.glb": "objects/209_melon/209_melon.glb",
     "grapes.glb": "objects/213_grapes/213_grapes.glb",
     "strawberries.glb": "objects/216_strawberries/216_strawberries.glb",
+    "strawberries.json": "objects/216_strawberries/216_strawberries.json",  # its texture clip: fewer strawberries
+    "strawberry.glb": "objects/211_strawberry/211_strawberry.glb",
+    "blast.glb": "objects/203_blast_flash/203_blast_flash.glb",
+    "puff.glb": "objects/204_fire_puff/204_fire_puff.glb",
+    "smoke.glb": "objects/207_smoke_cloud/207_smoke_cloud.glb",
+    "shadow.png": bank(307, 0),
     "secs.png": bank(393, 0),
     "points.png": bank(430, 1),
     "dot.png": bank(430, 0),
@@ -136,7 +151,8 @@ EEVEE.update({"prize%d.png" % i: bank(389, i) for i in range(4)})
 EEVEE.update({"round%d.png" % (i + 1): bank(392, i) for i in range(5)})
 EEVEE.update({"t%d.png" % i: bank(394, i) for i in range(10)})
 EEVEE.update({"s%d.png" % i: bank(390, i) for i in range(10)})
-EEVEE.update({"fx%d.png" % i: bank(307, i) for i in range(10)})
+EEVEE.update({"strawberries_face%d.png" % i: "objects/216_strawberries/textures/face/tex%02d.png" % i
+              for i in range(24) if i not in (0, 6, 11, 18)})  # (the glb has each channel's first)
 UI["title_eevee.png"] = bank(388, 0)
 
 # Streaming Stampede is code module #59. It loads the players' Cleffa (object
@@ -405,6 +421,10 @@ FX = {
     # Tumbling Togepi's dash arrow (202: a scrolling blue panel, clear outside
     # its chevron, and the chevron's white outline) and the dash's aura (188)
     "togepi": {"arrow": 202, "aura": 188},
+    # Eager Eevee's Pineco going off: its flash (203: a glow going white to red,
+    # a starburst and sparkles), the fire puffs it throws (204, a flipbook) and
+    # the dark smoke after (207, also behind a blown-away Eevee)
+    "eevee": {"blast": 203, "puff": 204, "smoke": 207},
 }
 
 
@@ -569,7 +589,11 @@ SOUNDS = {
         "blown": _sound(0x70, 100, 2, 0x0001),  # 0xAF07, a blown-up Eevee comes down
         "call": _sound(0x71, 110, 2, 0x0020),  # 0xAF08, Aipom's call starts
         "dazed": dict(_sound(0x6E, 127, 3, 0x0020), pitch=0.5),  # 0xAF0B, for each Eevee a Pineco blows up
-        "munch": _sound(0x8A, 107, 7, 0x8000),  # 0xCA0F (bank 12), while an Eevee eats
+        "munch": _sound(0x8A, 107, 7, 0x8000),  # 0xCA0F (bank 12), the first 25 frames anyone eats in a round
+        # the tally at the end, bank 8's (Delibird's Delivery's): a tick each frame
+        # the points count up, and a player's all in (0x86B0906C, 0x86B0902C)
+        "tally": _sound(0xA0, 100, 1, 0x0001),  # 0x8012
+        "tallied": _sound(0xA1, 120, 1, 0x0006),  # 0x8F13
         **SHARED,
         "count": _sound(0x13, 100, 5, 0x0100, sfx=[16]),  # 0x2F00, Pichu's Power Plant's count (no GO sound: 0x86B01BB0)
     }),
@@ -1168,6 +1192,16 @@ def build():
             with open(os.path.join(site, "rollout", "star%d.png" % z), "wb") as fh:
                 fh.write(png.encode_rgba(star[1], star[2], tint(star[3], prim, env)))
         print("rollout: the dust and cloud strips and the stars (image banks 159, 150, 384)")
+        # Eager Eevee's dash dust: module #64's particle (0x87F03F38), bank 159's
+        # first two pictures (its 15 frames reach only those: an 8th of one a
+        # frame), through FC50D3FF 3FFDFE38 with prim and env white: white, its alpha its own
+        for k, (_, dw, dh, rgba) in enumerate(images.bank_images(rom, 159)[:2]):
+            px = bytearray(rgba)
+            for o in range(0, len(px), 4):
+                px[o:o + 3] = b"\xff\xff\xff"
+            with open(os.path.join(site, "eevee", "dust%d.png" % k), "wb") as fh:
+                fh.write(png.encode_rgba(dw, dh, bytes(px)))
+        print("eevee: the dash dust (image bank 159)")
         # Topsy-Turvy's brick floor, to go on past its picture's edges in a window
         # wider or taller than the game's: a strip of it from the picture's top, between the corner rings
         _, rw, rh, ring = images.bank_images(rom, 223)[0]

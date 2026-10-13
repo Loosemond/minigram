@@ -424,6 +424,22 @@ whistle (`0xCF0B`) is for leaving the instructions, which the remake hasn't.
 `0x8F0A` (sound `0x5B`) and `0x8F0D`-`0x8F0F` (`0x51` at volume 10-30) aren't
 asked for by module #60.
 
+Eager Eevee's (module #61) are bank 10's (`0xAF00`-`0xAF0B`: the table is in
+[minigames.md](minigames.md#eager-eevee)). An Eevee's are placed by where it
+is (`0x8002780C`, with its player and the bytes trunc(x × 64 / 200) and the
+same for z, worked out each frame: `0x86B058C8`); all of bank 10's entries
+have flag bit 0, so they pan by its x, as the remake has it (`{ x }`), each on
+its player's channel. Aipom's (`0xAF00`, `0xAF01`,
+`0xAF08`), the Pineco's `0xAF06` and the munch are asked for with
+`0x800279B4`, in the middle. The munch is `0xCA0F` (bank 12's entry 15 in
+held slot 10, the results' sound): asked for every frame anyone eats in a
+race, but only the round's first 25 such frames (G+0x498, `0x86B01A24`), so
+it stops then; the remake holds it (`hold`) for those frames. Its countdown
+is Pichu's Power Plant's count `0x2F00` with no GO sound. The tally at the end
+asks for `0x8012` (held: bank 8's entry `0x12`, Delibird's Delivery's tick)
+every frame the points count up, and `0x8F13` as each player's are all in
+(`0x86B0906C`, `0x86B0902C`). No whistle at the end, and no fade.
+
 ## Timing
 
 What `n64audio.js` uses, from the decomp (`AudioHeap_ResetStep`), for an
