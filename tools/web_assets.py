@@ -549,7 +549,7 @@ SOUNDS = {
         "ready": _sound(0x11, 110, 1, 0x0010),  # 0x1F0A, a Scyther gets ready, or lowers its scythes after a log
         "tallied": _sound(0x12, 127, 1, 0x0001),  # 0x1F0B, a log's points are in
         "perfect": _sound(0x2D, 127, 1, 0x0001),  # 0x1F0C, a perfect cut
-        "pinsir": _sound(0x0B, 115, 1, 0x0001),  # 0x1F04, at frames of a Pinsir's clips (0x86503D50)
+        "pinsir": _sound(0x0B, 115, 1, 0x0001, sfx=[10]),  # 0x1F04, at frames of a Pinsir's clips (0x86503D50)
         # 0x1F0D and 0x1F0E, the minigame's own count and GO
         **SHARED,
         "count": _sound(0xA2, 127, 5, 0x1000),
