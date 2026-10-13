@@ -147,12 +147,22 @@ What isn't known yet, roughly by how useful it would be.
   the remake leaves out.
 - **Clear Cut Challenge's loose ends** (its rules are read: [minigames.md](minigames.md#clear-cut-challenge)):
   the game's frame rate (30 a second is assumed: the scheduler's retrace
-  count wasn't traced), how objects 130 and 131 (the cut's effects) are
-  coloured as they're drawn, exactly how the cut pieces tumble and the show's
-  timings between logs (the remake fixes them), what the object at `0x8650E6E0`
-  (scale 0.095, at height 55) is, and how the dizzy stars' fade-in (5/255 a
-  frame) reaches their material callbacks (mode 4 of `0x810024E0` is passed a
-  byte of the model's: `0x810034C0`): the remake fades them whole.
+  count wasn't traced); the Pokemon a player without a Game Pak gets (the
+  module only reads the species in the minigame's record of the player,
+  `0x86505BF8`, and its default is Scizor: Scyther is *assumed* to be what
+  the menu puts there, as the remake has it); the order the upper piece's
+  two turns go in (`+0x1E` and `+0x22`: the remake turns it about x, then z);
+  whether the scene's callbacks (the signposts' show, the pieces) run before
+  or after the frame's logic (the module's loop draws, then runs its logic:
+  `0x8650A3A8`, `0x8650A3B0`; the remake takes each draw as its frame's
+  end, a frame either way); a Pinsir's blink (its face's texture clip,
+  `0x8003F49C` every 21-300 frames: not in the remake); the second
+  argument, `0x8C`, the crowd's sounds are asked for with (`0x80027764`);
+  and how the dizzy stars' fade-in (5/255 a frame) reaches their material
+  callbacks (mode 4 of `0x810024E0` is passed a byte of the model's:
+  `0x810034C0`): the remake fades them whole. The object at `0x8650E6E0`
+  (scale 0.095, at height 55) is the pre-round show's small Scyther, one a
+  player (`0x86508484`), which the remake leaves out with the instructions.
 - **Battle lighting:** the ambient and directional lights (directions,
   colours) the battle scene loads for lit models. With them, Blender could
   match the game's shading, not just its texture colours

@@ -85,18 +85,29 @@ EGG.update({"splash%02d.png" % i: bank(152, i) for i in range(12)})  # a missed 
 
 # Clear Cut Challenge is code module #53. It loads objects 122 (Scyther; 55
 # Pinsir and 179 Scizor for players whose Game Pak Pokemon is one), 59 (the
-# signpost the pieces are shown on), 130 and 131 (the cut's effects: flat
-# shapes coloured as they're drawn, not used here), 190 (stars going round the
-# head of a Scyther that's lost, at the end), 81, 111 and 112 (log
-# slices, also unused: the log is the module's own, see ps2tool/minigames.py),
-# background picture 15 and image banks 397 (Spinarak, 3 frames), 398 (a
-# flash) and 399 ("1st CUT" ... "FINAL CUT").
+# signpost the pieces are shown on), 130 and 131 (the flash at the blade as
+# a cut meets the log, 131 a perfect one's: coloured by their callbacks'
+# colour tracks, FX below), 190 (stars going round the head of a Scyther
+# that's lost, at the end), 81, 111 and 112 (log slices, unused: the log is
+# the module's own, see ps2tool/minigames.py), background picture 15 and image
+# banks 397 (Spinarak, 3 frames), 398 (the burst by a perfect cut's falling
+# points, coloured as it's drawn) and 399 ("1st CUT" ... "FINAL CUT"); module
+# #64's star (147: the sparkles round a perfect cut's points, coloured in
+# src/clearcut/assets.js) and module #2's PERFECT (433, over a Scyther with all
+# 100 points at the end).
 CLEARCUT = {
     "backdrop.jpg": "images/backgrounds/15.jpg",  # the castle, behind a curtain
     "scyther.glb": "objects/122_scyther/122_scyther.glb",
     "signpost.glb": "objects/059_signpost/059_signpost.glb",
     "stars.glb": "objects/190_dizzy_stars/190_dizzy_stars.glb",
+    "slash.glb": "objects/130_cut_flash/130_cut_flash.glb",
+    "slash_perfect.glb": "objects/131_perfect_cut_flash/131_perfect_cut_flash.glb",
+    # (fetched only for a seat whose Pokemon is one: 0x86505BF8)
+    "pinsir.glb": "objects/055_pinsir/055_pinsir.glb",
+    "scizor.glb": "objects/179_scizor/179_scizor.glb",
     "flash.png": bank(398, 0),
+    "star.png": bank(147, 0),
+    "perfect.png": bank(433, 0),
 }
 CLEARCUT.update({"spinarak%d.png" % i: bank(397, i) for i in range(3)})
 CLEARCUT.update({"cut%d.png" % (i + 1): bank(399, i) for i in range(5)})
@@ -380,14 +391,15 @@ FILES = {"ui": UI, "egg": EGG, "clearcut": CLEARCUT, "eevee": EEVEE, "stampede":
 # tiles. The glTF's baked still reads an I texel opaque, where the RDP makes
 # its grey its alpha too (white, dark and flat boxes), so the remake draws
 # them from their recipes (src/n64fx.js; docs/fragments.md): Topsy-Turvy's
-# sparks (199, 200) and RAPID SPIN rings (195-198), Mr. Mime's barrier (141)
-# and the dizzy stars (190). And a plain model's moving texture: Delibird's
+# sparks (199, 200) and RAPID SPIN rings (195-198), Mr. Mime's barrier (141),
+# the dizzy stars (190) and Clear Cut Challenge's flash at the blade (130,
+# 131). And a plain model's moving texture: Delibird's
 # Delivery's belts (148 the back one, 147 the front: their textures scroll a
 # texel a frame, n64fx.js scrollMaps).
 FX = {
     "topsy": {"spark": 199, "flash": 200, "ring0": 197, "ring1": 198, "ring2": 195, "ring3": 196},
     "barrier": {"barrier": 141},
-    "clearcut": {"stars": 190},
+    "clearcut": {"stars": 190, "slash": 130, "slash_perfect": 131},
     "pichu": {"stars": 190},
     "delibird": {"field": 148, "walls": 147},
     # Tumbling Togepi's dash arrow (202: a scrolling blue panel, clear outside
@@ -537,6 +549,7 @@ SOUNDS = {
         "ready": _sound(0x11, 110, 1, 0x0010),  # 0x1F0A, a Scyther gets ready, or lowers its scythes after a log
         "tallied": _sound(0x12, 127, 1, 0x0001),  # 0x1F0B, a log's points are in
         "perfect": _sound(0x2D, 127, 1, 0x0001),  # 0x1F0C, a perfect cut
+        "pinsir": _sound(0x0B, 115, 1, 0x0001),  # 0x1F04, at frames of a Pinsir's clips (0x86503D50)
         # 0x1F0D and 0x1F0E, the minigame's own count and GO
         **SHARED,
         "count": _sound(0xA2, 127, 5, 0x1000),

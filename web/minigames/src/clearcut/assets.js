@@ -2,15 +2,18 @@
 // assets/clearcut/) and makes its things: Scyther with its clips, the log (the
 // game draws it from its own code module: a hexagonal prism with three
 // textures, rebuilt here from the module's numbers), Spinarak on its thread,
-// the signpost and the cut's effects; the dizzy stars (190) are drawn through
-// the game's colour combiner (fx.json: src/n64fx.js). Lighting is done on the
-// textures' display values, as the N64 does (see src/egg/assets.js,
-// docs/colours.md).
+// the signpost, the flash at the blade as a cut meets the log (objects 130
+// and 131) and the dizzy stars (190), both drawn through the game's colour
+// combiner (fx.json: src/n64fx.js), module #64's star (image bank 147: the
+// sparkles round a perfect cut's points) and module #2's PERFECT (433).
+// Lighting is done on the textures' display values, as the N64 does (see
+// src/egg/assets.js, docs/colours.md).
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { retry, attemptURL } from "../retry.js";
 import { loadFx, tagPrims } from "../n64fx.js";
+import { tint } from "../tint.js";
 
 const FPS = 30; // the game's animation rate
 const GLB = 100; // the exported models are in hundredths of the game's units
@@ -48,37 +51,63 @@ export async function loadAssets(base, onProgress = () => {}) {
   const jobs = [];
   let done = 0;
   const job = (p) => { jobs.push(p); return p.then((x) => { onProgress(++done / jobs.length); return x; }); };
-  const [fx, scyther, signpost, stars, backdrop, bark, end, line, flash, ...spinarak] = await Promise.all([
+  const [fx, scyther, signpost, stars, slash, slashPerfect, backdrop, bark, end, line, star, perfect, ...spinarak] = await Promise.all([
     loadFx(base, job),
     job(gltf(base + "scyther.glb")),
     job(gltf(base + "signpost.glb")),
     job(gltf(base + "stars.glb")),
+    job(gltf(base + "slash.glb")),
+    job(gltf(base + "slash_perfect.glb")),
     job(texture(base + "backdrop.jpg")),
     job(texture(base + "log_bark.png")),
     job(texture(base + "log_end.png")),
     job(texture(base + "log_line.png")),
-    job(texture(base + "flash.png")),
+    job(texture(base + "star.png")),
+    job(texture(base + "perfect.png")),
     ...[0, 1, 2].map((i) => job(texture(base + "spinarak" + i + ".png"))),
   ]);
-  tagPrims(stars);
-  for (const g of [scyther, signpost, stars]) prepare(g.scene);
+  for (const g of [stars, slash, slashPerfect]) tagPrims(g);
+  for (const g of [scyther, signpost, stars, slash, slashPerfect]) prepare(g.scene);
   // the tiles the module's display lists set: the bark wraps (its tile is
   // 64 x 128 texels over a 32 x 64 texture), the ends and the line clamp / wrap
   bark.wrapS = bark.wrapT = THREE.RepeatWrapping;
   line.wrapS = THREE.RepeatWrapping;
-  for (const t of [bark, end, line, ...spinarak, flash]) { t.magFilter = THREE.LinearFilter; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; }
+  for (const t of [bark, end, line, ...spinarak]) { t.magFilter = THREE.LinearFilter; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; }
   const sortClips = (g) => g.animations.slice().sort((a, b) => a.name.localeCompare(b.name));
   return {
     scyther: { scene: scyther.scene, clips: sortClips(scyther) },
     signpost: signpost.scene,
     stars: { scene: stars.scene, clips: sortClips(stars) },
+    slash: { scene: slash.scene, clips: sortClips(slash) },
+    slashPerfect: { scene: slashPerfect.scene, clips: sortClips(slashPerfect) },
     fx,
-    slash: slashTexture(),
     backdrop,
     log: { bark, end, line },
-    flash,
+    sparkle: picture(tint(star.image, STAR.prim, STAR.env)),
+    perfect: perfect.image, // (grey: coloured per player as it's drawn)
     spinarak,
+    // Pinsir and Scizor (objects 55, 179), for a seat whose Pokemon is one:
+    // fetched the first time one's wanted ({ scene, clips } once they're in)
+    mons: {},
+    loadMon(name) {
+      this.mons[name] ||= gltf(base + name + ".glb").then((g) => { prepare(g.scene); return { scene: g.scene, clips: sortClips(g) }; });
+      return this.mons[name];
+    },
   };
+}
+
+// Module #64's particle (0x87F0328C, drawn by 0x87F0339C): bank 147's star
+// through prim + (env - prim) x its grey (FC509BFF 3FFDFE38), its alpha its
+// own (IA8) times env's; Clear Cut Challenge's sparkles keep its yellow prim
+// and white env (0x86503100). (tint() makes env + (prim - env) x the grey: the
+// two swapped.)
+const STAR = { prim: [255, 255, 255], env: [255, 255, 0] };
+export function picture(canvas) {
+  const t = new THREE.CanvasTexture(canvas);
+  t.colorSpace = THREE.NoColorSpace;
+  t.generateMipmaps = false;
+  t.minFilter = t.magFilter = THREE.LinearFilter;
+  return t;
 }
 
 // A model with its own mixer, at the game's scale (s: the object's scale in
@@ -109,6 +138,25 @@ export function makeModel(a, s) {
     get done() { return !action || (!action.isRunning() && action.loop === THREE.LoopOnce); },
     get t() { return action ? action.time : 0; }, // s into the clip
     frame() { return action ? Math.floor(action.time * FPS) : 0; },
+    seek(f) { if (action) action.time = f / FPS; }, // (the clip on, from its frame f)
+    // clip i held at frame f (fractional: between two of its keys), for a
+    // model the game's frame counter poses
+    pose(i, f) {
+      const next = actions[i];
+      if (!next) return;
+      if (i !== current) {
+        if (action) action.stop();
+        next.reset();
+        next.setLoop(THREE.LoopOnce, 1);
+        next.clampWhenFinished = true;
+        next.play();
+        next.paused = true;
+        current = i;
+        action = next;
+      }
+      action.time = Math.max(0, Math.min(f / FPS, next.getClip().duration));
+      mixer.update(0);
+    },
     update(dt) { mixer.update(dt); },
   };
   return api;
@@ -186,31 +234,6 @@ export function makeLine(tex) {
   return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex.line, transparent: true, depthWrite: false })); // (back faces culled, as the module's list sets)
 }
 export const LOG_RADIUS = R, LINE_RADIUS = R_LINE;
-
-// The cut's streak of light at the blade. (The game draws objects 130 and 131
-// there, with colours its code sets as it draws them; a soft white streak
-// stands in.)
-function slashTexture() {
-  const c = document.createElement("canvas");
-  c.width = 128; c.height = 32;
-  const g = c.getContext("2d");
-  const grad = g.createRadialGradient(64, 16, 2, 64, 16, 64);
-  grad.addColorStop(0, "rgba(255,255,255,1)");
-  grad.addColorStop(0.35, "rgba(255,255,240,0.8)");
-  grad.addColorStop(1, "rgba(255,255,255,0)");
-  g.fillStyle = grad;
-  g.setTransform(1, 0, 0, 0.25, 0, 12);
-  g.beginPath(); g.arc(64, 16, 64, 0, Math.PI * 2); g.fill();
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.NoColorSpace;
-  return t;
-}
-export function makeSlash(assets) {
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
-                           new THREE.MeshBasicMaterial({ map: assets.slash, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-  m.visible = false;
-  return m;
-}
 
 // ---- Spinarak on its thread ----
 // Image bank 397 on the module's sprite quad (0xCFC4..: 40 x 34, scaled 2.4 by

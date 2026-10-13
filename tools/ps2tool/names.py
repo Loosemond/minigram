@@ -50,6 +50,7 @@ OBJECTS = {
     109: "Togepi", 110: "Jynx", 111: "Wooden Ring", 114: "Cleffa", 115: "Hitmontop", 116: "Ramp",
     117: "Circus Backdrop", 118: "Books", 119: "Igglybuff", 121: "Green Arrows", 122: "Scyther",
     123: "Hitmontop", 125: "Rope Ring", 126: "Grass Arc", 128: "Floor Marks", 129: "Mr. Mime",
+    130: "Cut Flash", 131: "Perfect Cut Flash",  # (Clear Cut Challenge's, at the blade: 0x86503F18)
     132: "Rainbow Arc", 133: "Small Plants", 134: "Grass Arc", 135: "Cacti", 136: "Thin Arc",
     137: "Grass Ring", 138: "Grass Ring", 139: "Grass Pieces", 140: "Grass Arc",
     141: "Barrier", 142: "Furret", 143: "Eevee", 144: "Chansey", 145: "Egg",
@@ -179,7 +180,7 @@ BANKS = {
     # 132's hanging board, which Streaming Stampede doesn't load)
     51: "buttons", 165: "board rod and chain", 345: "arrows",
     # module #2's sign over a player with a perfect score (0x81900164: Egg
-    # Emergency's 100 eggs, Streaming Stampede's 100 points)
+    # Emergency's 100 eggs, Streaming Stampede's and Clear Cut Challenge's 100 points)
     433: "PERFECT",
 }
 

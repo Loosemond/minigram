@@ -69,7 +69,7 @@ What each minigame's code module asks for:
 | Minigame | Song | Sequence |
 |---|---|---|
 | Gutsy Golbat | 13 | 52 |
-| Clear Cut Challenge | 19, 18 | 58, 57 (18: while each log is hauled up; 19: when the pieces are shown) |
+| Clear Cut Challenge | 19, 18 | 58, 57 (18: while each log is hauled up, 31 frames after its set-up, on the module's own count, `0x865095E8`; 19: when the pieces are shown) |
 | Pichu's Power Plant | 21 | 60 |
 | Streaming Stampede | 29, 30, 31, 32 | 68 (its opening), 69 (from the first question), 70 (the results), 71 (before the last answer) |
 | Topsy-Turvy | 33 | 72 |
@@ -189,13 +189,13 @@ is the entry), and the game asks for some with `0x80027764(id, frames)`. Clear C
 | `0x1F01` | `0x08` | | a swing that misses |
 | `0x1005` | `0x0C` | 11 (4.8 s: a crowd, *by context*) | every frame from a log hanging ready to 50 frames after its drop |
 | `0x1B06` | `0x0D` | 12 (3 s) | as each log comes up |
-| `0x1C07`, `0x1D08`, `0x1E09` | `0x0E`, `0x0F`, `0x10` | 13, 14, 15 (2-4 s: the crowd reacting, *by context*) | 50 frames after a drop, for the best cut: a perfect one, 14-19 points (a cut can't score that), any points |
+| `0x1C07`, `0x1D08`, `0x1E09` | `0x0E`, `0x0F`, `0x10` | 13, 14, 15 (2-4 s: the crowd reacting, *by context*) | 50 frames after a drop, for the best cut: a perfect one, 14-19 points (a cut can't score that), any points: a late cut's too, whose points are kept in `+8` while its loss goes in `+0x80` (`0x86503374`, `0x86509830`) |
 | `0x1F0A` | `0x11` | | a Scyther gets ready, or lowers its scythes after a log |
-| `0x1F0B` | `0x12` | | a player's points are in |
+| `0x1F0B` | `0x12` | | each player's points are in, every log, -10 too: the frame its falling number gets to its card (`0x86508048`-`0x86508068`) |
 | `0x1F0C` | `0x2D` | | a perfect cut |
 | `0x1F0D`, `0x1F0E` | second table `0x22`, `0x23` | | the count and GO |
-| `0x1F04` | `0x0B` | | at three frames of Pinsir's clips |
-| `0xCF0B` | `0x86` | 86 | the finish whistle (the song fades out for 40 frames with it) |
+| `0x1F04` | `0x0B` | | a Pinsir's, at frames of its clips: getting ready (33), cheering (53, 60), lowering its arms (16, 22) (`0x86503D50`-`0x86503E24`) |
+| `0xCF0B` | `0x86` | 86 | the finish whistle, as the player leaves the instructions (module #64's `0x87F08208`: `0x86508A74`, with a 20-frame fade of the screen and a 40-frame one of the song, `0x86508A4C`, `0x86508A6C`); nothing at the end |
 
 These five share a script that picks the effect from the sound number as it
 plays (effect = sound − 1), so `tools/web_assets.py` lists them by hand. It

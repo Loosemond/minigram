@@ -1978,7 +1978,9 @@ await test("online: Clear Cut Challenge's logs fall together, and a late cut goe
     const c = bob.cuts[1], l = g.lanes[1];
     assert(before === "none", "at the end of the fall: " + before);
     assert(c.kind === "perfect" && c.done && l.pieces && bob.total === 40, `after: ${c.kind}, ${!!l.pieces}, ${bob.total}`);
-    assert(Math.abs(l.pieces[1].obj.position.y - l.pieces[0].obj.position.y - l.pieces.cutAt - 4) < 1e-6, "the pieces on the signpost");
+    // (each piece's place its middle: the upper one 20 to the left, its middle half the log over the lower one's, less 5: 0x86505604)
+    const { lo, up } = l.pieces;
+    assert(up.position.x === -20 && up.position.y - lo.position.y === (389 >> 1) - 5, `the pieces on the signpost: ${up.position.x}, ${up.position.y - lo.position.y}`);
   } finally {
     g.listeners = saved;
     g.reset("normal");

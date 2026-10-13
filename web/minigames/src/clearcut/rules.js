@@ -50,10 +50,15 @@ const CAP = { 1: 55, 2: 40, 3: 20, 4: 12 };
 // Timeline (frames), fixed so every device and the server agree on when each
 // log drops. From a log's start: Spinarak goes down its thread (30 frames),
 // waits (6), hauls the log up (63) and it bounces at the top (18); it's ready.
-// The show after the fall: the pieces rise on a signpost, the points count up,
-// they fall away.
+// The show after the fall (0x8650515C, its states at 0x8650C610): it starts
+// on frame 80 of the fall; the signposts rise with the pieces on them (69
+// frames), settle (9), the points come down and count in (71), and the
+// signposts fall away (29 frames: their clock goes up 0.15 for each of the
+// four as it's moved, 0.6 a frame, 0x865054D4); a frame after they're all
+// below -1500 the next log is set up (0x86509AC8), or after the fifth the
+// results start (0x86502B88): 180 frames.
 export const RISE = 117;
-export const SHOW = 195;
+export const SHOW = 180;
 export const FETCH = { down: 30, wait: 6, up: 63, bounce: 18 };
 
 const f32 = Math.fround;

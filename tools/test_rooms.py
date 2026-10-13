@@ -204,6 +204,7 @@ rooms.checker = None  # no calls to TypeSafe from the tests
 real_make_deal = egg_rules.make_deal
 egg_rules.make_deal = lambda seed, c, all_human=False, **kw: egg_rules.Deal(seed, c, all_human, fixed=SHORT, a=17, **kw)
 REAL_WAITS = clearcut_rules.WAITS
+REAL_RISE, REAL_SHOW = clearcut_rules.RISE, clearcut_rules.SHOW
 # Clear Cut Challenge's rounds, short: no hauling up, no waits, a 30-frame fall and no show
 clearcut_rules.RISE, clearcut_rules.SHOW, clearcut_rules.FALL_FRAMES = 3, 3, 30
 clearcut_rules.WAITS = [0] * 5
@@ -381,6 +382,10 @@ def _():
     fall = clearcut_rules.Fall(2)
     got = [clearcut_rules.judge(fall, {"T": 20}, f) for f in (20, 19, 18, 13, 21, 25, 26, 0, None)]
     assert got == [20, 10, 5, -10, -1, -5, -10, -10, -10], got
+    # the timeline (when each log drops, and the round's end: the results after the last show) is rules.js's
+    js = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "minigames", "src", "clearcut", "rules.js")).read()
+    consts = {k: int(re.search(r"export const %s = (\d+);" % k, js).group(1)) for k in ("RISE", "SHOW", "FALL_FRAMES")}
+    assert consts == dict(RISE=REAL_RISE, SHOW=REAL_SHOW, FALL_FRAMES=80), consts
 
 
 @check("the countdown is each game's own (GO four steps in), as web/minigames/src/games.js has it")
@@ -507,7 +512,7 @@ def _():
 @check("Clear Cut Challenge: after a miss a seat swings again 45 frames on, unless it swung too early")
 def _():
     short = clearcut_rules.RISE, clearcut_rules.SHOW, clearcut_rules.FALL_FRAMES, clearcut_rules.WAITS
-    clearcut_rules.RISE, clearcut_rules.SHOW, clearcut_rules.FALL_FRAMES, clearcut_rules.WAITS = 117, 195, 80, REAL_WAITS
+    clearcut_rules.RISE, clearcut_rules.SHOW, clearcut_rules.FALL_FRAMES, clearcut_rules.WAITS = REAL_RISE, REAL_SHOW, 80, REAL_WAITS
     try:
         g = clearcut_rules.Round(7, "normal")  # (the first log always hangs 100 frames; normal: reaches the blade at 16)
         t, T = g.times[0], g.logs[0]["T"]

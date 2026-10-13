@@ -267,9 +267,18 @@ number is):
 - **A log's round**, as the game plays it: Spinarak goes down its thread and
   hauls the log up from below, it bounces at the top, and the "1st CUT" …
   "FINAL CUT" sign comes down on a thread; after the wait the log drops;
-  Scyther gets ready as it comes up, swings, and misses or cuts; then the log's
-  two pieces come up on a signpost in front of each Scyther, the points come
-  down onto the cards and count up one at a time, and the pieces fall away.
+  Scyther gets ready as it comes up and swings, and 2 frames later the blade
+  meets the log: a flash at the blade (objects 130 and 131, a perfect cut's),
+  and the log comes apart, the lower piece dropping and the upper one flying
+  up, turning, towards the camera (a perfect cut's pieces white for 3
+  frames). Then the pieces come up on a signpost in front of each Scyther (the
+  upper one 20 to the left, standing 5 into the lower one); each player's
+  points come down from the cut to the card in bank 429's digits in their
+  colours (a loss's purple, a perfect cut's red and yellow, with a pulsing
+  pink burst and module #64's sparkles), and count up one at a time; and the
+  signposts fall away: 180 frames from the show's start to the next log, or to
+  the results after the fifth. A player with all 100 points gets PERFECT at
+  the end, and the dizzy stars go round the losers' heads.
 
 The camera is the game's (45°, from 760 in front at height 110, straight on),
 with background picture 15 behind; wider screens see the picture carry on
@@ -282,12 +291,15 @@ the white line). `tools/ps2tool/minigames.py` takes the textures out;
 `src/clearcut/assets.js` builds the prism from the module's numbers, so a cut
 can split it anywhere, with the bark wrapping as the module's tiles have it.
 
-**Sound**: the game's (`assets/clearcut/sound.bin`, 832 KB, 737 gzipped,
-fetched only with the sound on): song 18 while each log is hauled up, song 19
-when the pieces are shown, the crowd (by the sound of it: while a log hangs,
-as each comes up and for the best cut), the cut, a perfect cut, a swing
-that misses, Scyther getting ready, the points in, the minigame's own
-countdown and GO, the shared finish whistle, and the results' songs.
+**Sound**: the game's (`assets/clearcut/sound.bin`, 833 KB, fetched only with
+the sound on): song 18 while each log is hauled up (on the round's own frame
+count), song 19 when the pieces are shown, the crowd (by the sound of it:
+while a log hangs, as each comes up and for the best cut, a late one too),
+the cut, a perfect cut, a swing that misses, Scyther getting ready, each
+player's points in (as their number gets to the card, every log), Pinsir's
+cries, the minigame's own countdown and GO, and the results' songs; no
+whistle and no fade at the end (the game plays it as you leave the
+instructions).
 The crowd's samples are 238 KB of it and the fanfare 131.
 
 What comes from the ROM and what is made up:
@@ -295,13 +307,13 @@ What comes from the ROM and what is made up:
 | From the game | Made for the remake |
 |---|---|
 | the rules, the timings, the scoring, the deal and the CPUs (module #53's code) | the timeline between logs, fixed (the game's varies a little, e.g. it waits for every Scyther to be ready before a drop) so every device agrees |
-| Scyther (object 122), its clips and what follows each, the signpost (59), the log (the module's own), Spinarak (image bank 397) and its thread, the stars over the losers (190) and how they're coloured and blended (their combiners) | the streak of light at the cut (the game shows objects 130 and 131, whose colours its code sets as it draws them), a perfect cut's flash (bank 398) |
-| the camera, background picture 15, the lanes, the heights, the sign (bank 399), the cards and digits (434, 404, 429) | how the cut pieces tumble (close to the game's), the portrait layout |
+| Scyther (object 122), its clips and what follows each (each starting its waiting clip at a random frame), Pinsir and Scizor (55, 179) by the game's choice, the signpost (59), the log (the module's own, turned as the game turns it), Spinarak (image bank 397) and its thread, the stars over the losers' heads (190), the flash at the blade (130, 131) and how they're coloured and blended (their combiners and colour tracks) | Scyther in every seat (the game's Pinsir and Scizor come from a Game Pak: a round can ask for them, for testing) |
+| the camera, background picture 15, the lanes, the heights, the sign (bank 399), the cards and digits (434, 404, 429), the cut pieces' flight and white flash, the show's timings, the falling points (their colours, places and timing), a perfect cut's burst (398) and sparkles (module #64's, bank 147), PERFECT (433) | the portrait layout (each lane's points come down in its own view) |
 | songs 18 and 19, the fanfare, the effects (bank 1 of the effect table) | the crowd while a log hangs is started once and stopped 50 frames after the drop (the game asks for it every frame until then), and the crowd stops at the finish (the game's carries on until it leaves the minigame) |
 
-Not in the remake: the game lets a player whose Game Boy Game Pak has a Pinsir
-or a Scizor play as that Pokémon (objects 55 and 179), and it has debug
-settings for other game types (logs that change length, and more).
+Not in the remake: the screen before the countdown (each player's small
+Scyther, with the instructions), a Pinsir's blink, and the debug settings for
+other game types (logs that change length, and more).
 
 Code: `src/clearcut/rules.js` has the rules (and `tools/clearcut_rules.py`,
 the server's copy, the deal and the judging), `src/clearcut/game.js` the round
@@ -1145,9 +1157,9 @@ How it works:
 - **Clear Cut Challenge shows every lane on the round's clock**, so the four
   logs come up and fall together, as on the game's one screen. The others'
   swings are shown as they get here, a little after they happened: a late
-  cut splits the log where the blade met it, which has fallen on a bit by
-  then, so it looks a little high, but the pieces go up on the signpost as
-  they were cut, and the points are the server's. One that gets here after
+  cut's pieces appear where the game's would be by then (already apart and
+  flying), they go up on the signpost as they were cut, and the points are
+  the server's. One that gets here after
   the fall shows only on the signpost; a seat with no swing yet at the end of
   the fall shows the miss till the server's word comes.
 - **Dropping out.** A dropped connection keeps its seat for 8 s: a reload or a

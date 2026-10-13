@@ -3,9 +3,10 @@
 // online messages ("cut"). The rules are in rules.js, the round in game.js.
 import * as THREE from "three";
 import { loadAssets } from "./assets.js";
-import { Game, LANE, onLayer } from "./game.js";
+import { Game, LANE, HUD, BURST } from "./game.js";
 import * as R from "./rules.js";
 import { meMark } from "../mark.js";
+import { tintURL } from "../tint.js";
 
 export const SOUNDS = {
   url: "assets/clearcut/sound.bin",
@@ -26,6 +27,15 @@ const T45 = Math.tan(THREE.MathUtils.degToRad(CAM.fov / 2));
 // the arrow at your Scyther: under its feet, pointing up (over it is where
 // its log comes down, and is cut)
 const FEET = -4;
+// The HUD's points are on the game's 320 x 240 screen; here a point of it is
+// put in the scene where the game's camera sees it, at z 150 (where the
+// sparkles round a perfect cut's points are), and drawn where each view sees
+// that: so on the game's screen (landscape) where the game has them, and in a
+// lane's own view (portrait) over its lane.
+const SCREEN_Z = 150, SCREEN_K = ((CAM.z - SCREEN_Z) * T45) / 120; // (the scene's units a pixel of the game's screen there)
+// the points' colours (0x8650C680: prim, then env): 1P-4P's, a loss's, a perfect cut's
+const COLOURS = [[[0, 0, 155], [170, 245, 255]], [[0, 100, 0], [200, 255, 155]], [[120, 0, 0], [255, 160, 190]],
+  [[210, 90, 0], [255, 255, 140]], [[20, 0, 40], [160, 120, 255]], [[200, 0, 0], [255, 255, 0]]];
 
 export async function create(shell, onProgress) {
   const assets = await loadAssets("assets/clearcut/", onProgress);
@@ -35,9 +45,7 @@ export async function create(shell, onProgress) {
   sun.position.set(-1.5, 3, 4);
   scene.add(sun);
   scene.add(backdrop(assets.backdrop));
-  const game = new Game(scene, assets);
-  // each lane on its own layer, so a lane's view can leave the others out
-  game.lanes.forEach((l, i) => { for (const o of [l.scyther.root, l.log, l.spinarak, l.sign.root, l.slash, l.stars.root]) onLayer(o, i); });
+  const game = new Game(scene, assets); // (each lane on its own layer, so a lane's view can leave the others out: game.js)
 
   // ---- its HUD: the log's sign on Spinarak's thread, and the points ----
   const hud = document.createElement("div");
@@ -45,9 +53,23 @@ export async function create(shell, onProgress) {
   hud.innerHTML = `<div class="cc-screen"><div class="cc-sign"><i class="thread"></i><img class="spin" alt=""><img class="cut" alt=""></div></div>`;
   shell.hud.append(hud);
   const screen = hud.querySelector(".cc-screen"), sign = hud.querySelector(".cc-sign");
-  const popups = [0, 1, 2, 3].map(() => { const d = document.createElement("div"); d.className = "cc-points"; d.hidden = true; hud.append(d); return d; });
-  const flashes = [0, 1, 2, 3].map(() => { const d = document.createElement("img"); d.className = "cc-flash"; d.src = "assets/clearcut/flash.png"; d.hidden = true; hud.append(d); return d; });
+  const el = (cls, html = "") => { const d = document.createElement("div"); d.className = cls; d.hidden = true; d.innerHTML = html; hud.append(d); return d; };
+  // a perfect cut's burst (bank 398) behind its points: two of its colours, the next fading in
+  const bursts = [0, 1, 2, 3].map(() => el("cc-burst", "<img alt=''><img alt=''>"));
+  const popups = [0, 1, 2, 3].map(() => el("cc-points"));
   const mark = meMark(hud, shell.me, { below: true }), under = new THREE.Vector3();
+  // bank 429's digits and minus in each set of colours (src/tint.js: the
+  // combiner FC30B261 5566FF7F, (prim - env) x the texel + env), and the
+  // burst in each of its ten
+  const pics = COLOURS.map(() => ({}));
+  COLOURS.forEach(([prim, env], k) => {
+    for (const ch of "0123456789-") {
+      const url = `assets/ui/${ch === "-" ? "minus" : "big" + ch}.png`;
+      tintURL(url, prim, env).then((u) => { pics[k][ch] = u; }, () => {});
+    }
+  });
+  const burstPics = [];
+  BURST.prim.forEach((prim, i) => tintURL("assets/clearcut/flash.png", prim, [255, 255, 255]).then((u) => { burstPics[i] = u; }, () => {}));
 
   // ---- sounds and the like, from the round ----
   // The crowd's sounds go on until they're stopped (their scripts repeat one
@@ -64,46 +86,43 @@ export async function create(shell, onProgress) {
     if (z !== shell.me() || lastLogSound === n) return;
     lastLogSound = n;
     shell.sound("next"); // 0x1B06
-    setTimeout(() => { if (game.state === "play" && lastLogSound === n) shell.music("hang"); }, 1000); // song 18, 30 frames in
   });
+  game.on("hang", () => shell.music("hang")); // song 18, 30 frames into the log's sign (game.js)
   game.on("cry", (z) => shell.sound("ready", z)); // (0x1F0A: Scyther getting ready, and lowering its scythes after a log)
+  game.on("pinsir", (z) => shell.sound("pinsir", z)); // (0x1F04)
   game.on("hanging", (z) => { if (mine(z)) shell.sound("hanging"); });
   game.on("swing", (z, c) => {
     shell.sound(c.kind === "perfect" ? "perfect" : "cut", z);
     if (mine(z)) { shell.haptic(c.kind === "perfect" ? "heavy" : "medium"); shell.flash(z, "bump"); }
-    if (c.kind === "perfect") showFlash(z, c);
   });
   game.on("whiff", (z) => { shell.sound("whiff", z); if (mine(z)) shell.haptic("light"); });
-  game.on("verdict", (z, n) => { // the crowd, for the best cut of the log (0x86509834)
+  game.on("verdict", (z, n) => { // the crowd, for the best cut of the log (0x86509830)
     if (z !== shell.me()) return;
     shell.stopSound("hanging");
     if (lastVerdict === n) return;
     lastVerdict = n;
-    const pts = game.players.map((p) => p.cuts[n]?.pts ?? 0);
-    if (pts.some((x) => x === 20)) shell.sound("allPerfect");
-    else if (pts.some((x) => x > 0)) shell.sound("allScored");
+    // (a cut's points are kept for this even when it's late: +8, set before the late cut's loss, 0x86503374)
+    const cuts = game.players.map((p) => p.cuts[n]);
+    if (cuts.some((c) => c?.kind === "perfect")) shell.sound("allPerfect");
+    else if (cuts.some((c) => c && (c.kind === "early" || c.kind === "late"))) shell.sound("allScored");
   });
   game.on("show", (z, n) => {
     if (z === shell.me() && lastShow !== n) { lastShow = n; shell.music("show", 0, true); } // song 19
   });
-  game.on("tallied", (z) => shell.sound("tallied", z));
+  game.on("tallied", (z) => shell.sound("tallied", z)); // (0x1F0B: each player's points in, every log)
   game.on("cut", (m) => shell.send("cut", m));
 
-  function showFlash(z, c) {
-    const f = flashes[z];
-    f.hidden = false;
-    f.dataset.at = String(game.time);
-    f.style.animation = "none";
-    void f.offsetWidth;
-    f.style.animation = "";
-  }
+  // Each seat's Pokemon is its Game Pak's in the game (Scyther without one,
+  // game.js); the remake has none, so it's Scyther, unless a test asks
+  // (?debug&species=127,123,212,123: Pinsir, Scyther, Scizor)
+  const query = new URLSearchParams(location.search);
+  const species = query.has("debug") && query.get("species") ? query.get("species").split(",").map(Number) : undefined;
 
   let views = [];
   let portrait = false;
   const api = {
     game, scene, assets,
     get views() { return views; },
-    get shake() { return game.shake * 40; },
     label: null,
 
     layout(W, H, safe, me, cards, frames) {
@@ -139,16 +158,17 @@ export async function create(shell, onProgress) {
     reset(round) {
       const m = round.start;
       game.reset(round.level, round.seed, { me: round.me, control: round.control,
-                                            c: m?.c, scores: m?.scores, cuts: m?.cuts });
+                                            c: m?.c, scores: m?.scores, cuts: m?.cuts, species: round.species ?? species });
       lastLogSound = lastVerdict = lastShow = -1;
       quiet();
-      for (const d of popups) d.hidden = true;
-      for (const f of flashes) f.hidden = true;
+      for (const d of [...popups, ...bursts]) d.hidden = true;
       sign.hidden = true;
     },
-    idle() { game.reset(game.level || "normal"); game.state = "idle"; quiet(); sign.hidden = true; for (const d of popups) d.hidden = true; },
+    idle() { game.reset(game.level || "normal"); game.state = "idle"; quiet(); sign.hidden = true; for (const d of [...popups, ...bursts]) d.hidden = true; },
     go() { game.start(); },
-    finish() { quiet(); shell.sound("finish"); shell.music(null, 40); },
+    // (no whistle and no fade: the game's last show leads straight to the
+    // results, 0x86502B88, and song 19 plays on till theirs takes over)
+    finish() { quiet(); },
     stop() { game.stop(); quiet(); },
     setControl(z, c) { game.setControl(z, c); },
     get state() { return game.state; },
@@ -201,38 +221,49 @@ export async function create(shell, onProgress) {
     sign.style.transform = `translateY(calc(${y}px * var(--k)))`;
   }
 
-  // A log's points, over its lane once its pieces are up on the signpost,
-  // going down to the card (0x86505324: from where it was cut, 10 a frame).
-  const tmp = new THREE.Vector3();
+  // A log's points, from where it was cut on the signpost down to the card,
+  // in bank 429's digits in the player's colours (a loss's purple, a perfect
+  // cut's red and yellow, and no "+": 0x86506E78), and a perfect cut's burst
+  // behind them (0x86506B2C), as game.pointsAt() has them for the moment drawn.
+  const tmp = new THREE.Vector3(), at0 = { x: 0, y: 0, z: 0 }, at1 = { x: 0, y: 0, z: 0 };
+  // a point of the game's screen as view v draws it (x, y on the page; z > 1: behind the camera)
+  function onScreen(v, gx, gy, out) {
+    tmp.set((gx - 160) * SCREEN_K, CAM.y - (gy - 120) * SCREEN_K, SCREEN_Z).project(v.cam);
+    out.x = v.x + ((tmp.x + 1) / 2) * v.w;
+    out.y = v.y + ((1 - tmp.y) / 2) * v.h;
+    out.z = tmp.z;
+    return out;
+  }
   function drawPoints() {
+    const fr = game.time * R.FPS;
     for (let z = 0; z < 4; z++) {
-      const d = popups[z], f = flashes[z];
-      if (!f.hidden && game.time - +f.dataset.at > 0.6) f.hidden = true;
-      if (game.state !== "play") { d.hidden = true; continue; }
-      const fr = game.time * R.FPS, at = game.logAt(fr), c = at && game.players[z].cuts[at.n];
-      const sk = at ? fr - at.t.judged : -1;
-      if (!c || sk < 78 || sk > 78 + 45) { d.hidden = true; continue; } // (down to the card, then gone)
+      const d = popups[z], b = bursts[z], pts = game.pointsAt(z, fr);
       const view = views.find((v) => v.zone === z) || views.find((v) => v.zone === undefined);
-      if (!view) { d.hidden = true; continue; }
-      const y = -100 + 27 + (c.at !== null && c.kind !== "miss" && c.kind !== "none" ? R.TOP - c.at : R.LENGTH / 2);
-      tmp.set(LANE[z], y - Math.min(1, (sk - 78) / 20) * (y + 170), 60).project(view.cam);
-      d.hidden = tmp.z > 1;
-      const html = shell.bigDigits(c.pts, true);
-      if (d.dataset.html !== html) { d.innerHTML = html; d.dataset.html = html; }
-      d.className = "cc-points" + (c.pts < 0 ? " lost" : c.pts === 20 ? " perfect" : "") + (view.mini ? " mini" : "");
-      d.style.left = view.x + ((tmp.x + 1) / 2) * view.w + "px";
-      d.style.top = view.y + ((1 - tmp.y) / 2) * view.h + "px";
-    }
-    // a perfect cut's flash, at the blade
-    for (let z = 0; z < 4; z++) {
-      const f = flashes[z];
-      if (f.hidden) continue;
-      const view = views.find((v) => v.zone === z) || views.find((v) => v.zone === undefined);
-      if (!view) continue;
-      tmp.set(LANE[z], R.TOP, 60).project(view.cam);
-      f.style.left = view.x + ((tmp.x + 1) / 2) * view.w + "px";
-      f.style.top = view.y + ((1 - tmp.y) / 2) * view.h + "px";
-      f.classList.toggle("mini", !!view.mini);
+      const text = pts ? String(pts.pts) : "", key = text + "/" + pts?.colours;
+      if (!pts || !view || ![...text].every((ch) => pics[pts.colours][ch])) { d.hidden = b.hidden = true; continue; }
+      onScreen(view, pts.x, pts.y, at0);
+      const s = Math.abs(onScreen(view, pts.x + 1, pts.y, at1).x - at0.x); // (the page's pixels a pixel of the game's screen)
+      d.hidden = at0.z > 1;
+      if (d.dataset.key !== key) {
+        const places = HUD.places[text.length];
+        d.innerHTML = [...text].map((ch, k) => `<img src="${pics[pts.colours][ch]}" style="left: calc(var(--s) * ${places[k]}px)" alt="${ch}">`).join("");
+        d.dataset.key = key;
+      }
+      d.style.setProperty("--s", s);
+      d.style.transform = `translate(${at0.x}px, ${at0.y}px)`;
+      // the burst: its scale and colour the next of its ten each frame, between them here
+      b.hidden = d.hidden || !pts.burst || !burstPics[0];
+      if (b.hidden) continue;
+      const k = pts.burst.k, i0 = Math.floor(k) % BURST.scale.length, i1 = (i0 + 1) % BURST.scale.length, part = k - Math.floor(k);
+      const sc = BURST.scale[i0] + (BURST.scale[i1] - BURST.scale[i0]) * part, [w, h] = BURST.size;
+      const [a, c] = b.children;
+      if (a.getAttribute("src") !== burstPics[i0]) a.src = burstPics[i0];
+      if (c.getAttribute("src") !== burstPics[i1]) c.src = burstPics[i1];
+      c.style.opacity = part;
+      onScreen(view, pts.x + BURST.at[0] + (w * (BURST.box - sc)) / 2, pts.y + BURST.at[1] + (h * (BURST.box - sc)) / 2, at1);
+      b.style.transform = `translate(${at1.x}px, ${at1.y}px)`;
+      b.style.width = w * sc * s + "px";
+      b.style.height = h * sc * s + "px";
     }
   }
 

@@ -164,7 +164,7 @@ audits of each module; `0x87F0A098`'s callers):
 | Delibird's Delivery | as soon as the tally's counted (`0x86A07124`) | plays on (no fade, no whistle) |
 | Egg Emergency | 31 frames after the last drop is gone (`0x868058C0`, `0x86804C5C`; `0xCF06` at 5) | plays on |
 | Eager Eevee | after the tally (`0x86B09148`) | not faded (its fades are the instructions', its set-up's and the basket's) |
-| Clear Cut Challenge | after the last show (`0x86502B88`) | plays on |
+| Clear Cut Challenge | after the last show: on the frame the next log would be set up, 180 frames after the fifth log's show starts (`0x86509AC8`, `0x86509D40`: `0x86502B88`) | plays on (song 19; no fade, no whistle) |
 | Tumbling Togepi | when the last one's goal clip ends (`0x86706664`), its end show (state 14, `0x86709AD0`) starting with it | plays on (module #55 never fades it; song 55 takes its place) |
 | Topsy-Turvy | on the end show's first frame, the frame after the play's last: nobody's left in the play, so the losers drop out of it and `0x8600688C` starts the results (`0x86006B74`-`0x86006BC8`); the show goes on under them | plays on (song 55 takes its place) |
 
@@ -504,7 +504,8 @@ as how well the CPUs cut. Rooms with no CPU use c 0.
 **The CPUs** (`0x86501280`, when each log is set up). For each CPU, with s3 =
 (a random number mod 79 + a frame counter) mod 10 and s2 = its mood (random,
 0 or 1): c 1 (Hard) presses on T when s3 ≥ s2 + 6, else 1-3 frames off (late
-only 15% of the time, then pulled back to 1-2 early); c 2 (Normal) on T for s3
+only 15% of the time, then pulled back to 1-2 early, or 1-3 with s2 = 1:
+`0x86501478`-`0x865014E0`); c 2 (Normal) on T for s3
 ≥ s2 + 8, else 1-4 off (late 20%); c 3 (Easy) never quite on T (one late at
 best), 1-4 off; c 4, 1-5 off (late 55%). Then: on the last log, if the cut
 would leave it at 0 or less, it moves to the early side; and a CPU whose total
@@ -517,19 +518,103 @@ bank 397 on a sprite quad, 2.4×) goes down its thread from 400-500 (under
 gravity, 30 frames), and hauls the next log up from below at 18 a frame to
 689, then it bounces (`0x8650D13C`) and settles at 674, the log's top when it
 hangs; meanwhile a 2D Spinarak comes down the screen with "1st CUT" … "FINAL
-CUT" (bank 399). The log waits, drops, and at frame 50 the crowd reacts to the
-best cut (0x1C07 for a perfect one, 0x1E09 for any points). At frame 80 the
-show starts (`0x8650C610`): a signpost (object 59, 0.6×) rises in front of
-each Scyther from −1500 at 20 a frame with the log's pieces stacked on it (or
-the whole log: it and the lower piece stand on the lane's line, the upper
-piece on top 20 to the left, `0x86505604`), settles (`0x8650D1B4`), the
-points drop from the cut to the
-score card and count in (71 frames), and the pieces fall away. Song 19 plays
-for the show; song 18 starts 30 frames into each log's haul. After the fifth,
-the winners play Scyther's clip 5 and the rest clip 6 (`0x86502B88`: a
-four-way tie has no winner); from frame 60 of clip 6, stars (object 190,
-0.15×, tilted `0x600`) go round 108 above each fallen Scyther, fading in by
-5/255 a frame (`0x86509318`).
+CUT" (bank 399). From its set-up until the show the log is turned −0x200 on
+its `+0x1E` (`0x865028D8`: about x, as Tumbling Togepi's objects are, its top
+back), and 0 again as the show starts (`0x86505280`). Song 18 starts on the
+module's own count, 31 frames after the log's set-up (the sign's state goes
+to 0 the frame after, and at its 30th frame the song: `0x865095C4`-`0x865095F8`).
+The log waits, drops, and at frame 50 the crowd reacts to the best cut
+(0x1C07 for a perfect one, 0x1E09 for any points: a late cut's too, as `+8`
+keeps the points it would have scored and its loss goes in `+0x80`,
+`0x86503374`, `0x86509830`). At frame 80 the show starts (`0x8650C610`; its
+states run in the signposts' callback `0x8650515C`, a jump table at
+`0x8650D808`):
+- 1: a signpost (object 59, 0.6×) in front of each Scyther at −1500, song 19,
+  the points' start (below).
+- 2: they rise 20 a frame (69 frames, to −120), then settle through the 2nd
+  to 9th of `0x8650D1B4` (−95 … −99) and stop at −100, 78 frames in.
+- 3: the points (71 frames, `0x8650549C`).
+- 6, then 4 the next frame (`0x86509A30`: the debug switch `0x8650C4C8` would
+  play clip 6 for everyone): they fall away (`0x865054D4`), −100 − 4.9 t²,
+  till each is below −1500. The clock t (`0x8650D1DC`) goes up 0.15 *for each
+  signpost moved*, in turn, so 0.6 a frame and lane i's at 0.6 (n − 1) + 0.15
+  (i + 1) on its nth frame: all four are below −1500 on the 29th.
+- 5, the frame after: the next log is set up on the next (`0x86509AC8` lets
+  `0x86509AF8` go on), 180 frames after the show started; after the fifth,
+  `0x86509D40` calls `0x86502B88`, which starts the results.
+
+On the signpost (in states 2 and 4, `0x86505604`) the whole log, or the lower
+piece, stands with its bottom 27 over the signpost; the upper piece is 20 to
+the left, its middle half the log's length (194) over the lower one's less 5,
+so it goes 5 into the lower one's top. After the fifth log the winners play
+Scyther's clip 5 and the rest clip 6 (`0x86502B88`: a four-way tie has no
+winner); from frame 60 of clip 6, stars (object 190, 0.15×, tilted `0x600`
+on their `+0x1E`) go round 108 above each fallen Scyther's feet, at its
+head's x and z (its attachment point, label 1: Scyther's bone 11, Pinsir's 3,
+Scizor's 8; the object's `+0xAC`, `+0xB4`), fading in by 5/255 a frame
+(`0x86509318`). A player with all 100 points gets PERFECT over its Scyther
+(`0x86502CD4`: module #2's `0x81900164` at its x, 26 up, ×3.1, in its
+player's colours, as Egg Emergency's). Each Scyther's waiting clip starts at
+a random frame, 15-29, as the module loads and again as the intro ends
+(`0x8650A320`, `0x8650892C`: rand2 % 15 + 15), so the four don't move in step.
+
+**The cut, on screen** (`0x86503178` at the press, `0x86503F18` from the
+frame the blade meets the log, the press + 2). On the press: Scyther's clip
+3 and 0x1F00, or 0x1F0C for a perfect cut. The blade meets the log 2 frames
+on: the two pieces are shown that frame (the whole log goes the frame after,
+`0x86504070`), and the flash at the blade, object 131 for a perfect cut,
+else 130, at (x, 92, 50) 0.25×, its clip from frame 0 at its speed (1.0),
+hidden at its frame 15 (`0x8650404C`). Their colours are their own material
+callbacks' colour tracks (130: white to yellow, orange and red; 131 adds six
+spikes in cyan, blue and pink), drawn translucent (layers 6 and 8). Each
+piece's object is at its middle: the lower one's at the log's bottom then +
+half its length h (92 − the bottom, `+0x38`), the upper one's 92 + half the
+rest, each scaled its length / 2060. Then, each frame they're drawn till the
+show (`0x86504EB0`), with t (`0x865119A0`) 0.6 the first frame and up 0.6 a
+frame while the lower piece is above −3000:
+- the lower piece falls from rest: y0 − 4.9 t²;
+- the upper one goes up and back down, y1 + 5v² − 5 (t − v)², with v = 5 +
+  h / 389 + 0.5 × a random (`+0x70`), so 125-210 up; towards the camera, 40
+  + 4.9 t² / (70 + 5 h / 389 + a random 0-30, `+0x74`); and turns 128 × spin
+  a frame on its `+0x1E` and 256 × spin × side on its `+0x22` (about x and
+  z), spin 1 + 4 h / 389 − 0.5 × a random (`+0x68`), side ±1 (`+0x78`, from
+  the log's set-up).
+
+A perfect cut's pieces are drawn white for 3 frames from the frame the blade
+meets them (the bark's callback, `0x865006C8`: while the frame is at most the
+contact + 2, env white and the combiner `FCFFFFFF FFFEF238`, colour env and
+alpha the texture's).
+
+**The points** (the HUD, `0x86507AFC`, in the show's state 3; drawn by
+`0x86506E78`). Each player's number starts where its log was cut on the
+signpost, at y = 178 − 146 × h / 389 on the 320 × 240 screen (25 with no
+cut: h is then the log's length + 20; `0x86505260`), in its card's column
+(x 29, 107, 185, 263: `0x8650D2EC`), bank 429's digits at 0.57 (14 × 18;
+one at +7, two at +1 and +14, three at −6, +5, +18: `0x8650D2FC`). It stays
+put till the tally's 16th frame, then comes down 10 a frame; the frame it
+would get to 190 it's in, 0x1F0B plays for that player (every player, every
+log: `0x86508048`-`0x86508068`) and it's no longer drawn. From the tally's
+21st frame, once the number is 161 down, the card counts it in one a frame
+(a loss counts down, not below 0). The colours are the combiner
+`FC30B261 5566FF7F`'s, (prim − env) × the texel + env, from `0x8650C680`:
+1P (0, 0, 155) / (170, 245, 255), 2P (0, 100, 0) / (200, 255, 155), 3P (120,
+0, 0) / (255, 160, 190), 4P (210, 90, 0) / (255, 255, 140); a loss (−1 to
+−5 for a late cut, −10 for a miss) in purple, (20, 0, 40) / (160, 120, 255),
+with the minus (bank 429 image 10); a perfect cut's 20 in red and yellow,
+(200, 0, 0) / (255, 255, 0). No "+" is ever drawn (image 11 isn't used).
+While a perfect cut's number comes down:
+- bank 398 is drawn behind it (`0x86506B2C`), its scale and prim the next of
+  ten a frame (`+0x8C`: 1.2 … 0.9 … 1.2 at `0x8650D320`, (200, 100, 155) …
+  (255, 150, 255) at `0x8650D348`; env white), in a box 1.9× its 56 × 42 from
+  19 left of and 16 over the number (so the star's middle is about 21 right
+  of the number's and 8 down);
+- and two of module #64's star particles a frame (`0x86502D80`, made by
+  `0x87F0328C`, type 0): bank 147's star, yellow prim and white env, at its
+  Scyther's x + 40, 20, −20 or −40 (`0x8650D0B4`, by the lane) ± 28 × a
+  random, (152 − y) × 319 / 146 + 42 × a random up and z 150, moving ±2.8 ×
+  a random across and 2.8 × 1.6 × a random up a frame, for 10 frames,
+  32 × (1 + 1.2 × a random) × sin(π age / 10) big, turning 0x1FF a frame
+  (`0x87F02F00`); the side is + for three in four (rand2's sign and its low bits).
 
 **The dizzy stars** (object 190) are three stars, each with a halo trailing
 it, textured by two material callbacks (`0x81000178`).
@@ -553,8 +638,8 @@ across and 389/2060 along, z 40), with its pieces (`0xC884`…) and the thread
 (`0xCEE0`); its textures are at `0xA5E0` (bark, RGBA16 32×64, wrapping twice
 each way), `0xB5E0` (end rings, 32×32) and `0xBDE0` (the line, IA8 32×8); its
 lists cull back faces (`G_CULL_BACK`), and its faces go anticlockwise seen
-from outside. The cut's effects are objects 130 and 131 (a perfect cut) at
-the blade.
+from outside. The flash at the blade is objects 130 and 131 (a perfect cut:
+above).
 
 **Scyther's clips** (35, 40, 39, 6, 44, 79, 90 and 30 frames; 0 and 1 loop,
 flag 1 in their headers, the others play once and hold): 0 waits, 1 holds
@@ -584,7 +669,10 @@ in the game.
 0x1F01 a miss, 0x1F0A getting ready and lowering the scythes, 0x1F0B the points in, 0x1F0C a perfect
 cut, 0x1F0D and 0x1F0E the count and GO, 0x1005 the crowd while a log hangs,
 0x1B06 as a log comes up, and 0x1C07-0x1E09 the crowd after a cut. 0x1F04
-plays at three frames of Pinsir's clips. The crowd's sounds repeat until
+plays at frames of Pinsir's clips (2: 33; 5: 53, 60; 7: 16, 22:
+`0x86503D50`-`0x86503E24`). The finish whistle (0xCF0B) plays once, with a
+40-frame fade of the song, as the player leaves the instructions
+(`0x86508A74`), and nothing plays at the end. The crowd's sounds repeat until
 they're stopped: 0x1005 stops when the game stops asking for it, 50 frames
 after the drop; 0x1B06 and the reactions share a channel, each taking over
 from the last, and nothing stops them in the round (the module stops every
@@ -592,9 +680,15 @@ sound as it leaves, `0x80027ED0(0xFFE)`). The remake stops them at the
 finish.
 
 **Pinsir and Scizor.** The object comes from the player's Pokémon
-(`0x865059A0`): Pinsir (species 127) plays as object 55, Scyther (123) as 122,
-anything else as Scizor (179). The Game Pak's Pokémon decides (text 50.39);
-the remake is Scyther for everyone.
+(`0x86505BF8`: the species byte at the minigame's record of the player,
+`+0x6C0` each, `+8`, then `+4`): Pinsir (species 127) plays as object 55,
+Scyther (123) as 122, anything else as Scizor (179). The Game Pak's Pokémon
+decides (text 50.39); with none, the menu must put Scyther's species there
+(*assumed*: the module's default is Scizor). The three have the same clips,
+their own lengths (5 and 6: Pinsir 64 and 80, Scizor 84 and 65), and the
+stars go round each's own attachment point. The remake plays this choice
+with Scyther for every seat (it has no Game Pak), Pinsir or Scizor only when
+a round asks (testing: `?debug&species=127,123,212,123`).
 
 **Left over from development:** a debug menu (`0x865064B0`, its labels in
 Japanese at `0x8650D490`) sets the log's height and length, the fall rate,

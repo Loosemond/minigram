@@ -29,7 +29,7 @@ LEVELS = {"easy": 1, "normal": 2, "hard": 3}
 RATE = {1: 0.45, 2: 0.4, 3: 0.35, 4: 0.3}
 TARGET = {0: (2, -4), 1: (1, -3), 2: (2, -4), 3: (4, -6), 4: (4, -7)}
 RISE = 117
-SHOW = 195
+SHOW = 180  # the show after a log's fall, to the next log's set-up (or the results after the fifth: 0x86502B88)
 
 
 def f32(x):

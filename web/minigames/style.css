@@ -107,13 +107,13 @@ i.egg {
 .cc-sign .spin { left: calc(140px * var(--k)); top: 0; width: calc(40px * var(--k)); height: calc(34px * var(--k)); }
 .cc-sign .cut { left: calc(120px * var(--k)); top: calc(31px * var(--k)); width: calc(80px * var(--k)); height: calc(44px * var(--k)); }
 .cc-sign .thread { position: absolute; left: calc(159.5px * var(--k)); top: calc(-240px * var(--k)); width: max(1px, calc(0.7px * var(--k))); height: calc(242px * var(--k)); background: rgba(255, 255, 255, 0.85); }
-.cc-points { position: absolute; display: flex; transform: translate(-50%, -50%); filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.6)); will-change: transform; } /* (its own layer: it moves) */
-.cc-points img { height: clamp(26px, 6vh, 44px); width: auto; display: block; }
-.cc-points.mini img { height: 18px; }
-.cc-points.perfect { animation: bump 0.4s 2; }
-.cc-flash { position: absolute; width: 96px; transform: translate(-50%, -50%) scale(1.4); animation: flashpop 0.55s both; }
-.cc-flash.mini { width: 40px; }
-@keyframes flashpop { 0% { opacity: 0; transform: translate(-50%, -50%) scale(0.3); } 25% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.6); } }
+/* a log's points coming down (bank 429's digits at 0.57: 14 x 18 of the game's
+   screen, --s the page's pixels one of its pixels), and a perfect cut's burst
+   behind them (bank 398): their top left at the element's place */
+.cc-points, .cc-burst { position: absolute; left: 0; top: 0; will-change: transform; } /* (their own layers: they move) */
+.cc-points { --s: 1; }
+.cc-points img { position: absolute; top: 0; display: block; width: calc(var(--s) * 14px); height: calc(var(--s) * 18px); }
+.cc-burst img { position: absolute; left: 0; top: 0; display: block; width: 100%; height: 100%; }
 
 /* Eager Eevee: each player's prizes (image bank 389), the reaction time's box
    (393, digits 394), "ROUND 1" ... (392), and the Dash and Feint pads */
