@@ -3,8 +3,11 @@
 // Spinarak, dropped, cut into two pieces) and its signpost, where the pieces
 // are shown after the fall. In the game's units (y up, the ground at 0).
 //
-// Who plays each seat: "local" (this device's player), "cpu", or "remote"
-// (someone on another device, online). Every lane is on the round's clock, so
+// Who plays each seat: "local" (this device's player), "cpu", "remote"
+// (someone on another device, online) or "none": online with the CPUs off, a
+// seat no one plays is empty, with no Scyther at all, and nothing of its lane
+// (its log, Spinarak, its signpost: they're its player's) is drawn or run; the
+// lane's ground stays, as the stage has it. Every lane is on the round's clock, so
 // the four logs fall together, as on the game's one screen; a remote seat's
 // swings come through the server a little after they happened, and are shown
 // as they get here: a cut's pieces are where the game's would be by then,
@@ -221,13 +224,15 @@ export class Game {
     return lane;
   }
 
-  // A round. level: easy / normal / hard; setup: { me, control } and,
-  // online, the server's round: { c, scores, cuts } (to rejoin it midway).
+  // A round. level: easy / normal / hard; setup: { me, control, empty (the
+  // seats no one plays: their control "none") } and, online, the server's
+  // round: { c, scores, cuts } (to rejoin it midway).
   reset(level, seed = (Math.random() * 2 ** 31) | 0, setup = {}) {
     this.level = level;
     this.seed = seed;
     this.me = setup.me ?? 0;
     this.control = setup.control || [0, 1, 2, 3].map((z) => (z === this.me ? "local" : "cpu"));
+    this.empty = [0, 1, 2, 3].map((z) => !!setup.empty?.[z] || this.control[z] === "none");
     const cpus = this.control.some((c) => c === "cpu") || (setup.c === undefined ? false : setup.c !== 0);
     this.c = setup.c ?? R.levelCode(level, cpus);
     this.fall = R.fall(this.c);
@@ -270,6 +275,8 @@ export class Game {
         }
       }
       this.resetLane(l, from);
+      // (an empty seat's lane: nothing of it on show)
+      l.scyther.root.visible = l.sign.root.visible = !this.empty[l.i];
     }
     this.lastFrame = [-1, -1, -1, -1];
     this.planned = -1;
@@ -291,6 +298,7 @@ export class Game {
     if (l.mon === name) return;
     const m = makeModel(data, SCYTHER_SCALE), M = MONS[name];
     m.root.position.copy(l.scyther.root.position);
+    m.root.visible = l.scyther.root.visible;
     this.scene.remove(l.scyther.root);
     this.scene.add(onLayer(m.root, l.i));
     Object.assign(l, { scyther: m, mon: name, frames: M.frames, head: m.root.getObjectByName(M.head) });
@@ -320,7 +328,7 @@ export class Game {
   // this device's player pressed A (the tap): a swing, if the log is up and A
   // works: till they've cut it, and after a miss once it works again (R.again)
   press(z = this.me) {
-    if (this.state !== "play" || this.control[z] === "remote") return false;
+    if (this.state !== "play" || this.control[z] === "remote" || this.empty[z]) return false;
     const fr = this.time * R.FPS, at = this.logAt(fr);
     if (!at || fr < at.t.ready || fr >= at.t.judged) return false; // (the game ignores A while the log comes up, and after)
     const f = Math.floor(fr - at.t.drop); // (negative: while it hangs, a miss)
@@ -348,7 +356,7 @@ export class Game {
   // the server's word on seat z's log n: {f (null: no swing), p (points), e
   // (the total after), a (an open miss: it doesn't count yet)}
   told(z, n, m) {
-    if (this.state === "idle" || !this.players[z] || n < 0 || n >= R.LOGS || !Number.isFinite(m.e)) return;
+    if (this.state === "idle" || !this.players[z] || this.empty[z] || n < 0 || n >= R.LOGS || !Number.isFinite(m.e)) return;
     const p = this.players[z], had = p.cuts[n];
     if (had && this.control[z] !== "remote") { // a seat this device plays: it's judged it too
       if (m.a) { if (had.f === m.f) had.told = true; return; } // (it keeps it open, or has swung again since)
@@ -374,7 +382,7 @@ export class Game {
       if (this.time >= this.end) { this.state = "over"; this.emit("finish"); }
     }
     for (let z = 0; z < 4; z++) this.updateLane(z, dt);
-    for (const l of this.lanes) this.animate(l, dt);
+    for (const l of this.lanes) if (!this.empty?.[l.i]) this.animate(l, dt);
   }
 
   updateLane(z, dt) {
@@ -385,6 +393,7 @@ export class Game {
     const from = this.lastFrame[z], to = Math.floor(fr);
     for (let f = from + 1; f <= to; f++) this.frameEvent(z, f);
     this.lastFrame[z] = Math.max(from, to);
+    if (this.empty[z]) return; // (no one there: nothing of its lane)
     this.drawSparks(l, fr);
     if (!at) return;
     this.drawLane(l, p, at, fr);
@@ -400,6 +409,7 @@ export class Game {
       this.emit("log", z, n);
     }
     if (z === 0 && fr === t.start + SONG_AT) this.emit("hang", n); // (song 18)
+    if (this.empty[z]) return; // (the round's own moments above, seat 0's even when it's empty; no player's)
     if (fr === t.ready) this.emit("hanging", z, n);
     if (this.control[z] === "cpu" && !p.cuts[n] && p.plans[n] !== undefined && fr === t.drop + p.plans[n]) {
       this.cut(z, n, p.plans[n]);
@@ -805,8 +815,9 @@ export class Game {
   spinarakStart(i) { return 400 + ((this.seed >>> (i * 5)) % 101); } // (0x86502958: 400 + a random 0-100)
 
   // ---- the end ----
+  // the seats there ranked (an empty seat isn't: tools/clearcut_rules.py places())
   results() {
-    const order = this.players.map((p, i) => ({ i, score: p.total })).sort((a, b) => b.score - a.score);
+    const order = this.players.map((p, i) => ({ i, score: p.total })).filter((r) => !this.empty[r.i]).sort((a, b) => b.score - a.score);
     return order.map((r) => ({ ...r, place: 1 + order.filter((q) => q.score > r.score).length }));
   }
   celebrate() {
@@ -815,7 +826,8 @@ export class Game {
     for (const x of r) {
       const l = this.lanes[x.i];
       // the winners cheer, the others fall, when their waiting clip next comes
-      // round (0x86502B88, 0x86503A50: a four-way tie has no winner)
+      // round (0x86502B88, 0x86503A50: a four-way tie has no winner; here, all
+      // those there tied)
       l.end = x.place === 1 && !all ? 2 : 1;
       this.players[x.i].shown = this.players[x.i].total;
       if (x.score === PERFECT_END.score && l.perfectT === null) l.perfectT = 0; // (0x86502CD4)

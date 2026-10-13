@@ -189,11 +189,12 @@ export async function create(shell, onProgress) {
     },
 
     reset(round) {
-      const m = round.start;
-      // (online: the seats nobody was dealt are CPUs, as the server has them)
-      const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me)
-        : [0, 1, 2, 3].map((z) => !(round.lineup || []).some((p) => p.seat === z));
-      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, told: m?.tt, delay: round.delay });
+      const m = round.start, empty = round.empty || [false, false, false, false];
+      // (online: the seats nobody was dealt are CPUs, as the server has them; but not the empty
+      // ones, with the CPUs off: no Hitmontop there)
+      const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me && !empty[z])
+        : [0, 1, 2, 3].map((z) => !empty[z] && !(round.lineup || []).some((p) => p.seat === z));
+      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, empty, told: m?.tt, delay: round.delay });
       shell.stopSound();
       keys.clear();
       steer = null;
@@ -293,7 +294,7 @@ export async function create(shell, onProgress) {
     const w = game.world;
     for (let z = 0; z < 4; z++) {
       const got = w.p[z].victims, imgs = points[z].children, c = theCards[z];
-      points[z].hidden = !(showing || game.state === "ready");
+      points[z].hidden = !(showing || game.state === "ready") || game.empty[z]; // (an empty seat: no card, no points)
       if (c && !points[z].hidden) {
         const r = c.getBoundingClientRect(), left = z % 2 === 0, under = z < 2 || portrait;
         const at = `${left ? r.left + 2 : r.right - 2}|${under ? r.bottom + 3 : r.top - 3}`;

@@ -253,10 +253,12 @@ function advance(f) {
   if (f.frame >= CLIP_LEN[f.clip]) f.frame = HOLD[f.clip] ? CLIP_LEN[f.clip] - 1 : LOOP[f.clip];
 }
 
-// One round's world. cpus: which seats are CPUs; step() runs a frame from the
-// people's pads. The scene reads it all.
+// One round's world. cpus: which seats are CPUs; empty: which have no one in
+// them at all (the remake's, online with the CPUs off: no Furret there, so it
+// takes no part; its goal stays, a ball over its line scoring for no one);
+// step() runs a frame from the people's pads. The scene reads it all.
 export class World {
-  constructor(seed, level = "normal", cpus = [false, true, true, true]) {
+  constructor(seed, level = "normal", cpus = [false, true, true, true], empty = [false, false, false, false]) {
     this.level = levelCode(level, cpus);
     this.seed = seed >>> 0; // the game's random numbers' state (rnd())
     this.t = -1; // the last frame run
@@ -272,7 +274,7 @@ export class World {
     this.events = [];
     this.shuffle();
     this.p = [0, 1, 2, 3].map((z) => ({
-      z, cpu: !!cpus[z], goal: GOALS[z], score: 0, won: false, arrived: false, cheer: false,
+      z, cpu: !!cpus[z], empty: !!empty[z], goal: GOALS[z], score: 0, won: false, arrived: false, cheer: false,
       skill: 0, ai: { state: 0, timer: 0, held: 0 },
       // its Furret (0x86206334): on its spot, popping up through the countdown (its clip at frame 8 at GO)
       f: { spot: 0, target: 0, pos: [0, 30, 0], tail: [0, 0, 0], clip: CLIP.up, frame: COUNTDOWN % CLIP_LEN[CLIP.up], counter: 0,
@@ -322,6 +324,7 @@ export class World {
       if ((TIME / 3) * this.most < TIME - this.left) this.most++;
       // the pads, and the CPUs (0x862070B0)
       for (const p of this.p) {
+        if (p.empty) continue;
         let v;
         if (p.cpu) v = this.think(p);
         else {
@@ -344,13 +347,13 @@ export class World {
       this.left--;
       if (this.left < 0) { this.left = 0; this.finish(); }
     }
-    for (const p of this.p) advance(p.f); // (drawn)
+    for (const p of this.p) if (!p.empty) advance(p.f); // (drawn)
   }
 
   // a step (0x86203C58): the Furret, the balls, then (with time left) the
   // tails against the balls; the balls against each other, and the floor
   sub() {
-    for (const p of this.p) { this.furret(p); p.f.counter++; }
+    for (const p of this.p) { if (p.empty) continue; this.furret(p); p.f.counter++; }
     for (const b of [...this.balls]) this.roll(b);
     if (this.left > 0) {
       for (const p of this.p) {
@@ -419,6 +422,7 @@ export class World {
     if (g < 0) return;
     const p = this.p.find((q) => q.goal === g);
     b.scored = true;
+    if (p.empty) return; // (no one's goal: in, for nothing)
     p.score += b.kind;
     this.events.push(["goal", p.z, b.id, b.kind]);
   }
@@ -646,11 +650,13 @@ export class World {
   }
 
   // ---- the end (0x8620392C): the most points win (all four level: nobody) ----
+  // (all four: all those there; an empty seat's no part of it)
   finish() {
-    let best = this.p[0].score;
-    for (const p of this.p) if (best < p.score) best = p.score;
-    for (const p of this.p) p.won = p.score === best;
-    if (this.p.every((p) => p.won)) for (const p of this.p) p.won = false;
+    const here = this.p.filter((p) => !p.empty);
+    let best = here[0].score;
+    for (const p of here) if (best < p.score) best = p.score;
+    for (const p of here) p.won = p.score === best;
+    if (here.every((p) => p.won)) for (const p of here) p.won = false;
     this.end = this.t;
     this.over = true;
     this.events.push(["end"]);
@@ -693,8 +699,8 @@ export class World {
 
   // each one's points, by seat
   get scores() { return this.p.map((p) => p.score); }
-  // the places (1-4) by points
-  get places() { return this.p.map((p) => 1 + this.p.filter((q) => q.score > p.score).length); }
+  // the places (1-4) by points (among those there; an empty seat's: null)
+  get places() { return this.p.map((p) => (p.empty ? null : 1 + this.p.filter((q) => q.score > p.score && !q.empty).length)); }
   // a fingerprint of the world, exact, to check two runs of it agree (the tests;
   // tools/furret_rules.py's is the same)
   digest() {

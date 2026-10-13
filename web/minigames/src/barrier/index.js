@@ -227,11 +227,12 @@ export async function create(shell, onProgress) {
     },
 
     reset(round) {
-      const m = round.start;
-      // (online: the seats nobody was dealt are CPUs, as the server has them)
-      const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me)
-        : [0, 1, 2, 3].map((z) => !(round.lineup || []).some((p) => p.seat === z));
-      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, told: m?.bb, delay: round.delay });
+      const m = round.start, empty = round.empty || [false, false, false, false];
+      // (online: the seats nobody was dealt are CPUs, as the server has them; but not the empty
+      // ones, with the CPUs off: no Mr. Mime there, its lane shut)
+      const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me && !empty[z])
+        : [0, 1, 2, 3].map((z) => !empty[z] && !(round.lineup || []).some((p) => p.seat === z));
+      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, empty, told: m?.bb, delay: round.delay });
       shell.stopSound();
       keys.clear();
       steer = null;
@@ -320,7 +321,7 @@ export async function create(shell, onProgress) {
     const s = game.secondsLeft();
     showDigits(timeEl, s, clockPics, "bb-clock");
     // each one's points, in its colours (over the shell's plain digits)
-    cardEls.forEach((c, z) => showDigits(c.querySelector(".num"), Math.max(0, game.pointsOf(z)), digitPics[z], "bb-big"));
+    cardEls.forEach((c, z) => { if (!game.empty[z]) showDigits(c.querySelector(".num"), Math.max(0, game.pointsOf(z)), digitPics[z], "bb-big"); });
     hint.hidden = !(game.state === "ready" || (game.state === "play" && game.lastFrame < SHOW_HINT));
     hint.textContent = coarse?.matches ? "Slide a finger to move · A to smash" : "Mouse or ← → to move · click or Space to smash";
     // which Mr. Mime is yours (the four look the same; yours is at the bottom)

@@ -1045,19 +1045,72 @@ HUD and its online messages.
 
 ## Online play
 
-**Play with friends** on the title screen makes a room with a four-letter
-code, on the game picked there. **Invite friends** sends a link: in Telegram it opens the share picker
+**Play with friends** on the title screen opens the online lobby: your name,
+**Quick play** (the server puts you in the public room with a free seat and the
+most people in it, between rounds first, or makes one), **Make a room** (a
+public one), the list of public rooms with a seat free (live: the host's
+name, how many are in, how the next game is chosen, and whether it's waiting,
+voting or playing which game; tap one to join), and joining by code. Every
+room has a four-letter code. **Invite friends** sends a link: in Telegram it opens the share picker
 (with `telegramApp` set in `src/config.js`, the link opens the game straight
 in Telegram, `t.me/<bot>?startapp=CODE`; without it, it's this page with
 `?room=CODE`); in a browser it uses the system share sheet or copies the link,
 always this page's (so friends without Telegram can come too).
 The link is also shown under the button, with a Copy button.
-The code can also be typed into the lobby. Up to four people join; the empty
-spots are CPUs. Everyone gets the next free seat and its colour (1P blue, 2P
-green, 3P red, 4P yellow). The host (whoever has been in the room longest)
-picks the game and the CPU level, and starts; everyone's lobby switches with
-it (loading the game if they haven't yet). On a phone your own bay is the big view,
-whichever seat you have, and names show over the cards.
+Up to four people join. Everyone gets the next free seat and its colour (1P
+blue, 2P green, 3P red, 4P yellow). The host (whoever has been in the room
+longest) sets up the room, and starts:
+
+- **Public or Private**: a public room is in the lobby's list (Quick play
+  finds it too); a private one is joined only by its code or link. Rooms
+  made from the lobby start public; an invite link's own (`?room=CODE&create`)
+  private.
+- **Next game**: **Host picks** (the host picks it, as on the title; Start
+  plays it at once), **Random** (Spin: each of the twelve once before any comes
+  again, never the same twice running, landing after a short spin), or
+  **Vote** (three games at random, never the one just played: everyone taps
+  one, and the level, and can change their mind; each choice shows its
+  voters' badges; it ends once everyone's voted, or after 15 s. Most votes
+  win, a tie at random, no votes one of the three; the level likewise, no
+  votes as it was).
+- **CPUs**: on, the empty spots are CPUs at the CPU level; off (with two or
+  more people), they're empty: no one plays them, not even a CPU, and the
+  games play with just the people there (each game's rules leave the empty
+  seats out: no character, no part in the play, not ranked). With one person
+  left, CPUs come back. With no CPUs there's no level (the games use the
+  ROM's own for four people).
+
+What's left of an empty seat in each game (the remake's own: the game always
+has four). The rules keep drawing their random numbers as with four, so
+everything else comes as it would:
+
+| Game | The empty seat |
+|---|---|
+| Egg Emergency | its bay stays, with no Chansey; the no-CPU speed-up counts only those there |
+| Clear Cut Challenge | its lane stays, with no log, Spinarak or sign |
+| Eager Eevee | its place on the ring stays empty; strawberries go to those there |
+| Streaming Stampede | its booth stays, dark; the more-Pokémon and level-up rules count those there |
+| Pichu's Power Plant | its room stays, switched off (its lamps red, as after the finish) |
+| Tumbling Togepi | its belt stays, still and bare; the race ends once those there are in |
+| Gutsy Golbat | no Golbat (the cave is shared) |
+| Barrier Ball | its lane is walled off at its mouth: balls bounce off it |
+| Rampage Rollout | its grid slot stays empty; places (and with them the catch-up tables) count those there |
+| Topsy-Turvy | its corner stays empty |
+| Furret's Frolic | its goal stays open: a ball in it scores for no one |
+| Delibird's Delivery | its door stays, unused |
+
+In Random and Vote, the next game shows a moment (2-2.5 s) and every device
+loads it before its round: the round starts once all of them have it (the
+room shows who it's waiting for), or 10 s on.
+
+**Running points**: each round's places give points that add up while the
+room lasts: 3 for 1st, 2 for 2nd, 1 for 3rd, 0 for 4th (a tie, the better
+place's; CPUs score too). The seats show them, and the results each round's
+(+3) and the total. Someone who leaves and comes back has theirs back; the
+host can reset them. After the results the host's **Next game** (Play again
+in Host picks) starts the next spin or vote, and everyone's results go back
+to the room to see it. On a phone your own bay is the big view, whichever
+seat you have, and names show over the cards.
 
 How it works:
 
@@ -1303,12 +1356,19 @@ Messages are JSON objects with their type in `t`. From the client:
 
 | `t` | Fields | |
 |---|---|---|
-| `hello` | `room`, `id`, `name`, `create`, `tg`, `game` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. `game`: a new room's game (`egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat`, `barrier`, `rollout`, `topsy`, `furret`) |
+| `hello` | `room`, `id`, `name`, `create`, `tg`, `game`, `public`, `mode`, `quick` | join `room` (none: a new one; `create`: make it if it's missing). The same `id` gets the same seat back. `tg`: Telegram's `initData`. A new room's: `game` (`egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat`, `barrier`, `rollout`, `topsy`, `furret`, `delibird`), `public` and `mode`. `quick`: Quick play (the public room it finds, or a new public one, voting) |
+| `hello` | `browse: true` | the lobby: `welcome` (`browse`), then `rooms`, and again as it changes |
 | `ping` | `c`, `rtt` | the client's clock; answered with `pong`. `rtt`: a round trip it can count on, ms (from the last pongs) |
 | `name` | `name` | rename |
-| `level` | `level` | host, in the lobby: `easy`, `normal` or `hard` |
-| `game` | `game` | host, in the lobby: `egg`, `clearcut`, `eevee`, `stampede`, `pichu`, `togepi`, `golbat`, `barrier`, `rollout`, `topsy` or `furret` |
-| `start` | | host, in the lobby |
+| `level` | `level` | host, between rounds: `easy`, `normal` or `hard` |
+| `game` | `game` | host, between rounds: one of the games, as for `hello` |
+| `mode` | `mode` | host, between rounds: `pick`, `random` or `vote` |
+| `bots` | `on` | host, between rounds: CPUs in the empty spots (false: none, with two or more people) |
+| `public` | `on` | host: the room in the lobby's list or not |
+| `reset` | | host, between rounds: the running points from nothing |
+| `start` | | host, between rounds: the next game, as `mode` finds it (Start, Spin, Start the vote, Next game, Play again) |
+| `vote` | `game`, `level` | in a vote: one of the three games, and (CPUs on) a level; again to change it |
+| `ready` | `game` | the next game's loaded on this device |
 | `lean` | `r`, `s`, `f`, `l` | in round `r`, seat `s` leans `l` (−1, 0, 1) from frame `f` of the play (Egg Emergency's: frame 1 is 32 frames after GO) |
 | `ev` | `r`, `s`, `g`, `n`, `k`, `e` | seat `s` caught its drop `n` (`k: "c"`) or was shocked by it (`"h"`) on frame `g`, as this device judged it; `e` is its egg count after. The server answers only if it disagrees |
 | `cut` | `r`, `s`, `n`, `f` | Clear Cut Challenge: seat `s` pressed `f` frames after log `n`'s drop (negative: while it hung) |
@@ -1320,11 +1380,19 @@ Messages are JSON objects with their type in `t`. From the client:
 | `done` | `r` | this device's round is over |
 | `leave` | | |
 
-From the server: `welcome` (`room`, `seat`, `now`); `room`, the room's
-state (`state` lobby or playing, `round`, `level`, `game`, `host`, `players`
-with `away`, and during a round the `lineup`, with `here` for who's still in
-it); `start` (`game`, `round`, `seed`, `level`, `host`, `lineup`, `rtt`, the
-round trip of the device playing each seat, ms or null; `at` and
+From the server: `welcome` (`room`, `seat`, `now`; to the lobby `browse`);
+`rooms` (`rooms`: the public rooms with a seat free, each `room`, `host` (a
+name), `players`, `mode`, `state` and, loading or playing, `game`); `room`, the room's
+state (`state` lobby, voting, loading or playing, `round`, `level`, `game`, `host`, `players`
+with `away`, `mode`, `public`, `bots`, `cpus` (whether CPUs play the empty
+spots now), `points` (each seat's running points, null for an empty one),
+`last` (the game last played), during a round the `lineup`, with `here` for who's still in
+it, in a vote `vote` (`games`, `levels`: on the level too, `ends` on the
+server's clock, `votes` by seat, each `{game, level}` or null, and once it's
+over `won`), and loading `loading` (`game`, `by` the mode, `level`, `ends`,
+`waiting`: the seats still loading it)); `start` (`game`, `round`, `seed`, `level`, `host`, `lineup`, `rtt`, the
+round trip of the device playing each seat, ms or null; `empty`, the seats
+no one plays (CPUs off); `at` and
 `go` on the server's clock: the countdown starts at `at`, GO is at `go`, four of
 the game's countdown steps on. Egg
 Emergency: `c`, the level code the drops are dealt for (the devices deal them
@@ -1378,7 +1446,9 @@ each seat's points; `lean` as above (with the frame the server kept: never befor
 lean, nor before the frame it's judged the seat to); `ev` (`r`, `s`, `n`, `k`, `e`, `g`), the server's verdict on a drop:
 `c` caught, `h` a shock, or `m`, not a catch after all, with the egg count
 `e` (its count then, on frame `g`); `deal` (`r`, `ups`), Egg Emergency with no
-CPUs: the frames of the pattern ends it sped up at; `left` (`seat`); `results` (`round`, `scores`, `lineup`); `notice`
+CPUs: the frames of the pattern ends it sped up at; `left` (`seat`); `results` (`round`, `scores`, `lineup`, and the running
+points: `gained`, what each seat's place gave, and `points`, each seat's
+total after; null for an empty seat); `notice`
 (`code: "name"`, `name`: a name turned down); and `error` (`no-room`, `full`,
 `bad-code`, `busy`).
 

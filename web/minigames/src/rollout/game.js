@@ -114,17 +114,19 @@ export class Game {
   emit(name, ...args) { for (const fn of this.listeners[name] || []) fn(...args); }
 
   // A race. level: easy / normal / hard; setup: { me, control, cpus (which
-  // seats are CPUs), told (online, the server's word so far: to rejoin it
-  // midway), delay (each seat's, src/lag.js) }
+  // seats are CPUs), empty (which have no one: no Donphan there at all),
+  // told (online, the server's word so far: to rejoin it midway), delay (each
+  // seat's, src/lag.js) }
   reset(level, seed = (Math.random() * 2 ** 31) | 0, setup = {}) {
     this.levelName = level;
     this.seed = seed;
     this.me = setup.me ?? 0;
     this.control = setup.control || [0, 1, 2, 3].map((z) => (z === this.me ? "local" : "cpu"));
-    this.cpus = setup.cpus || this.control.map((c) => c === "cpu");
+    this.empty = [0, 1, 2, 3].map((z) => !!setup.empty?.[z] || this.control[z] === "none");
+    this.cpus = (setup.cpus || this.control.map((c) => c === "cpu")).map((c, z) => c && !this.empty[z]);
     // (online, with other people: this device's player's pads count this many frames on, src/lag.js)
     this.lead = leadFor(this.control.map((c, z) => c === "remote" && !this.cpus[z]), setup.delay);
-    this.world = new R.World(seed, level, this.cpus);
+    this.world = new R.World(seed, level, this.cpus, this.empty);
     this.grid = this.world.d.map((d) => d.slot * 37.12 + 116); // (where they start running in from)
     this.inputs = [[], [], [], []]; // each person's pad: [frame, D-pad, A 0/1]
     this.snaps = [[0, this.world.save()]]; // the world as it was before a frame
@@ -157,14 +159,14 @@ export class Game {
       for (const st of v.stars) Object.assign(st, { on: false, pop: false, fade: false, t: 0, now: [0, 1, 0], was: [0, 1, 0] });
     });
     const told = setup.told;
-    if (told?.pads) told.pads.forEach((list, z) => { if (list && !this.cpus[z]) this.inputs[z] = list.map((e) => [...e]); });
+    if (told?.pads) told.pads.forEach((list, z) => { if (list && !this.cpus[z] && !this.empty[z]) this.inputs[z] = list.map((e) => [...e]); });
     if (told?.done) this.told("won", told.done);
     this.draw(0);
   }
   start() { this.state = "play"; this.intro = INTRO; }
   stop() { this.state = "over"; }
   setControl(z, c) {
-    if (c === "cpu" && !this.cpus[z]) return; // (a person who left: their Donphan runs on by itself)
+    if (this.empty[z] || (c === "cpu" && !this.cpus[z])) return; // (a person who left: their Donphan runs on by itself)
     this.control[z] = c;
   }
 
@@ -196,7 +198,7 @@ export class Game {
   told(type, m) {
     if (type === "pad") {
       const z = m.s;
-      if (!(z >= 0 && z < 4) || this.cpus[z] || !Number.isInteger(m.f) || !Number.isInteger(m.x) || (m.a !== 0 && m.a !== 1)) return;
+      if (!(z >= 0 && z < 4) || this.cpus[z] || this.empty[z] || !Number.isInteger(m.f) || !Number.isInteger(m.x) || (m.a !== 0 && m.a !== 1)) return;
       const list = this.inputs[z];
       let k = list.length;
       if (this.control[z] === "local") { // one of this device's own, as the server has it (on another frame)
@@ -244,7 +246,7 @@ export class Game {
         while (this.snaps.length > 2 && this.snaps[1][0] < f - KEEP) this.snaps.shift();
       }
       if (f === t) this.before = this.positions();
-      w.step(f, [0, 1, 2, 3].map((z) => (this.cpus[z] ? null : this.padAt(z, f))));
+      w.step(f, [0, 1, 2, 3].map((z) => (this.cpus[z] || this.empty[z] ? null : this.padAt(z, f))));
       this.simT = f;
       if (f > this.shownT) { this.sounds(f); this.shownT = f; }
       w.events = [];
@@ -276,7 +278,7 @@ export class Game {
       if (this.tuneAt && f >= this.tuneAt[0]) { this.tune = { key: this.tuneAt[1] + f, name: this.tuneAt[1] }; this.tuneAt = null; }
     }
     // rolling, asked for each frame a Donphan rolls (0x5001: each one's own, on its footsteps' channel)
-    w.d.forEach((d, z) => this.hold(z, w.end === null && d.roll > 0 && !d.done));
+    w.d.forEach((d, z) => this.hold(z, w.end === null && d.roll > 0 && !d.done && !d.empty));
     // at the end, as each one's clip comes round: a winner's cheer, twice, a loser's slump
     w.d.forEach((d, z) => {
       if (d.halt === null) return;
@@ -287,7 +289,7 @@ export class Game {
     w.d.forEach((d, z) => this.donphan[z].stars.forEach((st, k) => this.starStep(st, k < d.clouds)));
     // the dust: each one on the ground kicks some up now and then, the faster the likelier
     for (const p of this.dust) if (p.life > 0) this.dustStep(p);
-    for (const d of w.d) if (d.h <= 0 && Math.random() * R.SPEED < d.speed) this.kick(d, d.tumble ? 1 : d.boost > 0 ? 1.5 : 0.75);
+    for (const d of w.d) if (!d.empty && d.h <= 0 && Math.random() * R.SPEED < d.speed) this.kick(d, d.tumble ? 1 : d.boost > 0 ? 1.5 : 0.75);
     // FINAL LAP!, while the leader has fewer than 2 laps to go (0x86408328)
     const lead = w.d.find((d) => d.rank === 0), fl = this.flash;
     fl.was = fl.now;
@@ -351,8 +353,8 @@ export class Game {
   }
   over() { return this.state === "over"; }
 
-  // each one's place (1-4): the server's once it's said, else the world's
-  places() { return this.result ? this.result.p : this.world.places; }
+  // each one's place (1-4): the server's once it's said, else the world's (an empty seat's: null)
+  places() { return (this.result ? this.result.p : this.world.places).map((p, z) => (this.empty[z] ? null : p)); }
   // the lap each is on (1-9), for the cards
   lapOf(z) { const d = this.world.d[z]; return Math.min(R.LAPS, R.LAPS - d.laps + 1); }
   // the frame each came in on (null: not in)
@@ -410,6 +412,9 @@ export class Game {
     const live = this.state === "play" || this.state === "over";
     w.d.forEach((d, z) => {
       const v = this.donphan[z];
+      // (an empty seat: no Donphan, its shadow, badge or stars)
+      for (const o of [v.root, v.shadow, v.label, ...v.stars.map((st) => st.s)]) o.visible = !d.empty;
+      if (d.empty) return;
       let x = d.x, h = d.h, y = d.y;
       if (!live) x = runIn(this.grid[z], this.state === "idle" ? 99 : this.intro); // (the countdown: running in to the grid)
       else {
@@ -535,6 +540,7 @@ export class Game {
   runInDust(n) {
     for (const p of this.dust) if (p.life > 0) this.dustStep(p);
     this.world.d.forEach((d, z) => {
+      if (d.empty) return;
       const speed = runSpeed(n);
       if (Math.random() * R.SPEED < speed) this.kick({ x: runIn(this.grid[z], n), h: 0, y: d.y, vx: -1, vz: 0, speed, drop: false, z }, 0.75);
     });
@@ -567,9 +573,10 @@ export class Game {
   }
 
   // ---- the end ----
+  // (the seats there are: an empty one isn't ranked)
   results() {
     const places = this.places();
-    return [0, 1, 2, 3].map((i) => ({ i, score: this.scores ? this.scores[i] : this.timeOf(i), place: places[i] }))
+    return [0, 1, 2, 3].filter((i) => !this.empty[i]).map((i) => ({ i, score: this.scores ? this.scores[i] : this.timeOf(i), place: places[i] }))
       .sort((a, b) => a.place - b.place || a.i - b.i);
   }
   celebrate() { return this.results(); }

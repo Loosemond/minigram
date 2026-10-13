@@ -52,29 +52,92 @@ JS_EGG_DEALS = {1: "9485f9543049d735", 12345: "db9cf57a6206a50a", 2 ** 31 - 1: "
 # and a round on one of them (c 2, 1 or 3 by the seed mod 3) with egg_script()'s
 # leans: what came of every seat's drops, as Seat has them
 JS_EGG_ROUNDS = {1: "b18f7fd09f89d7e1", 12345: "bc1c8b3550f4dcb3", 2 ** 31 - 1: "84e70798d4fdfd23"}
+# and with empty seats (the CPUs off: c 3, the speed-up on), the players there
+# playing egg_player(): (seed, the empty seats) -> what came of their drops, and the speed-ups
+JS_EGG_EMPTY = {(1, (2, 3)): "b7f6ed6d28ca48fa", (12345, (0, 2)): "a714244ee34e0bb5"}
 # deal() in web/minigames/src/clearcut/rules.js, for every level code: each log's
 # target, wait and the bits of its line (web/minigames/tests.js has the same)
 JS_DEALS = {1: "845261658a294406", 12345: "dcaad7cc4c79a603", 2 ** 31 - 1: "8c853818348d493e"}
+# and rounds with empty seats (seed, level, cpus, the empty seats): the seats
+# there swinging on clearcut_script(), the empty ones' swings refused; each
+# seat's cuts, the totals and the places (web/minigames/tests.js has the same, as CUT_EMPTY)
+JS_CUT_EMPTY = [(12345, "normal", False, (2, 3), "ffc1df54c77cbe79"), (2 ** 31 - 1, "hard", True, (0,), "879415174c7383a3"),
+                (1, "easy", True, (1, 3), "91e3a1cd7cce9694")]
+
+
+def clearcut_script(z, n, T):
+    """(the frames after log n's drop seat z swings on: on the target, early, late, a miss
+    too soon (then locked), none, a late miss and another)"""
+    return [[T], [T - 1], [T + 2], [T], [2, T], [T - 3], [30, 77], []][(n + 3 * z) % 8]
 # deal() in web/minigames/src/eevee/rules.js, for levels 1-3, with no one
 # outside the ring and with EEVEE_OUTS: each round's kind, fruit, piles, open
 # and fakes (web/minigames/tests.js has the same)
 JS_EEVEE = {1: "1d47aa9501e2a387", 12345: "d330183e33ae66eb", 2 ** 31 - 1: "708a50a8a21e7b38"}
 EEVEE_OUTS = [0, 1, 9, 6, 15]
+# and games with empty seats (seed, level, cpus, the empty seats): the seats
+# there on eevee_script(), the empty ones' presses refused; the presses that
+# worked, who was outside as each round started, each round's points, the
+# totals and the places (web/minigames/tests.js has the same, as EEVEE_EMPTY)
+JS_EEVEE_EMPTY = [(12345, "normal", False, (2, 3), "fa7d211d1425ccaf"), (2 ** 31 - 1, "hard", True, (0,), "0a98774f58e9397e"),
+                  (1, "easy", True, (1, 3), "2a392eaf5c783e25")]
+
+
+def eevee_script(z, n, t, tm):
+    """(seat z's press on frame t of round n: a feint now and then, a dash just after the basket's up, one too soon)"""
+    if t == tm["play"] + 4 + 3 * z and (n + z) % 3 == 0:
+        return "b"
+    if t == tm["open"] + (2, 5, 9, 5)[(z + n) % 4]:
+        return "a"
+    return None
 # question() and cpuPresses() in web/minigames/src/stampede/rules.js, for
 # levels 1-3, each question made from the totals the CPUs' counts give: its
 # answer, counting frames, code, the CPUs' answers and presses, and every
 # Pokemon in its stream (web/minigames/tests.js has the same)
 JS_STAMPEDE = {1: "c33c69d5058f2c41", 12345: "8bad5c3faf1e1fa4", 2 ** 31 - 1: "ff29a0ea8c1ddc98"}
+# and games with empty seats (seed, level, cpus, the empty seats): the people
+# there counting on stampede_target(), the empty seats' presses refused; each
+# question's state (its extra Pokemon, its level), answer, counts and points,
+# and the places (web/minigames/tests.js has the same, as STAMPEDE_EMPTY)
+JS_STAMPEDE_EMPTY = [(12345, "normal", (False,) * 4, (2, 3), "44e3046e704839f5"),
+                     (2 ** 31 - 1, "hard", (False, True, False, False), (0,), "c2196f423db9e617"),
+                     (1, "easy", (False, False, True, False), (1, 3), "aea274b2c68c4721")]
+
+
+def stampede_target(z, q, answer):
+    """(what seat z counts to in question q: right, or off by a little)"""
+    return max(0, answer + [0, 0, 0, 1, -2, 0, 3][(3 * q + z) % 7])
 # pattern() and cpuPresses() in web/minigames/src/pichu/rules.js, for c 0-3
 # over 3000 frames: every Electrode (its direction, button and frames) and the
 # CPUs' presses and finishes (web/minigames/tests.js has the same)
 JS_PICHU = {1: "85b689e086341c65", 12345: "7a2d41e41a9793ae", 2 ** 31 - 1: "2f91d5687bee0e4b"}
+# and games with empty seats (seed, level, cpus, the empty seats): the people
+# there pressing on pichu_script(), the empty seats' presses refused; each
+# person's presses, the CPUs' finishes, the finish, the charges and the places
+# (web/minigames/tests.js has the same, as PICHU_EMPTY)
+JS_PICHU_EMPTY = [(12345, "normal", (False,) * 4, (2, 3), "d2db24ef281e7782"),
+                  (2 ** 31 - 1, "hard", (False, True, False, False), (0,), "2addb28a30122a56"),
+                  (1, "easy", (False, False, True, False), (1, 3), "b5991cbf73631ec4")]
+
+
+def pichu_script(z, t, P):
+    """(seat z's press on frame t: every 3 or 4 frames at the Electrode that's out, now and then the wrong button)"""
+    if t < 1 or (t + 2 * z) % (3 + z % 2):
+        return None
+    e = P["list"][P["at"]["cur"][t - 1]]
+    if not e["frm"] < t:
+        return None
+    return e["dir"], (pichu_rules.A + pichu_rules.B - e["btn"]) if (t // 7 + z) % 23 == 0 else e["btn"]
 # web/minigames/src/togepi/rules.js: a race with seat 0 on TOGEPI_SCRIPT and
 # three normal CPUs, every lane's x, z, track, progress and state every 50
 # frames till it's in, and the finishes (web/minigames/tests.js has the same)
 JS_TOGEPI = {1: "efcaeb571cb83ba1", 12345: "98649f14c45fb285", 2 ** 31 - 1: "897e6c53dd29b182"}
 TOGEPI_SCRIPT = [[0, 0, -60], [100, 45, -60], [160, 0, -60], [260, -60, -45], [300, 0, -60], [500, 30, 0], [530, 0, -60],
                  [700, -45, -45], [760, 60, -60], [800, 0, -60]]
+# and races with empty seats (online with the CPUs off: no Togepi there, its lane never runs), the people
+# there on TOGEPI_SCRIPT 20 x seat frames on, by the server's Round: (seed, level, CPUs, the empty seats)
+# -> every lane every 50 frames till those there are in, the finishes and the places (tests.js: TOGEPI_EMPTY)
+JS_TOGEPI_EMPTY = [(1, "normal", (False, True, False, False), (2, 3), "66f420942a50b9c6"),
+                   (12345, "hard", (False, False, False, False), (0,), "5a99fd84dc37d5d3")]
 # web/minigames/src/golbat/rules.js: a round with seats 0 and 2 on golbat_pad()
 # and two CPUs (normal, hard and easy), the world's digest() every 50 frames,
 # the end and the hearts (web/minigames/tests.js has the same)
@@ -87,6 +150,17 @@ def golbat_pad(z, t):
         return [[64, 0, -64, 32, -32, 0][t // 90 % 6], t % 12 == 0 or t % 47 == 5]
     return [[-64, 64][t // 70 % 2], t % 9 == 0]
 
+
+# and with empty seats (no Golbat there): seed -> (level, CPUs, the empty seats, want): 1 with seat 0 on
+# golbat_pad(0) and seat 1 a CPU, 2 and 3 empty; 12345 with seat 0 empty and the other three people (seat 3
+# golbat_pad(2) 35 frames on); the world's digest() every 50 frames, the end and the hearts (tests.js: GOLBAT_EMPTY)
+JS_GOLBAT_EMPTY = {1: ("normal", (False, True, False, False), (False, False, True, True), "c8f40880b4dce0eb"),
+                   12345: ("hard", (False, False, False, False), (True, False, False, False), "27b0795d6200ac5d")}
+
+
+def golbat_empty_pads(seed, t):
+    return [golbat_pad(0, t), None, None, None] if seed == 1 else [None, golbat_pad(0, t), golbat_pad(2, t), golbat_pad(2, t + 35)]
+
 # web/minigames/src/barrier/rules.js: a round with seats 0 and 2 on
 # barrier_pad() and two CPUs (normal, hard and easy), the world's digest()
 # every 50 frames on to the results, the end, the results' frame and the
@@ -95,6 +169,12 @@ def golbat_pad(z, t):
 JS_BARRIER = {1: "baed3467350c0520", 12345: "46d69816c8c7591b", 2 ** 31 - 1: "7181b8b79a86077e"}
 JS_BARRIER_CPU = {22: "66c104cfdcadda70", 250: "420c8089c67e52e1"}
 BARRIER_LEVEL = {1: "normal", 12345: "hard", 2 ** 31 - 1: "easy", 22: "normal", 250: "normal"}
+# and two with empty seats (online with the CPUs off: no Mr. Mime there, its lane shut): 21 (hard) with
+# seats 2 and 3 empty, seat 0 on barrier_pad() and seat 1 a CPU; 14 (normal) with seat 0 empty and the other
+# three on it (seat 3 35 frames on): (level, cpus, empty) (web/minigames/tests.js has the same)
+JS_BARRIER_EMPTY = {21: "28736fddb731d26e", 14: "769a726f112471bf"}
+BARRIER_EMPTY_SEATS = {21: ("hard", [False, True, False, False], [False, False, True, True]),
+                       14: ("normal", [False] * 4, [True, False, False, False])}
 
 
 def barrier_pad(z, t):
@@ -108,6 +188,15 @@ def barrier_pad(z, t):
 # places and the frames in (web/minigames/tests.js has the same)
 JS_ROLLOUT = {1: "54ceb6862f49266a", 12345: "31a7ccb87fe46c27", 2 ** 31 - 1: "e314b7df6c155a92"}
 ROLLOUT_LEVEL = {1: "normal", 12345: "hard", 2 ** 31 - 1: "easy"}
+# and three with empty seats (online with the CPUs off: no Donphan there), the same but the places and
+# frames in with -1 for none: 21 (hard) with seats 2 and 3 empty, seat 0 on rollout_pad() and seat 1 a CPU;
+# 14 (normal, no CPUs) with seat 0 empty, seat 1 round the track and seats 2 and 3 on the pattern (seat 3
+# 35 frames on); 1 (easy) with seats 1 and 3 empty, seat 0 on rollout_pad() and seat 2 a CPU:
+# (level, cpus, empty) (web/minigames/tests.js has the same)
+JS_ROLLOUT_EMPTY = {21: "c02f22f1c8d77d6e", 14: "beb0018de37dffbd", 1: "969ce491f001da4f"}
+ROLLOUT_EMPTY_SEATS = {21: ("hard", [False, True, False, False], [False, False, True, True]),
+                       14: ("normal", [False] * 4, [True, False, False, False]),
+                       1: ("easy", [False, False, True, False], [False, True, False, True])}
 
 
 def rollout_pad(z, t, w):
@@ -117,12 +206,27 @@ def rollout_pad(z, t, w):
         return [way | (16 if t == 0 else 0), t % 47 == 3]
     return [[8, 4, 2, 1, 0, 2][t // 40 % 6], t % 61 == 11]
 
+
+def rollout_empty_pads(seed, t, w):
+    if seed == 14:  # (seat 0 empty: seat 1 round the track, as rollout_pad() takes seat 0)
+        d = w.d[1]
+        way = 2 if d.y < -150 and d.x > -200 else 4 if d.x < -200 and d.y < 150 else 1 if d.y > 150 and d.x < 200 else 8
+        return [None, [way | (16 if t == 0 else 0), t % 47 == 3], rollout_pad(2, t, w), rollout_pad(2, t + 35, w)]
+    return [rollout_pad(0, t, w), None, None, None]
+
 # web/minigames/src/topsy/rules.js: a round with seats 0 and 2 on topsy_pad()
 # and two CPUs (normal, hard, easy), the world's digest() every 100 frames:
 # the hard one to its end and the show after (912 frames), the others 600;
 # then the end, the points and the places (web/minigames/tests.js has the same)
 JS_TOPSY = {1: "787fac9096d5b8ba", 157: "272f45629a21406c", 2 ** 31 - 1: "a9b0c75e0b95888e"}
 TOPSY_LEVEL = {1: "normal", 157: "hard", 2 ** 31 - 1: "easy"}
+# and two with empty seats (online with the CPUs off: no Hitmontop there), each to its end and the show
+# after (120 frames), the places with -1 for none: 21 (hard) with seats 2 and 3 empty, seat 0 on topsy_pad()
+# and seat 1 a CPU; 14 (normal, no CPUs) with seat 0 empty, seat 1 after whoever's nearest (as topsy_pad()'s
+# seat 0) and seats 2 and 3 on the pattern (seat 3 35 frames on): (level, cpus, empty) (web/minigames/tests.js has the same)
+JS_TOPSY_EMPTY = {21: "465153d464b05b47", 14: "977fcf924d9b8542"}
+TOPSY_EMPTY_SEATS = {21: ("hard", [False, True, False, False], [False, False, True, True]),
+                     14: ("normal", [False] * 4, [True, False, False, False])}
 
 
 # web/minigames/src/furret/rules.js: a round with seats 0 and 2 on furret_pad()
@@ -131,6 +235,13 @@ TOPSY_LEVEL = {1: "normal", 157: "hard", 2 ** 31 - 1: "easy"}
 # then the end, the points and the places (web/minigames/tests.js has the same)
 JS_FURRET = {1: "d8bba6ac13cb2e76", 157: "8a791b70fad491c7", 2 ** 31 - 1: "1feb9cfed6ca125d"}
 FURRET_LEVEL = {1: "normal", 157: "hard", 2 ** 31 - 1: "easy"}
+# and two with empty seats (online with the CPUs off: no Furret there), each to its end and the show after
+# (120 frames), the places with -1 for none: 21 (hard) with seats 2 and 3 empty, seat 0 on furret_pad() and
+# seat 1 a CPU; 14 (normal, no CPUs) with seat 0 empty, seat 1 as furret_pad()'s seat 0 and seats 2 and 3 on
+# its pattern (seat 3 35 frames on): (level, cpus, empty) (web/minigames/tests.js has the same)
+JS_FURRET_EMPTY = {21: "af39c1c0c2428c80", 14: "67dbe3cc9c86efe5"}
+FURRET_EMPTY_SEATS = {21: ("hard", [False, True, False, False], [False, False, True, True]),
+                      14: ("normal", [False] * 4, [True, False, False, False])}
 
 
 # web/minigames/src/delibird/rules.js: a round with seats 0 and 2 on
@@ -140,6 +251,11 @@ FURRET_LEVEL = {1: "normal", 157: "hard", 2 ** 31 - 1: "easy"}
 # (web/minigames/tests.js has the same)
 JS_DELIBIRD = {1: "ed072f802be05f26", 157: "1172bf54263dbb00", 2 ** 31 - 1: "093aaa33d9bd2928"}
 DELIBIRD_LEVEL = {1: "normal", 157: "hard", 2 ** 31 - 1: "easy"}
+# and with empty seats (no Delibird there), to a second into the show: seed -> (level, CPUs, the empty seats,
+# want): 1 (hard) with seat 0 on delibird_pad() and seat 1 a CPU, 2 and 3 empty; 157 with seat 0 empty and the
+# other three people on it; the world's digest() every 100 frames, the end, the points and the places (tests.js: DELIBIRD_EMPTY)
+JS_DELIBIRD_EMPTY = {1: ("hard", (False, True, False, False), (False, False, True, True), "b374a34425079a10"),
+                     157: ("normal", (False, False, False, False), (True, False, False, False), "b244b0ca1ba7e9f1")}
 
 
 def delibird_pad(z, t, w):
@@ -166,11 +282,17 @@ def furret_pad(z, t, w):
     return [[1, 2, 0, 3, 4, 0][t // 45 % 6], t % 29 == 7]
 
 
+def furret_empty_pads(seed, t, w):
+    if seed == 14:
+        return [None, furret_pad(0, t, w), furret_pad(2, t, w), furret_pad(2, t + 35, w)]
+    return [furret_pad(0, t, w), None, None, None]
+
+
 def topsy_pad(z, t, w):
     if z == 0:  # (at whoever's nearest, a RAPID SPIN now and then)
         me, best, bd = w.p[0], None, math.inf
         for q in w.p:
-            if q is me:
+            if q is me or getattr(q, "empty", False):  # (no one there: an empty seat)
                 continue
             dx, dz = q.pos[0] - me.pos[0], q.pos[2] - me.pos[2]
             if dx * dx + dz * dz < bd:
@@ -179,6 +301,13 @@ def topsy_pad(z, t, w):
         return [64 if dx > 50 else -64 if dx < -50 else 0, 64 if dz < -50 else -64 if dz > 50 else 0, t % 53 == 5]
     x, y = [(64, 0), (0, 64), (-45, -45), (0, 0)][t // 60 % 4]
     return [x, y, t % 71 == 13]
+
+
+def topsy_empty_pads(seed, t, w):
+    if seed == 14:  # (seat 0 empty: seat 1 after whoever's nearest, as topsy_pad() has seat 0)
+        first = type("W", (), dict(p=[w.p[1]] + [q for q in w.p if q is not w.p[1]]))
+        return [None, topsy_pad(0, t, first), topsy_pad(2, t, w), topsy_pad(2, t + 35, w)]
+    return [topsy_pad(0, t, w), None, None, None]
 
 # a short round: (frame it comes in, side, kind), falling fast (17): they get to
 # the hands on frames 33, 42, 51 (the Voltorb), 60 (in the hurt that follows it:
@@ -201,6 +330,11 @@ def egg_script(z, g, d):
         if r.reach >= g and (z == 0 or r.kind == "e") and (best is None or r.reach < best.reach):
             best = r
     return best.side if best else 0
+
+
+def egg_player(z, g, d):
+    """JS_EGG_EMPTY's leans: for the next egg, but still 30 frames in 500, at the seat's own times."""
+    return 0 if (g + 100 * z) % 500 < 30 else egg_script(1, g, d)
 TOKEN = "12345:TEST-TOKEN"
 
 rooms.LEAD, rooms.GO_DELAY = 0, 300
@@ -379,6 +513,35 @@ def _():
     assert rd.deal.ups and rd.deal.cs[-1] == 1 and rd.new_ups() == rd.deal.ups and rd.new_ups() is None, rd.deal.ups
 
 
+@check("Egg Emergency: with empty seats, only the players there play, count for the speed-up and are placed")
+def _():
+    for (seed, gone), want in JS_EGG_EMPTY.items():
+        empty = [z in gone for z in range(4)]
+        rd = egg_rules.Round(seed, "easy", [False] * 4, empty=empty)
+        rd.deal = real_make_deal(seed, rd.c, True, want=rd.want)
+        outs, g = [[] for _ in range(4)], 0
+        while True:
+            g += 1
+            rd.deal_to(g)
+            for s in range(4):  # (an empty seat's leans don't count: there's no one there)
+                rd.lean(s, g, egg_player(s, g, rd.deal))
+                outs[s] += rd.settle(s, g)
+            if rd.deal.clear(g):
+                break
+        s = "|".join(";".join("%d:%s:%d:%d" % o for o in out) for out in outs) + "|" + ",".join(map(str, rd.deal.ups))
+        assert hashlib.sha256(s.encode()).hexdigest()[:16] == want, (seed, gone)
+        assert rd.c == 3 and rd.deal.ups and all(not outs[z] and not rd.leans[z] and rd.scores[z] == 0 for z in gone), rd.scores
+        assert [p is None for p in rd.places()] == empty, rd.places()
+    rd = egg_rules.Round(1, "normal", [False, True, False, False])
+    for s, e in enumerate((7, 3, 7, 0)):
+        rd.seats[s].eggs = e
+    assert rd.places() == [1, 3, 1, 4], rd.places()
+    rd = egg_rules.Round(1, "normal", [False] * 4, empty=[True, False, False, True])
+    for s, e in enumerate((9, 5, 5, 9)):
+        rd.seats[s].eggs = e
+    assert rd.places() == [None, 1, 1, None], rd.places()
+
+
 @check("Clear Cut Challenge: the logs match the game's, bit for bit")
 def _():
     for seed, want in JS_DEALS.items():
@@ -427,6 +590,45 @@ def _():
     assert eevee_rules.tally_frames(1000) == 45 and eevee_rules.handover(times, 3000) == times[4]["end"] + 78
 
 
+def eevee_empty_digest(seed, level, cpus, gone):
+    """A game on the server with the seats in gone empty (JS_EEVEE_EMPTY)."""
+    g = eevee_rules.Round(seed, level, cpus=cpus, empty=[z in gone for z in range(4)])
+    log, pts, t = [], [[0] * 4 for _ in range(eevee_rules.ROUNDS)], 0
+    while t <= g.times[-1]["end"]:
+        now = (t + 0.5) / eevee_rules.FPS
+        for n, p, _, _ in g.settle(now, 0):
+            pts[n] = p
+        n = eevee_rules.round_at(g.times, t)
+        for z in range(4):
+            k = eevee_script(z, n, t, g.times[n])
+            if k and g.press(z, k, t, now, 0) is not None:
+                log.append("%d%s%d" % (z, k, t))
+        t += 1
+    for n, p, _, _ in g.settle(1e9, 0):
+        pts[n] = p
+    s = "|".join([",".join(log), ",".join(map(str, g.outs)), ";".join("/".join(map(str, p)) for p in pts),
+                  ",".join(map(str, g.scores)), ",".join("-" if x is None else str(x) for x in g.places())])
+    return hashlib.sha256(s.encode()).hexdigest()[:16], g
+
+
+@check("Eager Eevee: empty seats (no one there, not even a CPU) match the game's, bit for bit; the places")
+def _():
+    for seed, level, cpus, gone, want in JS_EEVEE_EMPTY:
+        got, g = eevee_empty_digest(seed, level, cpus, gone)
+        assert got == want, (seed, gone, got)
+        assert all(g.scores[z] == 0 and all(p is None for p in g.prizes[z]) for z in gone), g.scores  # (no prizes for no one)
+        assert [z for z, p in enumerate(g.places()) if p is None] == list(gone)
+    g = eevee_rules.Round(12345, "normal", cpus=False, empty=[False, True, False, True])
+    assert g.press(1, "a", 100, 100 / 30, 1) is None and g.press(0, "a", 100, 100 / 30, 1) is not None
+    g.scores = [500, 0, 500, 0]
+    assert g.places() == [1, None, 1, None]  # (a draw: everyone there tied)
+    g.scores = [0, 0, 1500, 0]
+    assert g.places() == [2, None, 1, None]
+    g = eevee_rules.Round(12345, "normal", cpus=False, empty=[True, False, False, False])
+    g.scores = [0, 600, 0, 600]
+    assert g.places() == [None, 1, 3, 1] and eevee_rules.Round(1).places() == [1] * 4
+
+
 def stampede_digest(seed):
     s = ""
     for level in (1, 2, 3):
@@ -444,6 +646,41 @@ def stampede_digest(seed):
                 totals[z] += stampede_rules.points(q, len(presses[z]), Q["answer"])
             st = stampede_rules.after(Q["state"], q, totals, False)
     return hashlib.sha256(s.encode()).hexdigest()[:16]
+
+
+@check("Streaming Stampede: empty seats (no one there, not even a CPU) match the game's, bit for bit; the places")
+def _():
+    for seed, level, cpus, gone, want in JS_STAMPEDE_EMPTY:
+        g = stampede_rules.Round(seed, level, cpus=cpus, empty=[z in gone for z in range(4)])
+        t = 0
+        while g.end == math.inf:
+            q = len(g.qs) - 1
+            f = t - g.at[q]["count"]
+            if 0 <= f < g.qs[q]["frames"] and f % 3 == 0:
+                for z in range(4):
+                    if len(g.presses[z][q]) < stampede_target(z, q, g.qs[q]["answer"]):
+                        ok = g.press(z, q, f, (t + 0.5) / stampede_rules.FPS, 0)
+                        assert ok != (z in gone or cpus[z]), (seed, z, q, f)
+            g.settle((t + 0.5) / stampede_rules.FPS, 0)
+            t += 1
+        s = ";".join("b%dl%d:%d:%s:%s" % (st["bonus"], st["level"], Q["answer"], ",".join(map(str, v[0])), ",".join(map(str, v[1])))
+                     for st, Q, v in zip(g.states, g.qs, g.verdicts))
+        s += "|%s|%s" % (",".join(map(str, g.scores)), ",".join("-" if p is None else str(p) for p in g.places()))
+        got = hashlib.sha256(s.encode()).hexdigest()[:16]
+        assert got == want, (seed, gone, got)
+        assert all(g.scores[z] == 0 and not any(g.presses[z]) for z in gone), g.scores
+    # enough perfect for more Pokemon, and the people's level up: at most all those there
+    after, st = stampede_rules.after, stampede_rules.setup(1)
+    assert after(st, 0, [10, 10, 10, 10], True) == after(st, 0, [10, 0, 10, 0], True, [False, True, False, True]) == dict(st, bonus=2, level=2)
+    assert after(st, 0, [10, 10, 10, 0], True, [False, False, False, True]) == dict(st, bonus=2, level=2)
+    assert after(st, 0, [10, 5, 0, 0], True, [False, False, True, True]) == st  # (one of two: not enough)
+    assert after(st, 2, [40, 30, 0, 0], False, [False, False, True, True]) == st and after(st, 3, [60, 0, 0, 0], False, [False, True, True, False])["bonus"] == 2
+    g = stampede_rules.Round(5, "normal", cpus=[True] * 4, empty=[True, False, True, False])
+    assert g.cpus == [False, True, False, True] and g.qs[0]["cpu_presses"][0] is None and not g.press(0, 0, 0, 100, 1)
+    g.scores = [0, 120, 0, 120]
+    assert g.places() == [None, 1, None, 1]  # (a draw: everyone there tied)
+    g.scores = [0, 50, 0, 120]
+    assert g.places() == [None, 2, None, 1] and stampede_rules.Round(1, cpus=[False] * 4).places() == [1] * 4
 
 
 @check("Streaming Stampede: the questions match the browser's, bit for bit; the scoring")
@@ -472,6 +709,37 @@ def pichu_digest(seed):
         s += "|".join(js(x["full"]) + ":" + ",".join("%d/%d/%d" % (p["t"], p["dir"], p["hit"]) for p in x["presses"])
                       if x else "-" for x in cp)
     return hashlib.sha256(s.encode()).hexdigest()[:16]
+
+
+@check("Pichu's Power Plant: empty seats (no one there, not even a CPU) match the game's, bit for bit; the places")
+def _():
+    for seed, level, cpus, gone, want in JS_PICHU_EMPTY:
+        g = pichu_rules.Round(seed, level, cpus=cpus, empty=[z in gone for z in range(4)])
+        for t in range(g.P["frames"]):
+            for z in range(4):
+                k = pichu_script(z, t, g.P)
+                if k and g.press(z, t, k[0], k[1], (t + 0.5) / pichu_rules.FPS, 0):
+                    assert z not in gone and not cpus[z], (seed, z, t)
+            if g.settle((t + 0.5) / pichu_rules.FPS, 0):
+                break
+        at, won = g.done
+        s = "|".join("-" if z in gone else "c%s" % g.cpu[z]["full"] if cpus[z] else
+                     ";".join("%d/%d/%d/%s" % p for p in g.runners[z].presses) for z in range(4))
+        s += "|%d:%s|%s|%s" % (at, ",".join("1" if w else "0" for w in won), ",".join(map(str, g.scores)),
+                               ",".join("-" if p is None else str(p) for p in g.places()))
+        got = hashlib.sha256(s.encode()).hexdigest()[:16]
+        assert got == want, (seed, gone, got)
+        assert all(not won[z] and g.scores[z] == 0 and not g.runners[z].presses for z in gone), (won, g.scores)
+    g = pichu_rules.Round(5, "normal", cpus=[False] * 4, empty=[False, True, False, True])
+    assert g.press(1, 10, 1, pichu_rules.A, 10 / 30, 1) is None and g.wire()["pp"]["presses"][1] == []
+    g.done = (300, [True, False, True, False])
+    g.runners[0].presses = g.runners[2].presses = [(1, 1, 5, "hit")] * 80
+    assert g.places() == [1, None, 1, None]  # (a draw: everyone there tied)
+    g.runners[2].presses = [(1, 1, 5, "hit")] * 79
+    assert g.places() == [1, None, 2, None]
+    g = pichu_rules.Round(5, "normal", cpus=[True] * 4, empty=[True, False, False, False])
+    assert g.cpus == [False, True, True, True] and g.cpu[0] is None and g.places() == [None, 1, 1, 1]
+    assert pichu_rules.Round(1, cpus=[False] * 4).places() == [1] * 4
 
 
 @check("Pichu's Power Plant: the Electrodes and the CPUs match the browser's, bit for bit; the presses")
@@ -523,6 +791,37 @@ def _():
     three = dict(kind=eevee_rules.BERRIES, fruit=0, piles=3)
     assert eevee_rules.judge(three, [None, 50, None, None]) == ([0, 3000, 0, 0], 59)  # three a frame, ten frames
     assert eevee_rules.judge(melon, [None] * 4) is None
+
+
+@check("Clear Cut Challenge: empty seats (no one there, not even a CPU) match the game's, bit for bit; the places")
+def _():
+    short = clearcut_rules.RISE, clearcut_rules.SHOW, clearcut_rules.FALL_FRAMES, clearcut_rules.WAITS
+    clearcut_rules.RISE, clearcut_rules.SHOW, clearcut_rules.FALL_FRAMES, clearcut_rules.WAITS = REAL_RISE, REAL_SHOW, 80, REAL_WAITS
+    try:
+        for seed, level, cpus, gone, want in JS_CUT_EMPTY:
+            g = clearcut_rules.Round(seed, level, cpus, empty=[z in gone for z in range(4)])
+            for n, (log, t) in enumerate(zip(g.logs, g.times)):
+                for z in range(4):
+                    for f in clearcut_script(z, n, log["T"]):
+                        got = g.cut(z, n, f, (t["drop"] + f) / clearcut_rules.FPS)
+                        assert z not in gone or got is None, (seed, z, n)
+            for z in range(4):  # (the logs not cut: misses; but not for no one)
+                assert g.settle(z, math.inf) == [] or z not in gone
+            s = "|".join(",".join("-" if c is None else "%s:%d" % ("n" if c[0] is None else c[0], c[1]) for c in g.cuts[z]) for z in range(4))
+            s += "|%s|%s" % (",".join(map(str, g.scores)), ",".join("-" if p is None else str(p) for p in g.places()))
+            got = hashlib.sha256(s.encode()).hexdigest()[:16]
+            assert got == want, (seed, gone, got)
+            assert all(g.scores[z] == 0 and g.cuts[z] == [None] * 5 for z in gone)
+    finally:
+        clearcut_rules.RISE, clearcut_rules.SHOW, clearcut_rules.FALL_FRAMES, clearcut_rules.WAITS = short
+    g = clearcut_rules.Round(5, "normal", False, empty=[False, True, False, True])
+    g.scores = [20, 0, 20, 0]
+    assert g.places() == [1, None, 1, None]  # (a draw: everyone there tied)
+    g.scores = [3, 0, 41, 0]
+    assert g.places() == [2, None, 1, None] and g.cut(1, 0, 20, 1) is None and g.settle(1, math.inf) == []
+    g = clearcut_rules.Round(5, "normal", True, empty=[True, False, False, False])
+    g.scores = [0, 10, 0, 10]
+    assert g.places() == [None, 1, 3, 1] and clearcut_rules.Round(1).places() == [1] * 4
 
 
 @check("Clear Cut Challenge: after a miss a seat swings again 45 frames on, unless it swung too early")
@@ -1008,6 +1307,51 @@ def _():
     assert steered == 1 and lane.side == 1 / math.sqrt(2026), (steered, lane.side)
 
 
+def togepi_empty_digest(seed, level, cpus, gone):
+    """A race on the server with the seats in gone empty (JS_TOGEPI_EMPTY)."""
+    def q(v):
+        return math.floor(v * 1000 + 0.5)
+    empty = [z in gone for z in range(4)]
+    g = togepi_rules.Round(seed, level, cpus=cpus, empty=empty)
+    for z in range(4):
+        if not cpus[z] and not empty[z]:
+            g.sticks[z] = [[f + 20 * z, x, y] for f, x, y in TOGEPI_SCRIPT]
+    s = ""
+    for t in range(3000):
+        g.run_to(t)
+        if t % 50 == 0:
+            s += "|".join("-" if empty[z] else "F" if lane.finish is not None else ",".join(
+                map(str, [q(lane.x), q(lane.z), lane.tile, q(lane.px), q(lane.progress), lane.state])) for z, lane in enumerate(g.lanes)) + ";"
+        if all(lane.finish is not None for z, lane in enumerate(g.lanes) if not empty[z]):
+            break
+    s += ",".join("" if l.finish is None else str(l.finish) for l in g.lanes) + ";"
+    s += ",".join("" if p is None else str(p) for p in g.places())
+    return hashlib.sha256(s.encode()).hexdigest()[:16], g
+
+
+@check("Tumbling Togepi: empty seats (no one there, not even a CPU) match the game's, bit for bit; the end and the places")
+def _():
+    for seed, level, cpus, gone, want in JS_TOGEPI_EMPTY:
+        got, g = togepi_empty_digest(seed, level, cpus, gone)
+        assert got == want, (seed, gone, got)
+        assert all(g.lanes[z].finish is None and g.at[z] == g.at[0] and g.lanes[z].progress == 0 for z in gone), seed
+    # the end: once those there are in (an empty lane doesn't hold it up), as settle() says; an empty seat's stick is refused
+    g = togepi_rules.Round(12345, "hard", cpus=[False] * 4, empty=[True, False, False, False])
+    for z in (1, 2, 3):
+        g.sticks[z] = [[f + 20 * z, x, y] for f, x, y in TOGEPI_SCRIPT]
+    assert g.stick(0, 5, 0, -60, 1, 1) is None and g.wire()["tg"]["sticks"][0] is None
+    done = g.settle(1000, 0)
+    fin = done["fin"]
+    assert fin[0] is None and all(fin[z] is not None for z in (1, 2, 3)) and done["f"] == max(fin[1:]) + togepi_rules.END_AFTER, done
+    ps = g.places()
+    assert ps[0] is None and sorted(ps[1:]) == [1, 2, 3], ps
+    assert g.scores[0] == -1 and g.next_settle(0) is None
+    # (a race called before everyone's in: the places by how far each got, the empty seat none)
+    assert togepi_rules.places([None, 900, None, None], [None, 99.5, None, None], [0, 100, 40, 70], [False, False, False, True]) == [3, 1, 2, None]
+    assert togepi_rules.places([None, 900, 900, None], [None, 99.5, 99.7, None], [0, 0, 0, 0], [True, False, False, True]) == [None, 2, 1, None]
+    assert togepi_rules.Round(1).places() == [1] * 4
+
+
 @check("Tumbling Togepi: the server runs the lanes from the sticks, says how it ended and stops cheats", together="Togepi")
 def _():
     saved = togepi_rules.END_TILE, togepi_rules.CALL
@@ -1086,6 +1430,44 @@ def _():
         return max(w.scores[1:])
     tops = {lv: sum(best(s, lv) for s in range(6)) for lv in ("easy", "hard")}
     assert 0 < tops["easy"] < tops["hard"], tops
+
+
+def golbat_empty_digest(seed):
+    level, cpus, empty, _ = JS_GOLBAT_EMPTY[seed]
+    w = golbat_rules.World(seed, level, cpus, empty)
+    parts, t = [], 0
+    while w.end is None:
+        w.step(t, golbat_empty_pads(seed, t))
+        w.events = []
+        if t % 50 == 0:
+            parts.append(w.digest())
+        t += 1
+    parts.append("%d:%s" % (w.end, ",".join(map(str, w.scores))))
+    return hashlib.sha256(";".join(parts).encode()).hexdigest()[:16], w
+
+
+@check("Gutsy Golbat: empty seats (no Golbat there) match the browser's, bit for bit; the server's round and places")
+def _():
+    for seed, (level, cpus, empty, want) in JS_GOLBAT_EMPTY.items():
+        got, w = golbat_empty_digest(seed)
+        assert got == want, (seed, got)
+        # (an empty seat's Golbat never moves from its start, nor catches a heart)
+        assert all(not e or (w.g[z].x, w.g[z].y, w.g[z].hearts, w.g[z].timer) == (*golbat_rules.START[z], 0, 0) for z, e in enumerate(empty)), seed
+        assert max(w.scores) > 0, w.scores
+    # the server's: no pads from an empty seat; it runs to the same end; the places among those there
+    level, cpus, empty, _ = JS_GOLBAT_EMPTY[12345]
+    g = golbat_rules.Round(12345, level, cpus=cpus, empty=empty)
+    assert g.cpus == [False] * 4 and g.world.level == 1  # (no CPUs: the all-human code)
+    assert g.pad(0, 3, 64, 1, 1, 1) is None and g.wire()["gb"]["pads"][0] is None
+    for z in (1, 2, 3):
+        g.pads[z] = [[t, *[int(v) for v in golbat_empty_pads(12345, t)[z]]] for t in range(golbat_rules.END + 1)]
+    done = g.settle(1000, 0)
+    _, w = golbat_empty_digest(12345)
+    assert done == dict(f=w.end, h=w.scores), (done, w.scores)
+    h = w.scores
+    assert g.places() == [None] + [1 + sum(h[o] > h[s] for o in (1, 2, 3)) for s in (1, 2, 3)], (g.places(), h)
+    g.done = dict(f=w.end, h=[0, 4, 4, 4])
+    assert g.places() == [None, 1, 1, 1] and golbat_rules.Round(1).places() == [1] * 4
 
 
 @check("Gutsy Golbat: the server runs the world from the pads, says how it ended and stops cheats", together="Golbat")
@@ -1193,6 +1575,38 @@ def _():
     here = 10
     assert g.pad(0, here + 3, 10, 0, here / barrier_rules.FPS, 0.2) == here + 3
     assert g.pad(0, here + 40, 20, 0, here / barrier_rules.FPS, 0.2) == here + 1 + barrier_rules.AHEAD
+
+
+@check("Barrier Ball with empty seats: the world matches the browser's; the places; no pads from no one", together="Barrier")
+def _():
+    for seed, want in JS_BARRIER_EMPTY.items():
+        level, cpus, empty = BARRIER_EMPTY_SEATS[seed]
+        w = barrier_rules.World(seed, level, cpus, empty)
+        parts, t = [], 0
+        while w.hand_over is None:
+            w.step(t, [barrier_pad(0, t), None, None, None] if seed == 21
+                   else [None, barrier_pad(0, t), barrier_pad(2, t), barrier_pad(2, t + 35)])
+            assert not any(e[0] == "goal" and empty[e[1]] for e in w.events), (seed, t)  # (none in a shut lane)
+            w.events = []
+            if t % 50 == 0:
+                parts.append(w.digest())
+            t += 1
+        parts.append("%d:%d:%s" % (w.end, w.hand_over, ",".join(map(str, w.scores))))
+        assert hashlib.sha256(";".join(parts).encode()).hexdigest()[:16] == want, seed
+        assert all(p == 0 for p, e in zip(w.scores, empty) if e), (seed, w.scores)
+    # the places, by points among those there (ties share the better); None for an empty seat
+    g = barrier_rules.Round(5, "normal", [False] * 4, empty=[False, False, True, True])
+    g.done = dict(f=100, p=[2, 2, 0, 0])
+    assert g.places() == [1, 1, None, None], g.places()
+    g = barrier_rules.Round(5, "normal", [False] * 4, empty=[True, False, False, False])
+    g.done = dict(f=100, p=[0, 3, 1, 3])
+    assert g.places() == [None, 1, 3, 1], g.places()
+    g.done = None
+    assert g.places() == [None, 1, 1, 1], g.places()  # (the world's, so far)
+    assert barrier_rules.Round(5).places() == [1, 1, 1, 1]
+    # an empty seat sends no pads; a device rejoining has none for it
+    assert g.pad(0, 3, 10, 0, 0.1, 0.2) is None and g.pad(1, 3, 10, 0, 0.1, 0.2) == 3
+    assert g.wire()["bb"]["pads"] == [None, [[3, 10, 0]], [], []], g.wire()
 
 
 @check("Barrier Ball: the server runs the world from the pads, says how it ended and stops cheats", together="Barrier")
@@ -1315,6 +1729,50 @@ def _():
     assert w.end == 1 and not any(d.won for d in w.d) and w.places == [1, 1, 1, 1], (w.end, w.places)
 
 
+@check("Rampage Rollout with empty seats: the world matches the browser's; the places; no pads from no one", together="Rollout")
+def _():
+    for seed, want in JS_ROLLOUT_EMPTY.items():
+        level, cpus, empty = ROLLOUT_EMPTY_SEATS[seed]
+        w = rollout_rules.World(seed, level, cpus, empty)
+        parts, t, cam = [], 0, None
+        while w.end is None or t <= w.end + 90:
+            w.step(t, rollout_empty_pads(seed, t, w))
+            assert not any(e[0] != "camera" and empty[e[1]] for e in w.events), (seed, t, w.events)  # (nothing of no one)
+            cam = t if any(e[0] == "camera" for e in w.events) else cam
+            w.events = []
+            if t % 50 == 0:
+                parts.append(w.digest())
+            t += 1
+        parts.append(w.digest())
+        parts.append("%d:%s:%s" % (w.end, ",".join(str(-1 if p is None else p) for p in w.places),
+                                   ",".join(str(-1 if d.fin is None else d.fin) for d in w.d)))
+        assert hashlib.sha256(";".join(parts).encode()).hexdigest()[:16] == want, seed
+        here = [d for d in w.d if not d.empty]
+        # those there all in, placed 1 to n (the first in first), and the camera moved as the first of them stopped;
+        # an empty seat's not moved, nor in, and is ranked after them
+        assert sorted(p for p in w.places if p is not None) == list(range(1, len(here) + 1)), (seed, w.places)
+        assert all(d.done for d in here) and cam == here[0].halt, (seed, cam, [d.halt for d in w.d])
+        assert all(d.fin is None and d.halt is None and d.laps == rollout_rules.LAPS and d.rank >= len(here) and d.x == d.slot * 37.12 + 116
+                   for d in w.d if d.empty), seed
+    # all those there in together: none of them won, a draw, all first
+    w = rollout_rules.World(4, "normal", [False] * 4, [True, False, False, False])
+    for d in w.d[1:]:
+        d.laps = 0
+    w.step(0, [])
+    w.step(1, [])
+    assert w.end == 1 and not any(d.won for d in w.d) and w.places == [None, 1, 1, 1], (w.end, w.places)
+    # the server's places: the world's so far, then how it ended (None for an empty seat)
+    g = rollout_rules.Round(5, "normal", [False] * 4, empty=[False, True, False, True])
+    assert g.places() == [1, None, 2, None], g.places()
+    g.done = dict(f=100, fin=[90, None, 95, None], p=[1, None, 2, None])
+    assert g.places() == [1, None, 2, None]
+    assert rollout_rules.Round(5).places() == [1, 2, 3, 4]
+    # an empty seat sends no pads; a device rejoining has none for it
+    g.done = None
+    assert g.pad(1, 3, 2, 0, 0.1, 0.2) is None and g.pad(0, 3, 2, 0, 0.1, 0.2) == 3
+    assert g.wire()["rr"]["pads"] == [[[3, 2, 0]], None, [], None], g.wire()
+
+
 @check("Rampage Rollout: the server runs the world from the pads, says how it ended and stops cheats", together="Rollout")
 def _():
     saved = rollout_rules.LAPS
@@ -1396,6 +1854,44 @@ def _():
     assert T.atan2(0, -1) == -T.PI  # (straight back is -pi, not pi: its last case)
     # the ring: the rim 1800 across, its floor 1620, 222 deep in the middle (0x86004BD4)
     assert abs(T.surface_y(T.OUTER, 1800, 0)) < 0.01 and round(T.surface_y(T.INNER, 0, 0)) == -222, T.surface_y(T.INNER, 0, 0)
+
+
+@check("Topsy-Turvy with empty seats: the world matches the browser's; the places; no pads from no one", together="Topsy")
+def _():
+    for seed, want in JS_TOPSY_EMPTY.items():
+        level, cpus, empty = TOPSY_EMPTY_SEATS[seed]
+        w = topsy_rules.World(seed, level, cpus, empty)
+        parts, t = [], 0
+        while not (w.over and t > w.end + 120):
+            w.step(t, topsy_empty_pads(seed, t, w))
+            assert not any(e[0] in ("hit", "point") and (empty[e[1]] or empty[e[2]]) or e[0] in ("jump", "out", "spin") and empty[e[1]]
+                           for e in w.events), (seed, t, w.events)  # (nothing of no one)
+            w.events = []
+            if t % 100 == 0:
+                parts.append(w.digest())
+            t += 1
+        parts.append("%d:%s:%s" % (-1 if w.end is None else w.end, ",".join(map(str, w.scores)),
+                                   ",".join(str(-1 if p is None else p) for p in w.places)))
+        assert hashlib.sha256(";".join(parts).encode()).hexdigest()[:16] == want, seed
+        # an empty seat never came in (waiting where it was, out of it, at no points), nor was made a winner or a loser
+        assert all(p.state == 0 and not p.on and p.score == 0 for p in w.p if p.empty), (seed, [p.state for p in w.p])
+    # a draw among those there: nobody wins (all fall over)
+    w = topsy_rules.World(4, "normal", [False] * 4, [False, True, False, True])
+    w.p[0].score = w.p[2].score = 2
+    w.p[1].score = 7  # (an empty seat's points, were there any, don't count)
+    assert w.done(topsy_rules.TIME_LIMIT - 1) and [p.state for p in w.p] == [8, 0, 8, 0], [p.state for p in w.p]
+    # the places, by points among those there (ties share the better); None for an empty seat
+    g = topsy_rules.Round(5, "normal", [False] * 4, empty=[False, False, True, True])
+    g.done = dict(f=100, s=[2, 2, 0, 0])
+    assert g.places() == [1, 1, None, None], g.places()
+    g = topsy_rules.Round(5, "normal", [False] * 4, empty=[True, False, False, False])
+    g.done = dict(f=100, s=[9, 3, 1, 3])
+    assert g.places() == [None, 1, 3, 1], g.places()
+    g.done = None
+    assert g.places() == [None, 1, 1, 1] and topsy_rules.Round(5).places() == [1, 1, 1, 1], g.places()
+    # an empty seat sends no pads; a device rejoining has none for it
+    assert g.pad(0, 3, 0x4040, 0, 1.0, 0.2) is None and g.pad(1, 3, 0x4040, 0, 1.0, 0.2) is not None
+    assert g.wire()["tt"]["pads"][0] is None and len(g.wire()["tt"]["pads"][1]) == 1, g.wire()
 
 
 @check("Topsy-Turvy: the server runs the world from the pads, says how it ended and stops cheats", together="Topsy")
@@ -1481,6 +1977,56 @@ def _():
     assert w.scores == [0, 0, 0, 3] and b.scored, w.scores
 
 
+@check("Furret's Frolic with empty seats: the world matches the browser's; the places; no pads from no one", together="Furret")
+def _():
+    F = furret_rules
+    for seed, want in JS_FURRET_EMPTY.items():
+        level, cpus, empty = FURRET_EMPTY_SEATS[seed]
+        w = F.World(seed, level, cpus, empty)
+        parts, t = [], 0
+        while not (w.over and t > w.end + 120):
+            w.step(t, furret_empty_pads(seed, t, w))
+            assert not any(e[0] in ("goal", "swing", "shot", "cheer") and empty[e[1]] for e in w.events), (seed, t, w.events)
+            w.events = []
+            if t % 100 == 0:
+                parts.append(w.digest())
+            t += 1
+        parts.append("%d:%s:%s" % (-1 if w.end is None else w.end, ",".join(map(str, w.scores)),
+                                   ",".join(str(-1 if p is None else p) for p in w.places)))
+        assert hashlib.sha256(";".join(parts).encode()).hexdigest()[:16] == want, seed
+        assert all(p.score == 0 and not p.won and p.f.clip == F.UP for p in w.p if p.empty), seed  # (never stepped)
+    # a ball over an empty seat's goal line: in, for no one; over a seat's there, its points
+    w = F.World(3, "normal", [False] * 4, [True, False, False, False])
+    w.spawn(2)
+    b = w.balls[0]
+    b.pos = [700, 0, 700]  # (goal 3: seat 0's)
+    w.goal(b)
+    assert b.scored and w.scores == [0, 0, 0, 0] and not any(e[0] == "goal" for e in w.events), (w.scores, w.events)
+    w.spawn(3)
+    b = w.balls[1]
+    b.pos = [700, 0, -700]  # (goal 1: seat 1's)
+    w.goal(b)
+    assert b.scored and w.scores == [0, 3, 0, 0], w.scores
+    # all those there level at the end: nobody wins
+    w = F.World(3, "normal", [False] * 4, [False, True, False, True])
+    w.p[0].score = w.p[2].score = 4
+    w.p[1].score = 9  # (an empty seat's, were there any, don't count)
+    w.finish()
+    assert not any(p.won for p in w.p) and w.places == [1, None, 1, None], w.places
+    # the places, by points among those there (ties share the better); None for an empty seat
+    g = F.Round(5, "normal", [False] * 4, empty=[False, False, True, True])
+    g.done = dict(f=100, s=[2, 2, 0, 0])
+    assert g.places() == [1, 1, None, None], g.places()
+    g = F.Round(5, "normal", [False] * 4, empty=[True, False, False, False])
+    g.done = dict(f=100, s=[9, 3, 1, 3])
+    assert g.places() == [None, 1, 3, 1], g.places()
+    g.done = None
+    assert g.places() == [None, 1, 1, 1] and F.Round(5).places() == [1, 1, 1, 1], g.places()
+    # an empty seat sends no pads; a device rejoining has none for it
+    assert g.pad(0, 3, 1, 0, 0.1, 0.2) is None and g.pad(1, 3, 1, 0, 0.1, 0.2) == 3
+    assert g.wire()["fu"]["pads"] == [None, [[3, 1, 0]], [], []], g.wire()
+
+
 @check("Furret's Frolic: the server runs the world from the pads, says how it ended and stops cheats", together="Furret")
 def _():
     saved = furret_rules.TIME
@@ -1564,6 +2110,46 @@ def _():
     assert D.tally_frames([0, 0, 0, 0]) == 2 and D.tally_frames([5000, 100, 0, 30]) == 102
 
 
+def delibird_empty_digest(seed):
+    level, cpus, empty, _ = JS_DELIBIRD_EMPTY[seed]
+    w = delibird_rules.World(seed, level, cpus, empty)
+    parts, t = [], 0
+    while not (w.phase == "show" and t > w.shown + 30):
+        w.step(t, [None if cpus[z] or empty[z] else delibird_pad(z, t, w) for z in range(4)])
+        w.events = []
+        if t % 100 == 0:
+            parts.append(w.digest())
+        t += 1
+    parts.append("%d:%s:%s:%s" % (w.end, ",".join(map(str, w.scores)), ",".join("" if p is None else str(p) for p in w.places),
+                                  ",".join(str(int(p.won)) for p in w.p)))
+    return hashlib.sha256(";".join(parts).encode()).hexdigest()[:16], w
+
+
+@check("Delibird's Delivery: empty seats (no Delibird there) match the browser's, bit for bit; the server's round and places")
+def _():
+    for seed, (level, cpus, empty, want) in JS_DELIBIRD_EMPTY.items():
+        got, w = delibird_empty_digest(seed)
+        assert got == want, (seed, got)
+        # (an empty seat's Delibird never moves from its start, nor scores, cheers or sulks)
+        assert all(not e or (w.p[z].x, w.p[z].zz, w.p[z].score, w.p[z].state, w.p[z].got) == (*delibird_rules.START[z], 0, 0, [])
+                   for z, e in enumerate(empty)), seed
+        assert sum(w.scores) > 0, w.scores
+    # the server's: no sticks from an empty seat; the places among those there; all of them level: no winner
+    level, cpus, empty, _ = JS_DELIBIRD_EMPTY[157]
+    g = delibird_rules.Round(157, level, cpus=cpus, empty=empty)
+    assert g.cpus == [False] * 4 and g.world.level == 1 and g.world.everyone  # (no CPUs: the all-human code)
+    assert g.pad(0, 3, 0x4040, 0, 1, 1) is None and g.wire()["dd"]["pads"][0] is None
+    g.done = dict(f=1800, s=[0, 500, 900, 500])
+    assert g.places() == [None, 2, 1, 2] and delibird_rules.Round(1).places() == [1] * 4
+    w = delibird_rules.World(5, "normal", [False, True, False, False], [False, False, True, True])
+    w.p[0].score = w.p[1].score = 300
+    w.cheer()
+    assert [p.won for p in w.p] == [False] * 4 and w.p[2].state == delibird_rules.STAND, [p.state for p in w.p]
+    w.p[1].score = 200
+    w.cheer()
+    assert [p.won for p in w.p] == [True, False, False, False] and w.places == [1, 2, None, None]
+
+
 @check("Delibird's Delivery: the server runs the world from the sticks, says how it ended and stops cheats", together="Delibird")
 def _():
     saved = delibird_rules.TIME
@@ -1619,6 +2205,282 @@ def _():
         a.close()
     finally:
         delibird_rules.TIME = saved
+
+
+def fake_room(mode, people=2):
+    """A room on its own (not in rooms.rooms: its timers do nothing), with people in it who hear nothing."""
+    r = rooms.Room("TEST")
+    r.mode = mode
+    for z in range(people):
+        r.members[z] = rooms.Member("p%d" % z, "P%d" % z, z, None, False)
+    return r
+
+
+@check("Random: each of the twelve once before any comes again, and never the same twice running")
+def _():
+    r = fake_room("random")
+    seen = []
+    for _ in range(36):
+        rooms.next_game(r)
+        assert r.state == "loading" and r.loading["by"] == "random" and r.loading["show"] == rooms.SHOW["random"]
+        seen.append(r.minigame)
+        r.state, r.last = "lobby", r.minigame
+    for k in range(0, 36, 12):
+        assert sorted(seen[k:k + 12]) == sorted(rooms.GAMES), seen[k:k + 12]
+    assert all(a != b for a, b in zip(seen, seen[1:])), seen
+
+
+@check("a vote: three games (not the last one), the level, ties and no votes; it ends once everyone's voted")
+def _():
+    for _ in range(30):
+        r = fake_room("vote")
+        r.last = "egg"
+        rooms.next_game(r)
+        v = r.vote
+        assert r.state == "voting" and len(set(v["games"])) == rooms.CHOICES and "egg" not in v["games"] and v["levels"]
+    a, b = r.members[0], r.members[1]
+    g1, g2, g3 = v["games"]
+    rooms.vote(r, a, dict(game="nope", level="impossible"))  # not on offer: nothing
+    assert r.vote["votes"][0] == {} and r.state == "voting"
+    rooms.vote(r, a, dict(game=g2, level="hard"))
+    rooms.vote(r, a, dict(game=g1))  # a change of mind
+    rooms.vote(r, b, dict(game=g1))
+    assert r.state == "voting"  # (Bob hasn't voted on the level)
+    rooms.vote(r, b, dict(level="hard"))
+    assert r.state == "loading" and r.minigame == g1 and r.level == "hard" and r.vote["won"] == g1
+    assert r.snapshot()["vote"]["votes"][:2] == [dict(game=g1, level="hard"), dict(game=g1, level="hard")]
+    # a tie: either, at random; no votes: one of the three, and the level as it was
+    won, levels = set(), set()
+    for _ in range(40):
+        r = fake_room("vote")
+        rooms.next_game(r)
+        a, b = r.members[0], r.members[1]
+        rooms.vote(r, a, dict(game=r.vote["games"][0], level="easy"))
+        rooms.vote(r, b, dict(game=r.vote["games"][2], level="hard"))
+        won.add(r.vote["games"].index(r.minigame))
+        levels.add(r.level)
+    assert won == {0, 2} and levels == {"easy", "hard"}, (won, levels)
+    picked = set()
+    for _ in range(40):
+        r = fake_room("vote")
+        r.level = "easy"
+        rooms.next_game(r)
+        rooms.close_vote(r)
+        picked.add(r.vote["games"].index(r.minigame))
+        assert r.state == "loading" and r.level == "easy"
+    assert picked == {0, 1, 2}
+    # CPUs off (two people): no level to vote on; someone who left: their vote's gone
+    r = fake_room("vote", 3)
+    r.bots = False
+    rooms.next_game(r)
+    assert not r.vote["levels"]
+    rooms.vote(r, r.members[2], dict(game=r.vote["games"][1]))
+    del r.members[2]
+    rooms.vote(r, r.members[0], dict(game=r.vote["games"][0], level="hard"))
+    assert r.vote["votes"][0] == dict(game=r.vote["games"][0])  # (no level vote)
+    rooms.vote(r, r.members[1], dict(game=r.vote["games"][0]))
+    assert r.minigame == r.vote["games"][0] and r.level == "normal" and 2 not in r.vote["votes"]
+
+
+@check("the next game loads everywhere first: the round starts once every device has it, or LOAD_MAX on")
+def _():
+    r = fake_room("random")
+    r.loading = None
+    saved = rooms.SHOW
+    rooms.SHOW = dict(random=0.2, vote=0.2)
+    try:
+        rooms.load(r, "golbat")
+        rooms.load_check(r)
+        assert r.state == "loading" and r.snapshot()["loading"]["waiting"] == [0, 1]
+        r.loading["ready"].add(0)
+        r.loading["ready"].add(1)
+        rooms.load_check(r)
+        assert r.state == "loading"  # (it shows a moment first)
+        time.sleep(0.25)
+        rooms.load_check(r)
+        assert r.state == "playing" and r.minigame == "golbat" and r.round == 1 and r.vote is None and r.loading is None
+        assert isinstance(r.game, golbat_rules.Round) and r.empty == []
+        # someone reconnecting isn't waited for
+        r = fake_room("random")
+        r.members[1].away = time.monotonic()
+        rooms.load(r, "egg")
+        r.loading["ready"].add(0)
+        time.sleep(0.25)
+        rooms.load_check(r)
+        assert r.state == "playing" and list(r.lineup) == [0]
+    finally:
+        rooms.SHOW = saved
+
+
+@check("the lobby's list: the public rooms with a seat free; Quick play; only the host changes the room", together="lobby")
+def _():
+    w = Client("W")
+    w.send("hello", browse=True)
+    assert w.wait("welcome")["browse"] is True
+    before = w.wait("rooms")["rooms"]
+    assert all(x["room"] != "" for x in before)
+    pub = Client("Pub")
+    pub.send("hello", id="pub1", name="Pam", public=True, mode="vote")
+    pcode = pub.wait("welcome")["room"]
+    snap = pub.wait("room")
+    assert snap["public"] is True and snap["mode"] == "vote" and snap["bots"] is True and snap["points"] == [0, 0, 0, 0]
+    priv = Client("Priv")
+    priv.send("hello", id="priv1", name="Pia")  # (a room made the old way: private, the host picks)
+    vcode = priv.wait("welcome")["room"]
+    assert priv.wait("room")["mode"] == "pick" and not rooms.rooms[vcode].public
+    end = time.time() + 3
+    while time.time() < end:
+        got = w.wait("rooms")["rooms"]
+        if any(x["room"] == pcode for x in got):
+            break
+    mine = [x for x in got if x["room"] == pcode]
+    assert mine == [dict(room=pcode, host="Pam", players=1, mode="vote", state="lobby", game=None)], got
+    assert not any(x["room"] == vcode for x in got)
+    # Quick play: the public room with the most people (between rounds before one playing); none, a new one
+    q = Client("Q")
+    q.send("hello", id="q2", name="Quinn", quick=True)
+    assert q.wait("welcome")["room"] == pcode
+    # only the host changes the room's settings
+    q.drain()
+    time.sleep(rooms.CHANGE_GAP)
+    for t, kw in (("mode", dict(mode="pick")), ("public", dict(on=False)), ("bots", dict(on=False)), ("reset", {})):
+        q.send(t, **kw)
+    time.sleep(0.3)
+    room = rooms.rooms[pcode]
+    assert room.mode == "vote" and room.public and room.bots
+    pub.drain()
+    pub.send("bots", on=False)
+    assert pub.wait("room")["bots"] is False
+    time.sleep(rooms.CHANGE_GAP)
+    pub.send("public", on=False)
+    assert pub.wait("room")["public"] is False
+    end = time.time() + 3
+    while time.time() < end:
+        got = w.wait("rooms")["rooms"]
+        if not any(x["room"] == pcode for x in got):
+            break
+    assert not any(x["room"] == pcode for x in got), got
+    q2 = Client("Q2")  # no public room free now (or only others'): Quick play makes one, public, a vote
+    q2.send("hello", id="q3", name="Quin", quick=True)
+    qcode = q2.wait("welcome")["room"]
+    assert qcode != pcode and len(rooms.rooms[qcode].members) == 1 and rooms.rooms[qcode].public and rooms.rooms[qcode].mode == "vote"
+    for c in (w, pub, priv, q, q2):
+        c.close()
+
+
+@check("a vote with two players: on the games and the level, then everyone's loading, then the round", together="lobby")
+def _():
+    saved = rooms.SHOW
+    rooms.SHOW = dict(random=0.2, vote=0.2)
+    try:
+        e, g = Client("E"), Client("G")
+        e.send("hello", id="e1", name="Eve", mode="vote")
+        ecode = e.wait("welcome")["room"]
+        g.send("hello", id="g1", name="Gus", room=ecode)
+        g.wait("welcome")
+        e.drain()
+        g.send("start")  # not the host: nothing
+        time.sleep(0.2)
+        assert rooms.rooms[ecode].state == "lobby"
+        e.send("start")
+        snap = e.wait("room")
+        while snap["state"] != "voting":
+            snap = e.wait("room")
+        games = snap["vote"]["games"]
+        assert len(games) == 3 and snap["vote"]["levels"] and snap["vote"]["ends"] > rooms.clock()
+        e.send("vote", game=games[2], level="easy")
+        g.send("vote", game=games[2], level="easy")
+        snap = g.wait("room")
+        while snap["state"] != "loading":
+            snap = g.wait("room")
+        assert snap["loading"] == dict(game=games[2], by="vote", level="easy", ends=snap["loading"]["ends"], waiting=[0, 1])
+        assert snap["vote"]["won"] == games[2]
+        e.send("ready", game="egg" if games[2] != "egg" else "golbat")  # not the game: nothing
+        e.send("ready", game=games[2])
+        time.sleep(0.4)
+        assert rooms.rooms[ecode].state == "loading"
+        g.send("ready", game=games[2])
+        st = g.wait("start")
+        assert st["game"] == games[2] and st["level"] == "easy" and st["empty"] == []
+        e.close()
+        g.close()
+    finally:
+        rooms.SHOW = saved
+
+
+@check("running points: each round's places add up (CPUs too), kept across rounds; the host resets them", together="lobby")
+def _():
+    h, k = Client("H"), Client("K")
+    h.send("hello", id="h1", name="Hal", game="egg")
+    hcode = h.wait("welcome")["room"]
+    k.send("hello", id="k1", name="Kim", room=hcode)
+    k.wait("welcome")
+    room = rooms.rooms[hcode]
+    totals = [0] * 4
+    for n in (1, 2):
+        h.drain()
+        time.sleep(rooms.CHANGE_GAP)
+        h.send("start")
+        st = h.wait("start")
+        r, go = st["round"], st["go"]
+        h.send("done", r=r)
+        k.send("done", r=r)
+        at(go, egg_rules.Round(0).end - 1)
+        res = h.wait("results", timeout=8)
+        places = rooms.places(room)
+        assert res["gained"] == [rooms.POINTS[p - 1] for p in places], (res, places)
+        totals = [a + b for a, b in zip(totals, res["gained"])]
+        assert res["points"] == totals, (res, totals)
+    assert room.points == {"h1": res["points"][0], "k1": res["points"][1], "cpu2": res["points"][2], "cpu3": res["points"][3]}
+    snap = [m for m in h.drain() if m["t"] == "room"][-1]
+    assert snap["points"] == res["points"] and snap["last"] == "egg" and snap["state"] == "lobby"
+    time.sleep(rooms.CHANGE_GAP)
+    k.send("reset")  # not the host
+    time.sleep(0.2)
+    assert room.points
+    h.send("reset")
+    assert h.wait("room")["points"] == [0, 0, 0, 0]
+    # someone who leaves and comes back has their points back
+    room.points["k1"] = 7
+    k.close()
+    k = Client("K2")
+    k.send("hello", id="k1", name="Kim", room=hcode)
+    k.wait("welcome")
+    assert k.wait("room")["points"][1] == 7
+    h.close()
+    k.close()
+
+
+@check("CPUs off: with two people, the empty seats are empty (no CPU, no points); alone, CPUs anyway", together="lobby")
+def _():
+    m, n = Client("M"), Client("N")
+    m.send("hello", id="m1", name="Mo", game="egg")
+    mcode = m.wait("welcome")["room"]
+    room = rooms.rooms[mcode]
+    time.sleep(rooms.CHANGE_GAP)
+    m.drain()
+    m.send("bots", on=False)
+    snap = m.wait("room")
+    assert snap["bots"] is False and snap["cpus"] is True and snap["points"] == [0, 0, 0, 0]  # (alone: CPUs anyway)
+    n.send("hello", id="n1", name="Ned", room=mcode)
+    n.wait("welcome")
+    snap = n.wait("room")
+    assert snap["cpus"] is False and snap["points"] == [0, 0, None, None], snap
+    m.drain()
+    m.send("start")
+    st = m.wait("start")
+    assert st["empty"] == [2, 3] and n.wait("start")["empty"] == [2, 3]
+    assert room.empty == [2, 3] and room.game.cpus == [False] * 4, (room.empty, room.game.cpus)
+    r, go = st["round"], st["go"]
+    m.send("lean", r=r, s=2, f=5, l=1)  # no one's seat: ignored
+    m.send("done", r=r)
+    n.send("done", r=r)
+    at(go, egg_rules.Round(0).end - 1)
+    res = m.wait("results", timeout=8)
+    assert res["gained"][2:] == [None, None] and res["points"][2:] == [None, None] and sorted(res["gained"][:2]) in ([2, 3], [3, 3])
+    assert set(room.points) == {"m1", "n1"}
+    n.close()
+    m.close()
 
 
 @check("Telegram logins: checked, and no one can pose as a Telegram player")

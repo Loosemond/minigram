@@ -8,8 +8,11 @@
 // drawn): the Delibird, their turns, the gifts, boxes and Swinub, the clips,
 // a gift's jump into the sack, the belts.
 //
-// Who plays each seat: "local" (this device's player), "cpu" or "remote"
-// (someone on another device, online). The CPUs think in the world, so every
+// Who plays each seat: "local" (this device's player), "cpu", "remote"
+// (someone on another device, online) or "none": online with the CPUs off, a
+// seat no one plays is empty, with no Delibird at all (nothing of it drawn;
+// rules.js leaves it out of the world); its door stays, unused, as the stage
+// has it. The CPUs think in the world, so every
 // device runs them alike. This device's player's stick emits "send" as it
 // changes, for a few frames on (src/lag.js: online, so it gets to the others
 // first); online, the others' come in told("pad"), sometimes late: the world
@@ -122,17 +125,18 @@ export class Game {
   emit(name, ...args) { for (const fn of this.listeners[name] || []) fn(...args); }
 
   // A round. level: easy / normal / hard; setup: { me, control, cpus (which
-  // seats are CPUs), told (online, the server's word so far: to rejoin it
+  // seats are CPUs), empty (which are no one's: control "none"), told (online, the server's word so far: to rejoin it
   // midway), delay (each seat's, src/lag.js) }
   reset(level, seed = (Math.random() * 2 ** 31) | 0, setup = {}) {
     this.levelName = level;
     this.seed = seed;
     this.me = setup.me ?? 0;
     this.control = setup.control || [0, 1, 2, 3].map((z) => (z === this.me ? "local" : "cpu"));
-    this.cpus = setup.cpus || this.control.map((c) => c === "cpu");
+    this.empty = [0, 1, 2, 3].map((z) => !!setup.empty?.[z] || this.control[z] === "none");
+    this.cpus = (setup.cpus || this.control.map((c) => c === "cpu")).map((c, z) => !!c && !this.empty[z]);
     // (online, with other people: this device's player's sticks count this many frames on)
     this.lead = leadFor(this.control.map((c, z) => c === "remote" && !this.cpus[z]), setup.delay);
-    this.world = new R.World(seed, level, this.cpus);
+    this.world = new R.World(seed, level, this.cpus, this.empty);
     this.inputs = [[], [], [], []]; // each person's stick: [frame, packed stick, 0]
     this.snaps = [[0, this.world.save()]]; // the world as it was before a frame
     this.simT = -1; // the last frame the world has run
@@ -157,7 +161,7 @@ export class Game {
     for (const v of this.crumbs) this.drop(v);
     this.crumbs = [];
     const told = setup.told;
-    if (told?.pads) told.pads.forEach((list, z) => { if (list && !this.cpus[z]) this.inputs[z] = list.map((e) => [...e]); });
+    if (told?.pads) told.pads.forEach((list, z) => { if (list && !this.cpus[z] && !this.empty[z]) this.inputs[z] = list.map((e) => [...e]); });
     if (told?.done) this.told("won", told.done);
     // (the standing clip's frame each starts at: a draw of its own, the round's look only)
     let r = (seed >>> 0) || 1;
@@ -201,7 +205,7 @@ export class Game {
   told(type, m) {
     if (type === "pad") {
       const z = m.s;
-      if (!(z >= 0 && z < 4) || this.cpus[z] || !Number.isInteger(m.f) || !validPad(m.x)) return;
+      if (!(z >= 0 && z < 4) || this.cpus[z] || this.empty[z] || !Number.isInteger(m.f) || !validPad(m.x)) return;
       const list = this.inputs[z];
       let k = list.length;
       if (this.control[z] === "local") { // one of this device's own, as the server has it (on another frame)
@@ -252,7 +256,7 @@ export class Game {
         while (this.snaps.length > 2 && this.snaps[1][0] < f - KEEP) this.snaps.shift();
       }
       if (f === t) this.before = this.snapshot();
-      w.step(f, [0, 1, 2, 3].map((z) => (this.cpus[z] ? null : this.padAt(z, f))));
+      w.step(f, [0, 1, 2, 3].map((z) => (this.cpus[z] || this.empty[z] ? null : this.padAt(z, f))));
       this.simT = f;
       if (f > this.shownT) { this.sounds(f); this.frameFx(f); this.shownT = f; }
       w.events = [];
@@ -302,6 +306,7 @@ export class Game {
   frameFx(f) {
     const w = this.world;
     w.p.forEach((p, z) => {
+      if (p.empty) return; // (no one there)
       const v = this.birds[z];
       const c = v.clip;
       if (c.state !== p.state || c.since !== p.since) v.clip = { state: p.state, since: p.since, prev: { ...c, prev: null } };
@@ -385,8 +390,8 @@ export class Game {
 
   // each one's points: the server's once it's said, else the world's
   points() { return this.result ? this.result.s : this.world.scores; }
-  // the places (1-4) by points
-  places() { const s = this.points(); return s.map((x) => 1 + s.filter((y) => y > x).length); }
+  // the places (1-4) by points, among those there (null for an empty seat)
+  places() { const s = this.points(); return s.map((x, z) => (this.empty[z] ? null : 1 + s.filter((y, o) => !this.empty[o] && y > x).length)); }
   // the gifts each one's got through its door
   delivered() { return this.world.p.map((p) => p.got.length); }
   // the seconds on the clock (the game's: rounded up, 60 at GO, 0 on at the end: 0x86A095A0)
@@ -402,8 +407,8 @@ export class Game {
   // ---- the end: the points count up, then the winners cheer and the others sulk ----
   ending() {
     this.endAt = this.time;
-    const p = this.places(), s = this.points();
-    this.winners = p.map((x) => x === 1 && !s.every((y) => y === s[0])); // (all level: nobody)
+    const p = this.places(), s = this.points().filter((x, z) => !this.empty[z]);
+    this.winners = p.map((x) => x === 1 && !s.every((y) => y === s[0])); // (all level, all those there: nobody)
     this.emit("end", this.winners);
     this.quiet();
   }
@@ -422,7 +427,11 @@ export class Game {
   draw(between) {
     const w = this.world, before = this.before, tau = this.tau(), idle = this.state === "ready" || this.state === "idle";
     w.p.forEach((p, z) => {
-      const v = this.birds[z], was = before?.p[z] || [p.x, p.zz, p.yaw, p.sackYaw], o = this.offsets[z];
+      // (an empty seat: nothing of it, its sack, shadow, badge or FULL)
+      const v = this.birds[z], none = this.empty[z];
+      for (const o of [v.bird.root, v.sack.root, v.shadow, v.label]) o.visible = !none;
+      if (none) { v.full.visible = false; return; }
+      const was = before?.p[z] || [p.x, p.zz, p.yaw, p.sackYaw], o = this.offsets[z];
       const x = lerp(was[0], p.x, between) + o[0], zz = lerp(was[1], p.zz, between) + o[1];
       // its clip: its state's, from the frame it went into it (the one before it until then)
       let c = v.clip;
@@ -561,9 +570,10 @@ export class Game {
   }
 
   // ---- the end ----
+  // (the seats there: an empty seat isn't ranked, tools/delibird_rules.py places())
   results() {
     const places = this.places(), s = this.points();
-    return [0, 1, 2, 3].map((i) => ({ i, score: this.scores ? this.scores[i] : s[i], place: places[i] }))
+    return [0, 1, 2, 3].filter((i) => !this.empty[i]).map((i) => ({ i, score: this.scores ? this.scores[i] : s[i], place: places[i] }))
       .sort((a, b) => a.place - b.place || a.i - b.i);
   }
   celebrate() { return this.results(); }

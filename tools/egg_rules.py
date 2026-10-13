@@ -403,10 +403,13 @@ def make_deal(seed, c, all_human=False, **kw):
 
 
 class Round:
-    """One round's deal, leans and scores, on the server."""
+    """One round's deal, leans and scores, on the server. empty: the seats no
+    one's in (online, with the CPUs off): no Chansey there, so no leans, no
+    eggs, no place, and the speed-up only looks at the players there."""
 
-    def __init__(self, seed, level="normal", cpus=(True, True, True, False)):
+    def __init__(self, seed, level="normal", cpus=(True, True, True, False), empty=None):
         self.cpus = list(cpus)
+        self.empty = [bool(e) for e in empty] if empty else [False] * SEATS
         self.c = level_code(level, any(self.cpus))
         self.all_human = not any(self.cpus)
         self.deal = make_deal(seed, self.c, self.all_human, want=self.want)
@@ -421,6 +424,12 @@ class Round:
     def scores(self):
         return [s.eggs for s in self.seats]
 
+    def places(self):
+        """Each seat's place (1 the best; level ones share the better), as the
+        devices rank them (game.js results()): by eggs; None for an empty seat."""
+        eggs, here = self.scores, [s for s in range(SEATS) if not self.empty[s]]
+        return [None if self.empty[s] else 1 + sum(eggs[t] > eggs[s] for t in here) for s in range(SEATS)]
+
     def wire(self):
         """The round as a device needs it to play (and to rejoin it): its
         level code, each seat's leans so far, the speed-ups, the scores."""
@@ -434,6 +443,8 @@ class Round:
         returns it."""
         fs, ls = self.frames[s], self.leans[s]
         f = int(min(max(f, fs[-1] if fs else 1, self.seats[s].f + 1, 1), LONGEST))
+        if self.empty[s]:
+            return f  # (no one's there to lean)
         if not ls or ls[-1] != l:
             fs.append(f)
             ls.append(l)
@@ -445,11 +456,12 @@ class Round:
 
     # ---- running it ----
     def want(self, f, eggs):
-        """The speed-up's check at frame f: every seat has at least eggs (after
-        frame f - 1)."""
-        for s in range(SEATS):
+        """The speed-up's check at frame f: every player has at least eggs
+        (after frame f - 1; the empty seats aren't players)."""
+        here = [s for s in range(SEATS) if not self.empty[s]]
+        for s in here:
             self.settle(s, f - 1)
-        return min(min(h[min(f - 1, len(h) - 1)] for h in self.history), 100) >= eggs
+        return min([self.history[s][min(f - 1, len(self.history[s]) - 1)] for s in here] + [100]) >= eggs
 
     def deal_to(self, f):
         while self.deal.f < f:
@@ -459,6 +471,8 @@ class Round:
         """Run seat s's Chansey up to frame upto. Returns what came of its drops:
         [(n, "c" / "h" / "m", eggs after, frame)]."""
         seat, out = self.seats[s], []
+        if self.empty[s]:
+            return out  # (no one's there: nothing's caught)
         upto = int(min(upto, LONGEST))
         while seat.f < upto:
             g = seat.f + 1

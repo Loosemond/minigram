@@ -153,11 +153,11 @@ def along(ax, ay, bx, by, px, py):
 
 
 class Golbat:
-    __slots__ = ("z", "human", "x", "y", "vx", "vy", "dash", "flap", "hurt", "hit", "timer", "hitT", "glow",
+    __slots__ = ("z", "human", "empty", "x", "y", "vx", "vy", "dash", "flap", "hurt", "hit", "timer", "hitT", "glow",
                  "face", "last", "hearts", "ai", "dx", "dy", "tx", "ty")
 
-    def __init__(self, z, human):
-        self.z, self.human = z, human
+    def __init__(self, z, human, empty=False):
+        self.z, self.human, self.empty = z, human, empty
         self.x, self.y = START[z]
         self.vx = self.vy = 0
         self.dash = self.flap = self.hurt = self.hit = False
@@ -181,16 +181,17 @@ class Thing:
 
 
 class World:
-    """One round's world (rules.js's World)."""
+    """One round's world (rules.js's World). empty: the seats no one's in (no
+    Golbat there: it never runs, and nothing touches it)."""
 
-    def __init__(self, seed, level="normal", cpus=(False, True, True, True)):
+    def __init__(self, seed, level="normal", cpus=(False, True, True, True), empty=None):
         self.level = level_code(level, cpus)
         self.seed = seed & 0xFFFFFFFF
         self.t = -1
         self.end = None
         self.ids = 0
         self.events = []
-        self.g = [Golbat(z, not cpus[z]) for z in range(SEATS)]
+        self.g = [Golbat(z, not cpus[z], bool(empty and empty[z])) for z in range(SEATS)]
         self.mags = []
         self.hearts = []
         self.bgs = [[x + (SCROLL / 2) * INTRO, CAVE] for x in BACKDROPS_AT]
@@ -222,6 +223,8 @@ class World:
         if self.spawning:
             self.course()
         for g in self.g:
+            if g.empty:
+                continue
             self.golbat(g, pads[g.z])
             g.timer += 1
             g.hitT += 1
@@ -351,7 +354,7 @@ class World:
         g.x += g.vx
         g.y += g.vy
         for o in self.g:
-            if o is not g:
+            if o is not g and not o.empty:
                 self.bump(g, o)
         g.vx = clamp(g.vx, VMAX)
         g.vy = clamp(g.vy, VMAX)
@@ -453,7 +456,7 @@ class World:
         m.x += self.scroll
         m.y = BOB[m.n % 30] * 10 + m.y0
         for g in self.g:
-            if g.hurt:
+            if g.hurt or g.empty:
                 continue
             dx, dy = g.x - m.x, g.y - m.y
             d = math.sqrt(dx * dx + dy * dy)
@@ -510,7 +513,7 @@ class World:
 
     def catch(self, h):
         for g in self.g:
-            if not (((g.z != h.owner and not h.knocked) or h.timer >= MINE_FOR)
+            if g.empty or not (((g.z != h.owner and not h.knocked) or h.timer >= MINE_FOR)
                     and abs(h.x - g.x) < GRAB and abs(h.y - g.y) < GRAB):
                 continue
             g.hearts = min(HEARTS_MAX, g.hearts + 1)
@@ -733,11 +736,13 @@ END = end_frame()
 
 class Round:
     """One round's world on the server, run as far as the pads that can still
-    come in allow."""
+    come in allow. empty: [bool x4], the seats no one plays (online with the
+    CPUs off): no Golbat there, no pads taken, no place."""
 
-    def __init__(self, seed, level="normal", cpus=(False, True, True, True)):
-        self.cpus = list(cpus)
-        self.world = World(seed, level, self.cpus)
+    def __init__(self, seed, level="normal", cpus=(False, True, True, True), empty=None):
+        self.empty = [bool(e) for e in empty] if empty else [False] * SEATS
+        self.cpus = [bool(c) and not e for c, e in zip(cpus, self.empty)]
+        self.world = World(seed, level, self.cpus, self.empty)
         self.pads = [[] for _ in range(SEATS)]  # each person's pad changes: [frame, stick x, flap]
         self.at = [0] * SEATS  # where each one's list has been read to
         self.done = None  # how it ended, once decided: dict(f, h)
@@ -758,14 +763,14 @@ class Round:
         w = self.world
         while w.end is None and w.t < t:
             f = w.t + 1
-            w.step(f, [None if self.cpus[s] else self.pad_at(s, f) for s in range(SEATS)])
+            w.step(f, [None if self.cpus[s] or self.empty[s] else self.pad_at(s, f) for s in range(SEATS)])
             w.events = []
 
     def pad(self, s, f, x, a, now, allow):
         """Seat s's pad went to stick x (and a flap if a) on frame f (its
         device's word); it came in at round time now, and may be at most allow
         s old. Returns the frame it counts on, or None."""
-        if self.cpus[s] or self.done or type(f) is not int or type(x) is not int or a not in (0, 1):
+        if self.cpus[s] or self.empty[s] or self.done or type(f) is not int or type(x) is not int or a not in (0, 1):
             return None
         if not -64 <= x <= 64:
             return None
@@ -780,10 +785,16 @@ class Round:
 
     def wire(self):
         """What a device needs to rejoin the round: how it ended (once decided) and the people's pads so far."""
-        return dict(gb=dict(done=self.done, pads=[None if self.cpus[s] else [list(e) for e in self.pads[s]] for s in range(SEATS)]))
+        return dict(gb=dict(done=self.done, pads=[None if self.cpus[s] or self.empty[s] else [list(e) for e in self.pads[s]] for s in range(SEATS)]))
 
     def result(self):
         return self.done
+
+    def places(self):
+        """Each seat's place (1 the best; tied, the better one), as game.js
+        places() has them: by hearts; None for an empty seat."""
+        h, here = self.scores, [s for s in range(SEATS) if not self.empty[s]]
+        return [None if self.empty[s] else 1 + sum(h[o] > h[s] for o in here) for s in range(SEATS)]
 
     @property
     def scores(self):

@@ -103,7 +103,7 @@ export async function create(shell, onProgress) {
     if (mine(z)) { shell.haptic("medium"); shell.flash(z, "hurt"); }
   });
   game.on("full", () => hum(false));
-  game.on("zap", (winners) => winners.forEach((w, z) => { if (!w) shell.sound(z === 0 || z === 3 ? "zapA" : "zapB", z); })); // (0x2F09, 0x2F0A)
+  game.on("zap", (winners) => winners.forEach((w, z) => { if (!w && !game.empty[z]) shell.sound(z === 0 || z === 3 ? "zapA" : "zapB", z); })); // (0x2F09, 0x2F0A)
   game.on("jingle", (k) => { if (k === 0) shell.sound("jingle1"); shell.sound("jingle" + (k ? k + 1 : 0)); }); // (0x2F0C-0x2F10)
   game.on("cheer", (winners) => winners.forEach((w, z) => { if (w) shell.sound("cry", z); })); // (0x2F11, a Pichu's)
 
@@ -193,10 +193,10 @@ export async function create(shell, onProgress) {
 
     reset(round) {
       const m = round.start;
-      // (online: the seats nobody was dealt are CPUs, as the server has them)
-      const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me)
-        : [0, 1, 2, 3].map((z) => !(round.lineup || []).some((p) => p.seat === z));
-      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, told: m?.pp, w: round.online ? undefined : lastW ?? 30 });
+      // (online: the seats nobody was dealt are CPUs, as the server has them; but for the empty ones: no one plays those, not even a CPU)
+      const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me && !round.empty?.[z])
+        : [0, 1, 2, 3].map((z) => !round.empty?.[z] && !(round.lineup || []).some((p) => p.seat === z));
+      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, empty: round.empty, told: m?.pp, w: round.online ? undefined : lastW ?? 30 });
       lastW = R.WARN[game.c];
       shell.stopSound();
       aimed = 0;
@@ -279,7 +279,7 @@ export async function create(shell, onProgress) {
     const c = game.time * R.FPS, now = Math.floor(c + 1e-6), f = game.fin(), ended = !!f && game.lastFrame >= f.at;
     for (let z = 0; z < 4; z++) {
       const g = gauges[z];
-      g.el.hidden = !playing && !(game.state === "ready" && game.glide >= 1);
+      g.el.hidden = game.empty[z] || (!playing && !(game.state === "ready" && game.glide >= 1)); // (an empty seat's: none)
       if (g.el.hidden) continue;
       const won = game.won(z), charge = game.charge(z);
       let glow = 0, shake = false;

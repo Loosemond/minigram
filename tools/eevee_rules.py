@@ -239,11 +239,14 @@ def judge(rd, ins):
 
 
 class Round:
-    """One game's rounds, presses and scores, on the server."""
+    """One game's rounds, presses and scores, on the server. empty: [bool x4],
+    the seats no one plays (online with the CPUs off): no Eevee there, so no
+    presses, no prizes, no place."""
 
-    def __init__(self, seed, level="normal", cpus=True):
+    def __init__(self, seed, level="normal", cpus=True, empty=None):
         self.seed = seed
         self.level = level_code(level, cpus)
+        self.empty = [bool(e) for e in empty] if empty else [False] * SEATS
         # who's outside the ring as each round is dealt (a mask of seats: deal's
         # outs), once the round has started (None till then; round 1's is no one)
         self.outs = [0] + [None] * (ROUNDS - 1)
@@ -292,7 +295,7 @@ class Round:
         """Seat s pressed k on frame f (its device's word); it came in at
         round time now (s after GO), and may be at most allow s old (the way
         here). Returns the frame it counts on, or None if it doesn't work."""
-        if k not in ("a", "b") or type(f) is not int:
+        if k not in ("a", "b") or type(f) is not int or self.empty[s]:
             return None
         here = int(now * FPS)
         f = min(max(f, here - int(allow * FPS)), here + 1)  # (no older than the way here allows; not in the future)
@@ -329,6 +332,12 @@ class Round:
             if rd["kind"] != PINECO:
                 out.append((n, pts, list(self.scores), decided))
         return out
+
+    def places(self):
+        """Each seat's place (1 the best; a tie shares the better one) as the
+        game's results() ranks them, by points; None for an empty seat."""
+        here = [s for s in range(SEATS) if not self.empty[s]]
+        return [None if self.empty[s] else 1 + sum(self.scores[o] > self.scores[s] for o in here) for s in range(SEATS)]
 
     def next_settle(self, allow):
         """When (round time, s) the next prize could be given, or the next

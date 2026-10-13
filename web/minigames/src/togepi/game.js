@@ -6,8 +6,11 @@
 // second; what moves is drawn between a lane's last two frames, so it's
 // smooth at any display rate.
 //
-// Who plays each seat: "local" (this device's player), "cpu" or "remote"
-// (someone on another device, online). A CPU's lane runs from the round's
+// Who plays each seat: "local" (this device's player), "cpu", "remote"
+// (someone on another device, online) or "none": online with the CPUs off, a
+// seat no one plays is empty: no Togepi there at all, its lane never runs
+// (its belt stands still and bare: the platform's four treadmills are the
+// stage's), and it has no place and doesn't hold up the end. A CPU's lane runs from the round's
 // seed alone, so every device runs it the same. This device's player's stick
 // emits "send" as it changes; online, the others' come in told("stick"), and
 // their lanes run a little behind (s.delay), run again from a saved point
@@ -200,14 +203,15 @@ export class Game {
   }
 
   // A game. level: easy / normal / hard; setup: { me, control, cpus (which
-  // seats are CPUs), delay (frames each seat runs behind), told (online, the
+  // seats are CPUs), empty (which seats are empty: control "none"), delay (frames each seat runs behind), told (online, the
   // server's word so far: to rejoin it midway) }
   reset(level, seed = (Math.random() * 2 ** 31) | 0, setup = {}) {
     this.levelName = level;
     this.seed = seed;
     this.me = setup.me ?? 0;
     this.control = setup.control || [0, 1, 2, 3].map((z) => (z === this.me ? "local" : "cpu"));
-    this.cpus = setup.cpus || this.control.map((c) => c === "cpu");
+    this.empty = [0, 1, 2, 3].map((z) => !!setup.empty?.[z] || this.control[z] === "none");
+    this.cpus = (setup.cpus || this.control.map((c) => c === "cpu")).map((c, z) => !!c && !this.empty[z]);
     this.delay = (setup.delay || [0, 0, 0, 0]).map((d, z) => (z === this.me || this.cpus[z] ? 0 : d));
     this.course = R.course(seed);
     const level0 = R.levelCode(level);
@@ -237,7 +241,7 @@ export class Game {
     });
     for (const s of this.scenery) s.visible = true;
     const told = setup.told;
-    if (told?.sticks) told.sticks.forEach((list, z) => { if (list && !this.cpus[z]) this.inputs[z] = list.map((e) => [...e]); });
+    if (told?.sticks) told.sticks.forEach((list, z) => { if (list && !this.cpus[z] && !this.empty[z]) this.inputs[z] = list.map((e) => [...e]); });
     if (told?.done) this.told("won", told.done);
     this.drawLanes(1);
   }
@@ -275,7 +279,7 @@ export class Game {
   told(type, m) {
     if (type === "stick") {
       const z = m.s;
-      if (!(z >= 0 && z < 4) || this.cpus[z] || !Number.isInteger(m.f) || !Number.isInteger(m.x) || !Number.isInteger(m.y)) return;
+      if (!(z >= 0 && z < 4) || this.cpus[z] || this.empty[z] || !Number.isInteger(m.f) || !Number.isInteger(m.x) || !Number.isInteger(m.y)) return;
       const list = this.inputs[z];
       let k = list.length;
       if (this.control[z] === "local") { // one of this device's own, as the server has it (from another frame)
@@ -374,11 +378,12 @@ export class Game {
       this.lanes.forEach((l, z) => { if (this.cpus[z]) { this.simT[z] = t; this.sounds(z, t); } });
     }
     // the people: this device's now, the others a little behind
-    for (let z = 0; z < 4; z++) if (!this.cpus[z]) this.runTo(z, Math.max(-1, t - this.delay[z]));
-    // the end: once all four are in (their goal runs over), or the race is called
+    for (let z = 0; z < 4; z++) if (!this.cpus[z] && !this.empty[z]) this.runTo(z, Math.max(-1, t - this.delay[z]));
+    // the end: once all four are in (their goal runs over), or the race is
+    // called (all those there: an empty seat's lane never runs)
     const fin = this.finishes();
     if (this.ended === null) {
-      const all = fin.every((f) => f !== null) && this.lanes.every((l, z) => l.state === R.DONE || t - fin[z] > RUN_IN);
+      const all = this.lanes.every((l, z) => this.empty[z] || (fin[z] !== null && (l.state === R.DONE || t - fin[z] > RUN_IN)));
       const first = Math.min(...fin.map((f) => (f === null ? Infinity : f)));
       if (this.result ? t >= this.result.f : all || t >= first + CALL) this.ended = t;
     }
@@ -391,12 +396,12 @@ export class Game {
 
   // n frames after the end began (0x86709AD0): the camera comes down to the
   // winner(s), who cheer; the others lose. The game's winners are the ones it
-  // ranks first, unless the last one in is first too (all four together): then
-  // no one (0x86705F54, case 12)
+  // ranks first, unless the last one in is first too (all four together, here
+  // all those there): then no one (0x86705F54, case 12)
   ending(n) {
     if (n !== 0) return;
     const won = this.places().map((p) => p === 1);
-    const winners = won.every(Boolean) ? won.map(() => false) : won;
+    const winners = won.every((w, z) => w || this.empty[z]) ? won.map(() => false) : won;
     this.emit("end", winners);
     this.lanesView.forEach((v, z) => { v.end = { win: winners[z], at: this.time }; });
     for (const s of this.scenery) s.visible = true;
@@ -411,10 +416,11 @@ export class Game {
   // each seat's progress the frame before it got in (the server's word once it's in)
   priors() { return this.result?.prior || this.lanes.map((l) => l.prior); }
   // the places: by the frame each finished (the same frame's by how far each
-  // had got the frame before), then by how far each got (rules.js placesOf)
+  // had got the frame before), then by how far each got (rules.js placesOf);
+  // null for an empty seat
   places() {
     const prog = this.result?.p ? this.result.p.map((x) => x / 10) : this.lanes.map((l) => l.progress);
-    return R.placesOf(this.finishes(), this.priors(), prog);
+    return R.placesOf(this.finishes(), this.priors(), prog, this.empty);
   }
   // seat z's time, in hundredths of a second (null if it didn't get there): the game's sum (rules.js timeOf)
   timeOf(z) {
@@ -441,7 +447,7 @@ export class Game {
       return { x: lerp(p.x, l.x, k), y: lerp(p.y, l.y, k), z: lerp(p.z, l.z, k) + this.lanesView[z].off, row: Math.abs(row - p.row) < 64 ? lerp(p.row, row, k) : row };
     });
     this.lanesView.forEach((v, z) => {
-      const l = this.lanes[z], p = v.prev, d = at[z], x = v.x0 + d.x;
+      const l = this.lanes[z], p = v.prev, d = at[z], x = v.x0 + d.x, none = this.empty[z];
       // the belt's track
       const uv = this.belts[z].geometry.attributes.uv;
       const v0 = (d.row + 3) / 2048, v1 = (d.row + 3 + BELT.rows) / 2048;
@@ -449,6 +455,15 @@ export class Game {
       uv.needsUpdate = true;
       // the Togepi
       const t = v.togepi;
+      // (an empty seat: nothing of it, nor of the others on its belt; its belt still and bare)
+      t.root.visible = v.shadow.visible = !none;
+      if (none) {
+        v.aura.root.visible = v.coin.visible = false;
+        for (const s of v.slots) { if (s.obj) { s.obj.visible = false; s.obj.userData.free = true; } s.type = -1; s.obj = null; }
+        for (const sp of v.digs) sp.visible = false;
+        for (const g of v.ghosts) g.s.visible = false;
+        return;
+      }
       t.root.position.set(x, d.y, d.z);
       t.root.rotation.y = turnLerp(p.turn, l.turn, k);
       let clip = l.clip, cf = l.frame + (this.state === "play" ? l.speed * k : 0), shadow = lerp(p.shadow, l.shadow, k);
@@ -506,7 +521,7 @@ export class Game {
       // the others' markers on this belt (shown whoever's in: hidden only past 600 either way, 0x86706B88)
       for (const g of v.ghosts) {
         const o = at[g.q], dz = (o.row - d.row) / R.SCROLL + o.z - d.z;
-        g.s.visible = this.state === "play" && !v.end && Math.abs(dz) <= GHOST.far && !!g.s.material.map;
+        g.s.visible = this.state === "play" && !v.end && !this.empty[g.q] && Math.abs(dz) <= GHOST.far && !!g.s.material.map;
         g.s.position.set(v.x0 + o.x, GHOST.y, d.z + dz);
       }
     });
@@ -541,7 +556,7 @@ export class Game {
     return sp;
   }
   // each lane's rank now (the coins): as the places go
-  ranks() { return R.placesOf(this.lanes.map((l) => l.finish), this.lanes.map((l) => l.prior), this.lanes.map((l) => l.progress)); }
+  ranks() { return R.placesOf(this.lanes.map((l) => l.finish), this.lanes.map((l) => l.prior), this.lanes.map((l) => l.progress), this.empty); }
 
   // the camera now: { eye, at, fov }
   camera() {
@@ -562,9 +577,10 @@ export class Game {
   }
 
   // ---- the end ----
+  // (the seats there: an empty seat isn't ranked, tools/togepi_rules.py places())
   results() {
     const places = this.places();
-    return [0, 1, 2, 3].map((i) => ({ i, score: this.scores ? this.scores[i] : this.timeOf(i), place: places[i] }));
+    return [0, 1, 2, 3].filter((i) => !this.empty[i]).map((i) => ({ i, score: this.scores ? this.scores[i] : this.timeOf(i), place: places[i] }));
   }
   celebrate() { return this.results(); }
 }

@@ -33,7 +33,8 @@ const LEFT_COLOURS = [[255, 255, 155], [255, 100, 0]];
 // Landscape: one camera on all four players, like the game. Portrait: your
 // Chansey fills the screen (with whatever of your neighbours is in the
 // picture, at the edges) and the other three get small boxed views along the
-// top, each framed on its own bay.
+// top, each framed on its own bay. An empty seat's bay (online, the CPUs off)
+// stays in the picture with no one in it, and gets no box.
 export async function create(shell, onProgress) {
   const assets = await loadAssets("assets/egg/", onProgress);
   const scene = new THREE.Scene();
@@ -95,7 +96,7 @@ export async function create(shell, onProgress) {
   const sideOf = (x) => (x < shell.app.clientWidth / 2 ? -1 : 1);
   const KEYS = { ArrowLeft: -1, KeyA: -1, KeyQ: -1, KeyL: -1, ArrowRight: 1, KeyD: 1, KeyE: 1, KeyR: 1 };
 
-  let views = [], cardEls = [];
+  let views = [], cardEls = [], portraitCams = null;
   const api = {
     game, scene, fx, stage, assets,
     get views() { return views; },
@@ -126,7 +127,8 @@ export async function create(shell, onProgress) {
       // front up to where the eggs are a moment from the hands; the boxes keep
       // that shape and sit apart, so each player's area reads on its own
       const MINI = { width: ZONE_W + 0.1, bottom: -0.5, top: 2.3 };
-      const cams = views.length === 4 ? views.map((v) => v.cam) : [0, 1, 2, 3].map(() => new THREE.PerspectiveCamera(22, 1, 0.1, 200));
+      // (the boxes are the seats there: with empty seats, fewer)
+      const cams = (portraitCams ||= [0, 1, 2, 3].map(() => new THREE.PerspectiveCamera(22, 1, 0.1, 200)));
       views = shell.miniViews(W, H, safe, me, cams, MINI.width / (MINI.top - MINI.bottom), { width: ZONE_W }, MINI);
       for (const v of views) frameCamera(v);
       shell.frameMinis(views, cards, frames);
@@ -139,8 +141,9 @@ export async function create(shell, onProgress) {
     // round: { level, seed, me, control, delay, lineup } and, online, the server's "start" message
     reset(round) {
       const m = round.start;
-      const cpus = round.online && round.lineup ? [0, 1, 2, 3].map((z) => !round.lineup.some((p) => p.seat === z)) : undefined; // (the server's: the seats no one was dealt)
-      game.reset(round.level, round.seed, { me: round.me, control: round.control, delay: round.delay, cpus,
+      // (the server's: the seats no one was dealt, but for the empty ones: no one plays those, not even a CPU)
+      const cpus = round.online && round.lineup ? [0, 1, 2, 3].map((z) => !round.empty?.[z] && !round.lineup.some((p) => p.seat === z)) : undefined;
+      game.reset(round.level, round.seed, { me: round.me, control: round.control, delay: round.delay, cpus, empty: round.empty,
                                             start: m && { c: m.c, human: m.human, leans: m.leans, ups: m.ups, f: m.f } });
       songDue = false;
       held.clear(); order = [];
@@ -172,6 +175,7 @@ export async function create(shell, onProgress) {
       if (eggsPic && left.firstElementChild.src !== eggsPic) left.firstElementChild.src = eggsPic;
       // each player's count, in its colours (over the shell's plain digits)
       cardEls.map((c) => c.querySelector(".num")).forEach((el, z) => {
+        if (game.empty[z]) return; // (its card's hidden)
         const e = game.seats[z].eggs;
         if (el.firstElementChild?.classList.contains("eg-big") && el.dataset.egg === String(e)) return;
         const html = digitsOf(e, (d) => z + "big" + d, "eg-big");

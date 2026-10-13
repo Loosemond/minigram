@@ -102,30 +102,78 @@
     </div>
   </section>
 
+  <!-- online: the public rooms, Quick play, a new room, or one by its code -->
+  <section id="online" class="screen" hidden>
+    <div class="panel">
+      <h2>Play online</h2>
+      <label id="you"><span>Your name</span><input id="myName" maxlength="16" spellcheck="false" autocomplete="nickname"></label>
+      <p id="onlineStatus" class="hint"></p>
+      <button id="quick" class="big">Quick play</button>
+      <button id="make" class="big alt">Make a room</button>
+      <h3>Open rooms</h3>
+      <ul id="rooms"></ul>
+      <p id="noRooms" class="hint">No open rooms right now. Quick play makes one others can join.</p>
+      <form id="join" autocomplete="off">
+        <input id="joinCode" maxlength="6" placeholder="Room code" aria-label="Room code" spellcheck="false" autocapitalize="characters">
+        <button class="small" type="submit">Join</button>
+      </form>
+      <button id="back" class="small">Back</button>
+    </div>
+  </section>
+
   <section id="lobby" class="screen" hidden>
     <div class="panel">
       <div class="art short"><img class="logo" alt=""></div>
       <h2>Room <span id="code">····</span></h2>
+      <div id="privacy" class="levels" role="radiogroup" aria-label="Who can join">
+        <button role="radio" data-public="true">Public</button>
+        <button role="radio" data-public="false">Private</button>
+      </div>
       <p class="hint" id="note">Up to 4 players. Empty spots are CPUs.</p>
       <p id="status" class="hint"></p>
+      <!-- the vote on the next game (and the level), then the game it's on -->
+      <div id="vote" hidden>
+        <h3 id="voteTitle">Vote for the next game</h3>
+        <div class="choices"></div>
+        <div class="levels" id="voteLevels" role="radiogroup" aria-label="CPU level">
+          <button role="radio" data-level="easy">Easy<span class="voters"></span></button>
+          <button role="radio" data-level="normal">Normal<span class="voters"></span></button>
+          <button role="radio" data-level="hard">Hard<span class="voters"></span></button>
+        </div>
+        <p class="hint" id="voteNote"></p>
+      </div>
+      <ol id="seats"></ol>
+      <button id="reset" class="small" hidden>Reset points</button>
+      <div id="settings">
+        <div class="row"><span>Next game</span>
+          <div class="levels" id="mode" role="radiogroup" aria-label="How the next game is chosen">
+            <button role="radio" data-mode="pick">Host picks</button>
+            <button role="radio" data-mode="random">Random</button>
+            <button role="radio" data-mode="vote">Vote</button>
+          </div>
+        </div>
+        <div class="row"><span>CPUs</span>
+          <div class="levels" id="bots" role="radiogroup" aria-label="CPUs in the empty spots">
+            <button role="radio" data-bots="true">On</button>
+            <button role="radio" data-bots="false">Off</button>
+          </div>
+        </div>
+        <div class="row" id="levelRow"><span>CPU level</span>
+          <div class="levels" id="roomLevel" role="radiogroup" aria-label="CPU level">
+            <button role="radio" data-level="easy">Easy</button>
+            <button role="radio" data-level="normal">Normal</button>
+            <button role="radio" data-level="hard">Hard</button>
+          </div>
+        </div>
+        <div class="games" role="radiogroup" aria-label="Minigame"></div>
+      </div>
+      <div class="levels controls" role="radiogroup" aria-label="Controls" hidden></div>
+      <button id="start" class="big">Start</button>
       <button id="invite" class="big alt">Invite friends</button>
       <div id="link">
         <input id="linkText" readonly aria-label="Invite link" spellcheck="false">
         <button id="copy" class="small" type="button">Copy</button>
       </div>
-      <ol id="seats"></ol>
-      <div class="games" role="radiogroup" aria-label="Minigame"></div>
-      <div class="levels controls" role="radiogroup" aria-label="Controls" hidden></div>
-      <div class="levels" role="radiogroup" aria-label="CPU level">
-        <button role="radio" data-level="easy">Easy</button>
-        <button role="radio" data-level="normal">Normal</button>
-        <button role="radio" data-level="hard">Hard</button>
-      </div>
-      <button id="start" class="big">Start</button>
-      <form id="join" autocomplete="off">
-        <input id="joinCode" maxlength="6" placeholder="Room code" aria-label="Room code" spellcheck="false" autocapitalize="characters">
-        <button class="small" type="submit">Join</button>
-      </form>
       <button id="leave" class="small">Leave</button>
     </div>
   </section>

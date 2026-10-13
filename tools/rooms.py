@@ -1,9 +1,13 @@
 """Online rooms for the web minigames: a small WebSocket server, standard
 library only. tools/serve_web.py serves it at /ws, next to the pages.
 
-Up to four people share a room, found by a four-letter code. Whoever has been
-in the room longest is its host: they pick the minigame and the level and
-start the rounds. A round is the same for everyone: the server deals it (Egg
+Up to four people share a room, found by a four-letter code; a public one is
+also in the lobby's list (Quick play finds one). Whoever has been in the room
+longest is its host: they choose how the next game is found (the host picks
+it; a random one, each of the twelve once before any comes again; or a vote on
+three, and on the level), the level, whether CPUs fill the empty seats (with
+two or more people they can be left empty), and start the rounds. Each round's
+places add up to running points, kept while the room lasts. A round is the same for everyone: the server deals it (Egg
 Emergency's drops, Clear Cut Challenge's logs) and a start time on its own
 clock (the clients sync to it with ping/pong). Each device plays its own
 player, and the host's device also plays the CPUs; they send what their players
@@ -85,6 +89,13 @@ MAX_MESSAGE = 8192
 RATE, BURST = 60, 400  # messages a second a connection may send, and in one go
 CHANGE_GAP = 0.5  # s between renames, or level or game changes
 MAX_ROOMS = 500
+MODES = ("pick", "random", "vote")  # how the next game is found: the host's pick, at random, or a vote
+CHOICES = 3  # games in a vote
+VOTE_TIME = 15  # s a vote lasts, unless everyone's voted before
+SHOW = dict(random=2.5, vote=2)  # s the next game is shown before its round (the spin, the vote's winner), at least
+LOAD_MAX = 10  # s a round waits for the devices still loading its game
+POINTS = (3, 2, 1, 0)  # running points for 1st to 4th (tied: the better place's)
+LIST_MAX = 40  # rooms in the lobby's list
 AUTH_MAX_AGE = 86400  # s a Telegram login stays good
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TYPESAFE_KEY = os.environ.get("TYPESAFE_API_KEY", "")
@@ -93,6 +104,8 @@ GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"  # RFC 6455
 
 lock = threading.RLock()  # guards rooms and everything in them
 rooms = {}
+watchers = set()  # the lobbies' connections: they get the public rooms' list
+listed = None  # the list as they last got it
 
 
 def clock():
@@ -194,15 +207,26 @@ class Room:
     def __init__(self, code):
         self.code = code
         self.members = {}  # seat -> Member
-        self.state = "lobby"  # or "playing"
+        self.state = "lobby"  # "voting" (on the next game), "loading" (its game, on every device), "playing"
         self.round = 0
         self.level = "normal"
         self.minigame = "egg"
+        self.mode = "pick"  # MODES
+        self.public = False  # in the lobby's list
+        self.bots = True  # CPUs play the seats no one's in; off (with two or more people), they're empty
         self.seed = self.at = self.go = 0
-        self.lineup = {}  # seat -> {id, name}: who plays this round; the other seats are CPUs
+        self.lineup = {}  # seat -> {id, name}: who plays this round; the other seats are CPUs, or empty
+        self.empty = []  # the round's empty seats
         self.game = None  # the round's rules and scores (egg_rules.Round, clearcut_rules.Round, ... pichu_rules.Round)
         self.started = None
         self.timer = None  # Eager Eevee: the next prize's giving; Streaming Stampede: the next answer's; Pichu: the finish's
+        self.step = 0  # counts the changes of state (a timer for one that's over does nothing)
+        self.bag = []  # Random: the games still to come before any comes again
+        self.last = None  # the game last played
+        self.vote = None  # voting, and the loading after it: {games, levels, votes: seat -> {game, level}, ends, won}
+        self.loading = None  # {game, by (the mode), ready: seats, since, show, ends}
+        self.points = {}  # a person's id, or "cpu<seat>" -> running points
+        self.gained = {}  # the last round's: seat -> points
 
     def broadcast(self, msg, skip=None):
         for m in self.members.values():
@@ -245,17 +269,45 @@ class Room:
     def lineup_info(self):
         return [dict(seat=s, name=p["name"], here=self.playing(s)) for s, p in sorted(self.lineup.items())]
 
+    def people(self):
+        """The members here now (not reconnecting)."""
+        return [m for m in self.members.values() if m.away is None]
+
+    def cpus_on(self):
+        """CPUs play the empty seats: unless they're off and two or more people are here."""
+        return self.bots or len(self.people()) < 2
+
+    def standings(self):
+        """Each seat's running points: its person's, or (CPUs on) its CPU's; None, an empty seat."""
+        cpus = self.cpus_on()
+        return [self.points.get(self.members[s].id, 0) if s in self.members else self.points.get("cpu%d" % s, 0) if cpus else None
+                for s in range(SEATS)]
+
     def snapshot(self):
+        v, l = self.vote, self.loading
         return dict(t="room", room=self.code, state=self.state, round=self.round, level=self.level, game=self.minigame,
-                    host=self.host(),
+                    host=self.host(), mode=self.mode, public=self.public, bots=self.bots, cpus=self.cpus_on(),
+                    points=self.standings(), last=self.last,
                     players=[dict(seat=s, name=m.name, away=m.away is not None) for s, m in sorted(self.members.items())],
-                    lineup=self.lineup_info() if self.state == "playing" else None)
+                    lineup=self.lineup_info() if self.state == "playing" else None,
+                    vote=v and dict(games=v["games"], levels=v["levels"], ends=v["ends"], won=v.get("won"),
+                                    votes=[v["votes"].get(s) for s in range(SEATS)]),
+                    loading=l and dict(game=l["game"], by=l["by"], level=self.level, ends=l["ends"],
+                                       waiting=sorted(s for s, m in self.members.items()
+                                                      if m.away is None and s not in l["ready"])))
+
+    def listing(self):
+        """The room in the lobby's list."""
+        host = self.members.get(self.host())
+        return dict(room=self.code, host=host.name if host else "", players=len(self.members), mode=self.mode,
+                    state=self.state, game=self.minigame if self.state in ("loading", "playing") else None)
 
     def start_msg(self):
         """The round, as a device needs it to play (also to rejoin it midway)."""
         g = self.game
         msg = dict(t="start", game=self.minigame, round=self.round, seed=self.seed, level=self.level, at=self.at,
-                   go=self.go, host=self.host(), lineup=self.lineup_info(), rtt=[self.rtt(s) for s in range(SEATS)])
+                   go=self.go, host=self.host(), lineup=self.lineup_info(), rtt=[self.rtt(s) for s in range(SEATS)],
+                   empty=self.empty)
         if self.minigame in ("clearcut", "eevee", "stampede", "pichu", "togepi", "golbat", "barrier", "rollout", "topsy",
                              "furret", "delibird"):
             msg.update(g.wire())
@@ -373,8 +425,41 @@ def _named(room, m, name, fine, quiet=False):
 
 # ------------------------------------------------------------ rooms
 
+def quick_room():
+    """Quick play: the public room with a free seat and the most people in it,
+    one between rounds before one playing; None if there's none."""
+    best = None
+    for r in rooms.values():
+        if r.public and r.members and len(r.members) < SEATS:
+            key = (r.state != "playing", len(r.members))
+            if best is None or key > best[0]:
+                best = (key, r)
+    return best and best[1]
+
+
+def public_rooms():
+    """The lobby's list: the public rooms with a seat free, those between rounds first, then the fullest."""
+    rs = sorted((r for r in rooms.values() if r.public and r.members and len(r.members) < SEATS),
+                key=lambda r: (r.state == "playing", -len(r.members), r.code))
+    return [r.listing() for r in rs[:LIST_MAX]]
+
+
+def tell_lobbies(force=False):
+    """The list to the lobbies, if it's changed."""
+    global listed
+    if not watchers:
+        return
+    now = public_rooms()
+    if now != listed or force:
+        listed = now
+        text = json.dumps(dict(t="rooms", rooms=now), separators=(",", ":"))
+        for ws in list(watchers):
+            ws.send(text)
+
+
 def join(ws, msg):
-    """"hello": join the room msg["room"] (or a new one). Returns (room, member), or None."""
+    """"hello": join the room msg["room"] (or a new one: with "quick", the one
+    Quick play finds first). Returns (room, member), or None."""
     cid = str(msg.get("id") or "")[:64] or "%016x" % random.getrandbits(64)
     name = msg.get("name")
     user = telegram_user(msg.get("tg"))
@@ -384,6 +469,9 @@ def join(ws, msg):
         cid = "web-" + cid  # only a signed Telegram login gets a Telegram player's seat
     code = str(msg.get("room") or "").strip().upper()
     with lock:
+        quick = quick_room() if msg.get("quick") and not code else None
+        if quick:
+            code = quick.code
         if code:
             if not (4 <= len(code) <= 6 and all(c in LETTERS for c in code)):
                 return _error(ws, "bad-code")
@@ -401,6 +489,11 @@ def join(ws, msg):
             room = rooms[code] = Room(code)
             if msg.get("game") in GAMES:  # the one on the title of whoever makes the room
                 room.minigame = msg["game"]
+            if msg.get("mode") in MODES:
+                room.mode = msg["mode"]
+            room.public = bool(msg.get("public") or msg.get("quick"))
+            if msg.get("quick"):
+                room.mode = "vote"
         m = next((m for m in room.members.values() if m.id == cid), None)
         if m:  # the same player again (a reload, a new connection): same seat
             if m.ws and m.ws is not ws:
@@ -426,38 +519,148 @@ def go_delay(game):
     return GO_DELAY * COUNT_STEPS.get(game, COUNT_STEP) / COUNT_STEP
 
 
+def later(room, secs, fn):
+    """fn(room) in secs, if the room's still in the same state then."""
+    step = room.step
+
+    def fire():
+        with lock:
+            if rooms.get(room.code) is room and room.step == step:
+                fn(room)
+    t = threading.Timer(max(0.0, secs), fire)
+    t.daemon = True
+    t.start()
+
+
+def next_game(room):
+    """The host's Start (or Next game): the game as the room's mode finds it."""
+    if room.mode == "vote":
+        room.step += 1
+        room.state = "voting"
+        room.vote = dict(games=random.sample([g for g in GAMES if g != room.last], CHOICES), levels=room.cpus_on(),
+                         votes={}, ends=clock() + VOTE_TIME * 1000)
+        later(room, VOTE_TIME, close_vote)
+        room.broadcast(room.snapshot())
+    elif room.mode == "random":
+        if not room.bag:  # each once (and not the last one first) before any comes again
+            room.bag = random.sample(GAMES, len(GAMES))
+            if room.bag[0] == room.last:
+                room.bag.append(room.bag.pop(0))
+        load(room, room.bag.pop(0))
+    else:
+        start(room)
+
+
+def vote(room, m, msg):
+    """A vote, or a changed one: for one of the games, and (CPUs on) a level."""
+    v = room.vote
+    mine = v["votes"].setdefault(m.seat, {})
+    if msg.get("game") in v["games"]:
+        mine["game"] = msg["game"]
+    if v["levels"] and msg.get("level") in LEVELS:
+        mine["level"] = msg["level"]
+    room.broadcast(room.snapshot())
+    vote_check(room)
+
+
+def vote_check(room):
+    """The vote's over once everyone here has voted."""
+    if room.state != "voting":
+        return
+    v, people = room.vote, room.people()
+    if people and all("game" in v["votes"].get(m.seat, {}) and (not v["levels"] or "level" in v["votes"][m.seat])
+                      for m in people):
+        close_vote(room)
+
+
+def close_vote(room):
+    """The most votes win (a tie: one of them at random; no votes: one of the
+    three), and the level the same way (no votes: as it was)."""
+    v = room.vote
+    for m in list(v["votes"]):
+        if m not in room.members:  # (a vote from someone who's left doesn't count)
+            del v["votes"][m]
+
+    def most(options, k):
+        n = {o: sum(x.get(k) == o for x in v["votes"].values()) for o in options}
+        top = max(n.values())
+        return random.choice([o for o in options if n[o] == top]), top
+
+    v["won"] = most(v["games"], "game")[0]
+    if v["levels"]:
+        level, n = most(LEVELS, "level")
+        if n:
+            room.level = level
+    load(room, v["won"])
+
+
+def load(room, game):
+    """The next game, on every device before its round starts: it shows a
+    moment (the spin, the vote's winner), and starts once every device here has
+    it loaded, or LOAD_MAX on."""
+    room.step += 1
+    room.state = "loading"
+    room.minigame = game
+    room.loading = dict(game=game, by=room.mode, ready=set(), since=time.monotonic(), show=SHOW.get(room.mode, 0),
+                        ends=clock() + LOAD_MAX * 1000)
+    later(room, room.loading["show"], load_check)
+    later(room, LOAD_MAX, lambda r: start(r) if r.people() else back(r))
+    room.broadcast(room.snapshot())
+
+
+def load_check(room):
+    if room.state != "loading":
+        return
+    l = room.loading
+    if time.monotonic() - l["since"] >= l["show"] - 0.01 and all(m.seat in l["ready"] for m in room.people()) and room.people():
+        start(room)
+
+
+def back(room):
+    """To between rounds (no one's here to play)."""
+    room.step += 1
+    room.state, room.vote, room.loading = "lobby", None, None
+    room.broadcast(room.snapshot())
+
+
 def start(room):
     room.round += 1
+    room.step += 1
     room.state = "playing"
+    room.vote = room.loading = None
     room.seed = random.getrandbits(31)
     room.at = clock() + LEAD
     room.go = room.at + go_delay(room.minigame)
     room.lineup = {s: dict(id=m.id, name=m.name) for s, m in room.members.items() if m.away is None}
+    # the seats no one's in: CPUs, or (CPUs off) empty; the rules take the empty ones only when there are some
+    room.empty = [] if room.cpus_on() else [s for s in range(SEATS) if s not in room.lineup]
+    cpus = [s not in room.lineup and s not in room.empty for s in range(SEATS)]
+    kw = dict(empty=[s in room.empty for s in range(SEATS)]) if room.empty else {}
     if room.minigame == "clearcut":
-        room.game = clearcut_rules.Round(room.seed, room.level, cpus=len(room.lineup) < SEATS)
+        room.game = clearcut_rules.Round(room.seed, room.level, cpus=any(cpus), **kw)
     elif room.minigame == "eevee":
-        room.game = eevee_rules.Round(room.seed, room.level, cpus=len(room.lineup) < SEATS)
+        room.game = eevee_rules.Round(room.seed, room.level, cpus=any(cpus), **kw)
     elif room.minigame == "stampede":
-        room.game = stampede_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
+        room.game = stampede_rules.Round(room.seed, room.level, cpus=cpus, **kw)
     elif room.minigame == "pichu":
-        room.game = pichu_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)],
+        room.game = pichu_rules.Round(room.seed, room.level, cpus=cpus, **kw,
                                       after=room.game)  # (its last round: a "play again" if it was one of these)
     elif room.minigame == "togepi":
-        room.game = togepi_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
+        room.game = togepi_rules.Round(room.seed, room.level, cpus=cpus, **kw)
     elif room.minigame == "golbat":
-        room.game = golbat_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
+        room.game = golbat_rules.Round(room.seed, room.level, cpus=cpus, **kw)
     elif room.minigame == "barrier":
-        room.game = barrier_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
+        room.game = barrier_rules.Round(room.seed, room.level, cpus=cpus, **kw)
     elif room.minigame == "rollout":
-        room.game = rollout_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
+        room.game = rollout_rules.Round(room.seed, room.level, cpus=cpus, **kw)
     elif room.minigame == "topsy":
-        room.game = topsy_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
+        room.game = topsy_rules.Round(room.seed, room.level, cpus=cpus, **kw)
     elif room.minigame == "furret":
-        room.game = furret_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
+        room.game = furret_rules.Round(room.seed, room.level, cpus=cpus, **kw)
     elif room.minigame == "delibird":
-        room.game = delibird_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
+        room.game = delibird_rules.Round(room.seed, room.level, cpus=cpus, **kw)
     else:
-        room.game = egg_rules.Round(room.seed, room.level, cpus=[s not in room.lineup for s in range(SEATS)])
+        room.game = egg_rules.Round(room.seed, room.level, cpus=cpus, **kw)
     room.started = time.monotonic()
     for m in room.members.values():
         m.done = False
@@ -505,8 +708,8 @@ def relay(room, m, t, msg):
     if room.state != "playing" or msg.get("r") != room.round or type(s) is not int or not 0 <= s < SEATS \
             or not room.playing(m.seat):
         return
-    if room.playing(s) and s != m.seat:
-        return  # someone else's player
+    if room.playing(s) and s != m.seat or s in room.empty:
+        return  # someone else's player (or no one's)
     if not room.playing(s) and m.seat != room.host():
         return  # the CPUs are the host's
     g = room.game
@@ -712,10 +915,35 @@ def check_end(room):
         return
     for s in range(SEATS):
         settle(room, s, math.inf)
-    results = dict(t="results", round=room.round, scores=g.scores, lineup=room.lineup_info())
-    room.state, room.lineup = "lobby", {}
+    # the running points, from the places: each seat's person's (even one who's left since), or its CPU's
+    who = [None if s in room.empty else room.lineup[s]["id"] if s in room.lineup else "cpu%d" % s for s in range(SEATS)]
+    room.gained = {}
+    for s, p in enumerate(places(room)):
+        if p is not None and who[s]:
+            room.gained[s] = POINTS[p - 1]
+            room.points[who[s]] = room.points.get(who[s], 0) + POINTS[p - 1]
+    results = dict(t="results", round=room.round, scores=g.scores, lineup=room.lineup_info(),
+                   gained=[room.gained.get(s) for s in range(SEATS)],
+                   points=[room.points.get(k) if k else None for k in who])
+    room.step += 1
+    room.state, room.lineup, room.last = "lobby", {}, room.minigame
     room.broadcast(results)
     room.broadcast(room.snapshot())
+
+
+def places(room):
+    """The round's places (1 the best; tied, the better one), None for an empty
+    seat: as the game's rules have them (places()), else by the scores."""
+    g, ps = room.game, None
+    rank = getattr(g, "places", None)
+    if callable(rank):
+        ps = list(rank())
+    else:
+        lower = room.minigame in ("togepi", "rollout")  # (times: the less the better, none the worst)
+        key = [(-math.inf if v is None else -v if lower else v) for v in g.scores]
+        ps = [1 + sum(k > key[s] for k in key) for s in range(SEATS)]
+    ps = [None if s in room.empty else p for s, p in enumerate(ps)]
+    return [None if p is None else 1 + sum(q is not None and q < p for q in ps) for p in ps]
 
 
 def remove(room, m):
@@ -729,8 +957,12 @@ def remove(room, m):
         rooms.pop(room.code, None)
         return
     room.broadcast(dict(t="left", seat=m.seat))
+    if room.vote:
+        room.vote["votes"].pop(m.seat, None)
     room.broadcast(room.snapshot())
     check_end(room)
+    vote_check(room)
+    load_check(room)
 
 
 def handle(room, m, msg):
@@ -747,21 +979,40 @@ def handle(room, m, msg):
         if room.state == "playing" and msg.get("r") == room.round and room.playing(m.seat):
             m.done = True
             check_end(room)
-    elif t in ("name", "level", "game"):
+    elif t in ("name", "level", "game", "mode", "public", "bots", "reset"):
         if time.monotonic() - m.changed < CHANGE_GAP:
             return True
         m.changed = time.monotonic()
+        host = room.state == "lobby" and m.seat == room.host()
         if t == "name" and not m.verified:
             rename(room, m, msg.get("name"))
-        elif t == "level" and room.state == "lobby" and m.seat == room.host() and msg.get("level") in LEVELS:
+        elif t == "level" and host and msg.get("level") in LEVELS:
             room.level = msg["level"]
-            room.broadcast(room.snapshot())
-        elif t == "game" and room.state == "lobby" and m.seat == room.host() and msg.get("game") in GAMES:
+        elif t == "game" and host and msg.get("game") in GAMES:
             room.minigame = msg["game"]
+        elif t == "mode" and host and msg.get("mode") in MODES:
+            room.mode = msg["mode"]
+        elif t == "public" and m.seat == room.host():  # (any time)
+            room.public = msg.get("on") is True
+        elif t == "bots" and host:
+            room.bots = msg.get("on") is not False
+        elif t == "reset" and host:  # the running points from nothing
+            room.points, room.gained = {}, {}
+        else:
+            return True
+        if t != "name":
             room.broadcast(room.snapshot())
+    elif t == "vote":
+        if room.state == "voting":
+            vote(room, m, msg)
+    elif t == "ready":  # its device has the next game loaded
+        if room.state == "loading" and msg.get("game") == room.minigame:
+            room.loading["ready"].add(m.seat)
+            room.broadcast(room.snapshot())
+            load_check(room)
     elif t == "start":
         if room.state == "lobby" and m.seat == room.host():
-            start(room)
+            next_game(room)
     elif t == "leave":
         remove(room, m)
         return False
@@ -785,6 +1036,7 @@ def _reap():
                             settle(room, s, room.now() - SETTLE_LAG)
                     advance(room)
                     check_end(room)
+            tell_lobbies()
 
 
 _reaper = None
@@ -830,7 +1082,15 @@ def serve(handler):
             if not isinstance(msg, dict):
                 continue
             if m is None:
+                if msg.get("t") == "hello" and msg.get("browse"):  # a lobby: the public rooms, as they change
+                    with lock:
+                        watchers.add(ws)
+                        ws.send(json.dumps(dict(t="welcome", browse=True, now=clock())))
+                        ws.send(json.dumps(dict(t="rooms", rooms=public_rooms()), separators=(",", ":")))
+                    continue
                 if msg.get("t") == "hello":
+                    with lock:
+                        watchers.discard(ws)
                     joined = join(ws, msg)
                     if not joined:
                         break
@@ -845,8 +1105,11 @@ def serve(handler):
         pass
     finally:
         with lock:
+            watchers.discard(ws)
             if m is not None and m.ws is ws:  # dropped: keep the seat for a while
                 m.ws, m.away = None, time.monotonic()
                 room.broadcast(room.snapshot())
+                vote_check(room)
+                load_check(room)
         ws.close()
         ws.writer.join(2)  # let the last messages (an error, the close) go out first

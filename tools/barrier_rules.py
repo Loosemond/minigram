@@ -107,12 +107,15 @@ def s16(v):
 
 EDGES = []
 for _a, _b in [(0, 1), (2, 0), (3, 4), (5, 3), (6, 7), (8, 6), (9, 10), (11, 9)]:
-    EDGES.append((_a, _b, norm(-(VERTS[_b][1] - VERTS[_a][1]), VERTS[_b][0] - VERTS[_a][0])))
+    EDGES.append((VERTS[_a], VERTS[_b], norm(-(VERTS[_b][1] - VERTS[_a][1]), VERTS[_b][0] - VERTS[_a][0])))
+# (the remake's: an empty seat's lane shut at its mouth, tip to tip: rules.js SHUT)
+SHUT = [(TIPS[_a], TIPS[_b], norm(-(TIPS[_b][1] - TIPS[_a][1]), TIPS[_b][0] - TIPS[_a][0]))
+        for _a, _b in [(0, 1), (3, 0), (1, 2), (2, 3)]]
 
 
 class Mime:
     __slots__ = ("z", "human", "x", "y", "prevx", "prevy", "icpt", "xmin", "xmax", "timer", "smash", "moving",
-                 "wander", "target", "aimSide", "score")
+                 "wander", "target", "aimSide", "score", "empty")
 
     def copy(self):
         o = Mime.__new__(Mime)
@@ -139,7 +142,8 @@ class Bar:
 class World:
     """One round's world (rules.js's World)."""
 
-    def __init__(self, seed, level="normal", cpus=(False, True, True, True)):
+    def __init__(self, seed, level="normal", cpus=(False, True, True, True), empty=None):
+        empty = [bool(e) for e in empty] if empty else [False] * SEATS
         self.level = level_code(level, cpus)
         self.seed = seed & 0xFFFFFFFF
         self.t = -1
@@ -159,9 +163,11 @@ class World:
             m.z, m.human, m.x, m.y, m.prevx, m.prevy = z, not cpus[z], x, y, x, y
             m.icpt, m.xmin, m.xmax = y - slope * x, x - half, x + half
             m.timer, m.smash, m.moving, m.wander, m.target, m.aimSide, m.score = 0, False, False, True, 0.5, 0, 0
+            m.empty = empty[z]
             self.m.append(m)
         for m in self.m:
             m.aimSide = self.u() - 0.5
+        self.edges = EDGES + [e for z, e in enumerate(SHUT) if empty[z]]
 
     def rnd(self):
         self.seed = (self.seed * 1664525 + 1013904223) & 0xFFFFFFFF
@@ -202,6 +208,8 @@ class World:
 
     def substep(self, pads, playing):
         for m in self.m:
+            if m.empty:
+                continue
             if playing:
                 self.mime(m, pads[m.z] if m.z < len(pads) else None)
             m.timer += 1
@@ -209,7 +217,8 @@ class World:
             self.ball(b, playing)
             b.timer += 1
         for m in self.m:
-            self.barrier(m, playing)
+            if not m.empty:
+                self.barrier(m, playing)
 
     # ---- a Mr. Mime ----
     def mime(self, m, pad):
@@ -388,6 +397,8 @@ class World:
 
     def goal(self, b):
         q = (0 if b.y > 0 else 2) if b.x <= 0 else (1 if b.y > 0 else 3)
+        if self.m[q].empty:
+            return
         o = b.owner
         self.m[q].score -= 1
         if o != -1 and o != q:
@@ -399,9 +410,7 @@ class World:
     def walls(self, b, playing):
         rx, ry = b.x - b.lastx, b.y - b.lasty
         hit = False
-        for a, e, n in EDGES:
-            ax, ay = VERTS[a]
-            bx, by = VERTS[e]
+        for (ax, ay), (bx, by), n in self.edges:
             r = sweep(b, rx, ry, ax, ay, bx - ax, by - ay, n[0], n[1])
             if not r:
                 continue
@@ -588,9 +597,10 @@ class Round:
     """One round's world on the server, run as far as the pads that can still
     come in allow."""
 
-    def __init__(self, seed, level="normal", cpus=(False, True, True, True)):
+    def __init__(self, seed, level="normal", cpus=(False, True, True, True), empty=None):
         self.cpus = list(cpus)
-        self.world = World(seed, level, self.cpus)
+        self.empty = [bool(e) for e in empty] if empty else [False] * SEATS  # (no one at all: online, the CPUs off)
+        self.world = World(seed, level, self.cpus, self.empty)
         self.pads = [[] for _ in range(SEATS)]  # each person's pad changes: [frame, stick x, A]
         self.at = [0] * SEATS  # where each one's list has been read to
         self.done = None  # how it ended, once decided: dict(f, p)
@@ -611,14 +621,14 @@ class Round:
         w = self.world
         while w.end is None and w.t < t:
             f = w.t + 1
-            w.step(f, [None if self.cpus[s] else self.pad_at(s, f) for s in range(SEATS)])
+            w.step(f, [None if self.cpus[s] or self.empty[s] else self.pad_at(s, f) for s in range(SEATS)])
             w.events = []
 
     def pad(self, s, f, x, a, now, allow):
         """Seat s's pad went to stick x (and A if a) on frame f (its device's
         word); it came in at round time now, and may be at most allow s old.
         Returns the frame it counts on, or None."""
-        if self.cpus[s] or self.done or type(f) is not int or type(x) is not int or a not in (0, 1):
+        if self.cpus[s] or self.empty[s] or self.done or type(f) is not int or type(x) is not int or a not in (0, 1):
             return None
         if not -64 <= x <= 64:
             return None
@@ -633,7 +643,7 @@ class Round:
 
     def wire(self):
         """What a device needs to rejoin the round: how it ended (once decided) and the people's pads so far."""
-        return dict(bb=dict(done=self.done, pads=[None if self.cpus[s] else [list(e) for e in self.pads[s]]
+        return dict(bb=dict(done=self.done, pads=[None if self.cpus[s] or self.empty[s] else [list(e) for e in self.pads[s]]
                                                   for s in range(SEATS)]))
 
     def result(self):
@@ -643,6 +653,13 @@ class Round:
     def scores(self):
         """Each seat's points (as far as the world's been run)."""
         return self.done["p"] if self.done else self.world.scores
+
+    def places(self):
+        """Each seat's place, as the devices rank them (game.js places()): by points, the most first,
+        ties sharing the better place; None for an empty seat."""
+        p = self.scores
+        here = [s for s in range(SEATS) if not self.empty[s]]
+        return [None if self.empty[s] else 1 + sum(1 for o in here if p[o] > p[s]) for s in range(SEATS)]
 
     def settle(self, now, allow):
         """Run the world as far as no pad still on its way could change; once

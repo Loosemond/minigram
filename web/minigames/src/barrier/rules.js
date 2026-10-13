@@ -78,6 +78,13 @@ const EDGES = [[0, 1], [2, 0], [3, 4], [5, 3], [6, 7], [8, 6], [9, 10], [11, 9]]
   return { a, b, n };
 });
 const POSTS = [[0, [0, -1]], [3, [1, 0]], [6, [0, 1]], [9, [-1, 0]]];
+// (the remake's, not the game's: an empty seat, online with the CPUs off, has
+// no Mr. Mime, and its lane's shut off at its mouth by a wall from tip to tip,
+// a ball bouncing off it as off the others; its normal towards the middle)
+export const SHUT = [[0, 1], [3, 0], [1, 2], [2, 3]].map(([a, b]) => {
+  const [ax, ay] = TIPS[a], [bx, by] = TIPS[b];
+  return { ax, ay, bx, by, n: norm(-(by - ay), bx - ax) };
+});
 
 const U = 4294967296;
 
@@ -120,10 +127,11 @@ export function sine(i) {
 }
 const s16 = (v) => (((v & 0xffff) ^ 0x8000) - 0x8000);
 
-// One round's world. cpus: which seats are CPUs; step() runs a frame from the
-// people's pads. The scene reads it all.
+// One round's world. cpus: which seats are CPUs; empty: which have no one in
+// them at all (the remake's: no Mr. Mime, its lane shut, SHUT); step() runs a
+// frame from the people's pads. The scene reads it all.
 export class World {
-  constructor(seed, level = "normal", cpus = [false, true, true, true]) {
+  constructor(seed, level = "normal", cpus = [false, true, true, true], empty = [false, false, false, false]) {
     this.level = levelCode(level, cpus);
     this.seed = seed >>> 0; // the game's random numbers' state (rnd())
     this.t = -1; // the last frame run
@@ -144,10 +152,13 @@ export class World {
       const x = -s.n[0] * STAND, y = -s.n[1] * STAND;
       return {
         z, human: !cpus[z], x, y, prevx: x, prevy: y, icpt: y - s.slope * x, xmin: x - half, xmax: x + half,
-        timer: 0, smash: false, moving: false, wander: true, target: 0.5, aimSide: 0, score: 0,
+        timer: 0, smash: false, moving: false, wander: true, target: 0.5, aimSide: 0, score: 0, empty: !!empty[z],
       };
     });
     for (const m of this.m) m.aimSide = this.u() - 0.5;
+    // the walls a ball bounces off: the court's, then the shut lanes' (the remake's)
+    this.edges = [...EDGES.map((e) => ({ ax: VERTS[e.a][0], ay: VERTS[e.a][1], bx: VERTS[e.b][0], by: VERTS[e.b][1], n: e.n })),
+      ...SHUT.filter((e, z) => empty[z])];
   }
   // the game's random numbers (0x800357EC: x * 1664525 + 1013904223)
   rnd() { return (this.seed = (Math.imul(this.seed, 1664525) + 1013904223) >>> 0); }
@@ -177,9 +188,9 @@ export class World {
   }
   // a step: the Mr. Mime, the balls, then the balls off the barriers (0x86302404)
   substep(pads, playing) {
-    for (const m of this.m) { if (playing) this.mime(m, pads[m.z]); m.timer++; }
+    for (const m of this.m) { if (m.empty) continue; if (playing) this.mime(m, pads[m.z]); m.timer++; }
     for (const b of [...this.balls]) { this.ball(b, playing); b.timer++; }
-    for (const m of this.m) this.barrier(m, playing);
+    for (const m of this.m) if (!m.empty) this.barrier(m, playing);
   }
 
   // ---- a Mr. Mime (0x863013C8) ----
@@ -349,6 +360,7 @@ export class World {
   // ball's hitter, if someone else, gets one
   goal(b) {
     const q = b.x <= 0 ? (b.y > 0 ? 0 : 2) : b.y > 0 ? 1 : 3;
+    if (this.m[q].empty) return; // (shut: none get there)
     const o = b.owner;
     this.m[q].score--;
     if (o !== -1 && o !== q) this.m[o].score++;
@@ -359,8 +371,8 @@ export class World {
   walls(b, playing) {
     const rx = b.x - b.lastx, ry = b.y - b.lasty;
     let hit = false;
-    for (const e of EDGES) {
-      const [ax, ay] = VERTS[e.a], [bx, by] = VERTS[e.b];
+    for (const e of this.edges) {
+      const { ax, ay, bx, by } = e;
       const r = sweep(b, rx, ry, ax, ay, bx - ax, by - ay, e.n[0], e.n[1]);
       if (!r) continue;
       hit = true;

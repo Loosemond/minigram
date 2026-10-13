@@ -10,7 +10,9 @@
 // column; a Voltorb knocks up to 5 eggs out and stuns it. tools/egg_rules.py
 // is the rooms server's copy of the deal and the judging: keep the two the
 // same (the tests check them against each other). The CPUs (Brain) are only
-// here: online, the device that plays them sends their leans.
+// here: online, the device that plays them sends their leans. Online with the
+// CPUs off, the seats no one plays are empty: no Chansey there at all (game.js
+// leaves them out), and the speed-up only looks at the players there.
 
 export const FPS = 30;
 const f32 = Math.fround;
@@ -293,6 +295,10 @@ export class Deal {
 }
 const SIDE = { 1: 0, 2: -1, 3: 1 };
 export const CODE = { 0: 1, "-1": 2, 1: 3 }; // a side's column
+// the speed-up's check (Deal's want, 0x868053BC): every player has at least
+// eggs, seats as they are after the frame before. empty: the seats no one's
+// in (online, with the CPUs off): they aren't players, so they don't count
+export const everyone = (seats, empty) => (f, eggs) => seats.every((s, z) => empty?.[z] || s.eggs >= eggs);
 // a row's y after frame g (its object's: an erased one sits at 550; 0 none yet)
 export function rowY(row, g) {
   if (!row) return 0;

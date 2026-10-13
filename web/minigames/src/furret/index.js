@@ -233,9 +233,11 @@ export async function create(shell, onProgress) {
     reset(round) {
       const m = round.start;
       // (online: the seats nobody was dealt are CPUs, as the server has them)
-      const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me)
-        : [0, 1, 2, 3].map((z) => !(round.lineup || []).some((p) => p.seat === z));
-      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, told: m?.fu, delay: round.delay });
+      const empty = round.empty || [false, false, false, false];
+      // (but not the empty seats, with the CPUs off: no Furret there)
+      const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me && !empty[z])
+        : [0, 1, 2, 3].map((z) => !empty[z] && !(round.lineup || []).some((p) => p.seat === z));
+      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, empty, told: m?.fu, delay: round.delay });
       shell.stopSound();
       keys.clear();
       finger = null;
@@ -326,7 +328,7 @@ export async function create(shell, onProgress) {
     // the clock: seconds left, rounded up (0x862040AC: 60 at GO), its digits only
     showDigits(timeEl, game.state === "ready" ? R.TIME / R.FPS : game.secondsLeft(), clockPics, "fu-clock");
     // each one's points on its card, in its colours (over the shell's plain digits)
-    cardEls.forEach((c, z) => showDigits(c.querySelector(".num"), game.points()[z], pointPics[z], "fu-big"));
+    cardEls.forEach((c, z) => { if (!game.empty[z]) showDigits(c.querySelector(".num"), game.points()[z], pointPics[z], "fu-big"); });
     hint.hidden = !(game.state === "ready" || (game.state === "play" && game.lastFrame < SHOW_HINT));
     hint.textContent = coarse?.matches ? "Slide to hop into the grass · A: swing your tail" : "Arrows: hop into the grass · Space: swing your tail";
     // which Furret is yours (the four look the same)

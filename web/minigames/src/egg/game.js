@@ -10,8 +10,11 @@
 // cheer and throw their eggs up, the others sit back, and over a Chansey with
 // all 100 PERFECT pulses (0x86804C5C, 0x86806CD8).
 //
-// Who plays each seat: "local" (this device's player), "cpu", or "remote"
-// (someone on another device, online). The seats this device plays emit
+// Who plays each seat: "local" (this device's player), "cpu", "remote"
+// (someone on another device, online), or "none": online with the CPUs off,
+// a seat no one plays is empty, with no Chansey at all (nothing of it's drawn
+// or run, and it's no one's to beat); its bay stays, as the stage has it.
+// The seats this device plays emit
 // "lean" (seat, lean -1 / 0 / 1, frame) as the lean held changes (a CPU's: as
 // its code leaves it) and "result" on every catch and Voltorb hit, for sending
 // on. A remote seat runs a little behind the others (setup.delay, then as late
@@ -78,7 +81,8 @@ export class Game {
   place(v, x, y, z) { return v.set(x * K, this.feet + (y - R.FEET) * K, z * K); }
 
   // setup: { me: this device's seat, control: per seat, delay: s per seat, cpus:
-  // which seats are CPUs (online: the room's), start: the server's word on the
+  // which seats are CPUs (online: the room's), empty: which seats are empty
+  // (their control "none"), start: the server's word on the
   // round, { c, human, leans: each seat's so far, ups, f: the frame it's at
   // (rejoining) }, fixed and a: a short deal (the tests) }
   reset(level, seed = (Math.random() * 2 ** 31) | 0, setup = {}) {
@@ -89,6 +93,7 @@ export class Game {
     this.setup = setup;
     this.me = setup.me ?? 0;
     this.control = setup.control || [0, 1, 2, 3].map((z) => (z === this.me ? "local" : "cpu"));
+    this.empty = [0, 1, 2, 3].map((z) => !!setup.empty?.[z] || this.control[z] === "none");
     this.cpus = setup.cpus || this.control.map((c) => c === "cpu");
     const start = setup.start;
     this.c = start?.c ?? R.levelCode(level, this.cpus.some(Boolean));
@@ -123,7 +128,9 @@ export class Game {
     const s = this.setup || {};
     return new R.Deal(this.seed, this.c, {
       allHuman: this.allHuman, fixed: s.fixed, a: s.a,
-      decide: this.allHuman ? (f) => this.ups.has(f) : null,
+      // (online, the server says when it speeds up; a solo round with no CPUs, only with empty seats, sees for itself)
+      decide: this.allHuman && s.start ? (f) => this.ups.has(f) : null,
+      want: this.allHuman && !s.start ? (f, eggs) => R.everyone(this.seats, this.empty)(f, eggs) : null,
     });
   }
   brain(z) { return new R.Brain(z, R.levelCode(this.level, true), this.seed, z === this.special); }
@@ -230,10 +237,10 @@ export class Game {
     if (this.ended) { this.cheerFrame(); return; }
     if (g < 1) return;
     if (this.deal.f < g) this.deal.step();
-    for (let z = 0; z < 4; z++) if (this.control[z] !== "remote") while (this.seats[z].f < g) this.stepSeat(z, this.seats[z].f + 1);
+    for (let z = 0; z < 4; z++) if (this.control[z] !== "remote" && !this.empty[z]) while (this.seats[z].f < g) this.stepSeat(z, this.seats[z].f + 1);
     this.countVoltorbs();
     // once all the eggs have come and everything's gone (0x868058C0)
-    const clear = this.seats.every((s, z) => this.deal.clear(s.f) && !this.fx.lostOn(z));
+    const clear = this.seats.every((s, z) => this.empty[z] || (this.deal.clear(s.f) && !this.fx.lostOn(z)));
     if (this.deal.left > 0) this.endCount = 0;
     else if (clear) this.endCount++;
     if (this.endCount === R.END_SOUND) this.sound("end", null);
@@ -301,6 +308,7 @@ export class Game {
   // Voltorb's picture: a count that goes up for each one drawn, a picture every 4 (0x86800298)
   countVoltorbs() {
     for (let z = 0; z < 4; z++) {
+      if (this.empty[z]) continue;
       const g = this.seats[z].f, last = this.deal.lastRow(g);
       for (let j = 0; j < R.SLOTS; j++) {
         const row = this.deal.slotRow(j, g, last);
@@ -312,16 +320,18 @@ export class Game {
   }
 
   // ---- the end (0x86804C5C): the most eggs cheer (clip 14), the rest sit back
-  // (15), all four if they're level; PERFECT over all 100
+  // (15), all four if they're level (all the players there: the empty seats
+  // have no one to rank); PERFECT over all 100
   results() {
-    const eggs = this.seats.map((s) => s.eggs);
-    return [0, 1, 2, 3].map((i) => ({ i, score: eggs[i], place: 1 + eggs.filter((e) => e > eggs[i]).length }))
+    const eggs = this.seats.map((s) => s.eggs), there = (j) => !this.empty[j];
+    return [0, 1, 2, 3].map((i) => ({ i, score: eggs[i], place: 1 + eggs.filter((e, j) => there(j) && e > eggs[i]).length }))
       .sort((a, b) => a.place - b.place || a.i - b.i);
   }
   celebrate() {
-    const eggs = this.seats.map((s) => s.eggs), most = Math.max(...eggs);
-    const won = eggs.map((e) => e === most), all = won.every(Boolean);
+    const eggs = this.seats.map((s) => s.eggs), most = Math.max(...eggs.filter((e, z) => !this.empty[z]));
+    const won = eggs.map((e, z) => !this.empty[z] && e === most), all = won.every((w, z) => w || this.empty[z]);
     this.cheer = this.seats.map((s, z) => {
+      if (this.empty[z]) return null;
       const clip = won[z] && !all ? R.CLIP.win : R.CLIP.lose;
       s.state = clip;
       s.clip = -1;
@@ -340,6 +350,7 @@ export class Game {
     this.fx.stepPerfect();
     this.seats.forEach((s, z) => {
       const c = this.cheer[z];
+      if (!c) return; // (an empty seat)
       s.advance();
       this.fx.stepSplashes(z);
       c.n++;
@@ -363,6 +374,8 @@ export class Game {
     const playing = this.state === "play" || this.state === "over";
     for (let z = 0; z < 4; z++) {
       const seat = this.seats[z], ch = this.chansey[z];
+      ch.root.visible = !this.empty[z];
+      if (this.empty[z]) continue; // (no one there: nothing of it, its drops included)
       const k = playing && !this.ended ? Math.max(0, Math.min(1, this.frameOf(z) - seat.f)) : this.ended ? Math.max(0, Math.min(1, this.time * R.FPS - this.iter)) : 1;
       // Chansey: idling till its play starts, then its clip, between its last two frames
       if (!playing || seat.f === 0) ch.pose(R.CLIP.idle, (this.idle[z] + this.idleT) % R.CLIP_FRAMES[1]);

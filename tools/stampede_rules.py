@@ -103,17 +103,20 @@ def setup(level):
     return dict(level=level, bonus=0, families=0, specials=0)
 
 
-def after(state, q, totals, all_people):
+def after(state, q, totals, all_people, empty=None):
     """More Pokemon to come if enough players are perfect so far (and a
-    level up for four people all perfect after the 1st or 3rd question)."""
+    level up for four people all perfect after the 1st or 3rd question).
+    empty: the seats no one's in, which aren't players: enough is at most all
+    those there (rules.js after())."""
     if q > 3:
         return state
-    perfect, need = [10, 20, 40, 60][q], [3, 3, 2, 1][q]
-    n = sum(1 for t in totals if t == perfect)
+    there = [t for z, t in enumerate(totals) if not (empty and empty[z])]
+    perfect, need = [10, 20, 40, 60][q], min([3, 3, 2, 1][q], len(there))
+    n = sum(1 for t in there if t == perfect)
     s = dict(state)
     if n >= need:
         s["bonus"] += 2
-    if n == 4 and all_people and q in (0, 2):
+    if n == len(there) and all_people and q in (0, 2):
         s["level"] = min(3, s["level"] + 1)
     return s
 
@@ -310,12 +313,15 @@ def since_after(Q, presses, since):
 
 
 class Round:
-    """One game's questions, presses and scores, on the server."""
+    """One game's questions, presses and scores, on the server. empty: [bool
+    x4], the seats no one plays (online with the CPUs off): no one in the
+    booth, so no presses, no points and no place."""
 
-    def __init__(self, seed, level="normal", cpus=(False, True, True, True)):
+    def __init__(self, seed, level="normal", cpus=(False, True, True, True), empty=None):
         self.seed = seed
         self.com = LEVELS.get(level, 2)
-        self.cpus = list(cpus)
+        self.empty = [bool(e) for e in empty] if empty else [False] * SEATS
+        self.cpus = [bool(c) and not e for c, e in zip(cpus, self.empty)]
         self.people = not any(self.cpus)
         self.states = [setup(1 if self.people else self.com)]
         self.qs, self.at = [], []
@@ -331,7 +337,7 @@ class Round:
         if q < len(self.qs) or q >= QUESTIONS:
             return
         if q > 0:
-            self.states.append(after(self.qs[q - 1]["state"], q - 1, self.scores, self.people))
+            self.states.append(after(self.qs[q - 1]["state"], q - 1, self.scores, self.people, self.empty))
         Q = question(self.seed, q, self.states[q], list(self.scores), self.com)
         Q["cpu_presses"] = [cpu_presses(Q, self.com, s, self.since[s]) if self.cpus[s] else None for s in range(SEATS)]
         for s in range(SEATS):
@@ -355,7 +361,7 @@ class Round:
         """Seat s pressed in question n's counting, on its frame f (its
         device's word); it came in at round time now (s after GO) and may be
         at most allow s old. True if it counts."""
-        if type(n) is not int or type(f) is not int or not 0 <= n < len(self.qs) or self.cpus[s]:
+        if type(n) is not int or type(f) is not int or not 0 <= n < len(self.qs) or self.cpus[s] or self.empty[s]:
             return False
         if self.verdicts[n] is not None:
             return False
@@ -392,6 +398,12 @@ class Round:
                 self.end = self.at[q]["end"] / FPS  # (the winners: as the last points are in)
             self.prepare(q + 1)
         return out
+
+    def places(self):
+        """Each seat's place (1 the best; a tie shares the better one) as the
+        game's results() ranks them, by points; None for an empty seat."""
+        here = [s for s in range(SEATS) if not self.empty[s]]
+        return [None if self.empty[s] else 1 + sum(self.scores[o] > self.scores[s] for o in here) for s in range(SEATS)]
 
     def next_settle(self, allow):
         """When (round time, s) the next answer can be given, or None."""

@@ -183,10 +183,13 @@ export async function create(shell, onProgress) {
           const m = views[0];
           Object.assign(m, { x: 0, w: W, h: Math.round(safe.bottom - 4) - m.y });
         } else {
+          // (the others' belts at the right, the empty seats' none: online with the CPUs off; the
+          // shell's marked their cards "empty" by now)
+          const others = [0, 1, 2, 3].filter((z) => z !== me && !cards[z].classList.contains("empty"));
           const pad = 8, gap = 10, colW = Math.round((safe.bottom - safe.top - 2 * pad) * 0.42);
-          const x0 = Math.round(safe.right - pad - 3 * colW - 2 * gap);
+          const x0 = Math.round(safe.right - pad - others.length * colW - (others.length - 1) * gap);
           views = [{ zone: me, x: 0, y: 0, w: x0 - gap, h: H }];
-          [0, 1, 2, 3].filter((z) => z !== me).forEach((z, k) => views.push({
+          others.forEach((z, k) => views.push({
             zone: z, mini: true, x: x0 + k * (colW + gap), y: Math.round(safe.top + pad), w: colW, h: Math.round(safe.bottom - safe.top - 2 * pad),
           }));
         }
@@ -201,11 +204,12 @@ export async function create(shell, onProgress) {
     },
 
     reset(round) {
-      // (online: the seats nobody was dealt are CPUs, as the server has them)
-      const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me)
-        : [0, 1, 2, 3].map((z) => !(round.lineup || []).some((p) => p.seat === z));
+      // (online: the seats nobody was dealt are CPUs, as the server has them; but
+      // for the empty ones (the CPUs off): no one plays those, not even a CPU)
+      const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me && !round.empty?.[z])
+        : [0, 1, 2, 3].map((z) => !round.empty?.[z] && !(round.lineup || []).some((p) => p.seat === z));
       const delay = (round.delay || [0, 0, 0, 0]).map((sec) => Math.ceil((sec || 0) * R.FPS)); // (src/lag.js: s)
-      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, delay, told: round.start?.tg });
+      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, empty: round.empty, delay, told: round.start?.tg });
       game.setBadges([0, 1, 2, 3].map((z) => badge(cpus[z] ? "com_" + COLOUR_NAMES[z] : z + 1 + "p")));
       shell.stopSound();
       keys.clear();

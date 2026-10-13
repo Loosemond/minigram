@@ -18,6 +18,11 @@
 // It gets harder as it goes: the more players are perfect after a question,
 // the more Pokemon the next ones have, so a question is made when it comes
 // up, from the totals so far (setup() and after()).
+//
+// Online with the CPUs off, the seats no one plays are empty: no one in the
+// booth, so no count, no points and no place (game.js leaves them out); the
+// "enough of the players perfect" checks look only at the players there
+// (after()).
 
 export const FPS = 30;
 export const QUESTIONS = 5;
@@ -146,14 +151,17 @@ export function setup(level) {
 
 // After question q, with every player's total (and whether all four are
 // people): more Pokemon to come if enough are perfect so far (0x86909C14),
-// and with four people all perfect after the 1st or 3rd, a level up
-export function after(state, q, totals, allPeople) {
-  const perfect = [10, 20, 40, 60][q], need = [3, 3, 2, 1][q];
+// and with four people all perfect after the 1st or 3rd, a level up. empty:
+// the seats no one's in (online, with the CPUs off): they aren't players, so
+// the totals are those there's, and enough is at most all of them (3 of 4
+// perfect with only 2 there: both), as is the level up's "all four"
+export function after(state, q, totals, allPeople, empty) {
+  const perfect = [10, 20, 40, 60][q], there = totals.filter((t, z) => !empty?.[z]);
   if (perfect === undefined) return state;
-  const n = totals.filter((t) => t === perfect).length;
+  const need = Math.min([3, 3, 2, 1][q], there.length), n = there.filter((t) => t === perfect).length;
   const s = { ...state };
   if (n >= need) s.bonus += 2;
-  if (n === 4 && allPeople && (q === 0 || q === 2)) s.level = Math.min(3, s.level + 1);
+  if (n === there.length && allPeople && (q === 0 || q === 2)) s.level = Math.min(3, s.level + 1);
   return s;
 }
 

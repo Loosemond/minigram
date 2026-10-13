@@ -17,7 +17,9 @@
 // the last swing is the one that counts; but a miss while the log's still
 // above the blade locks A for the log if it gets to the blade before then. A
 // total never goes below 0. Tools/clearcut_rules.py is the rooms server's copy
-// of the deal and the judging: keep the two the same.
+// of the deal and the judging: keep the two the same. Online with the CPUs
+// off, the seats no one plays are empty: no Scyther there, so no cuts, no
+// misses and no place (game.js leaves them out; the deal's the same).
 //
 // The CPU level also sets how fast the logs fall and where the targets are
 // (the game uses the COM level for both); with no CPUs it uses its default.

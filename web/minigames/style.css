@@ -39,6 +39,7 @@ input { -webkit-user-select: text; user-select: text; }
   border-radius: calc(var(--k) * 8px); white-space: nowrap;
   background: rgba(20, 14, 10, 0.55); box-shadow: inset 0 0 0 2px var(--c);
 }
+.card.empty { display: none !important; } /* an empty seat (online, the CPUs off): no one there */
 .card img, #left img { display: block; }
 .card .badge { width: calc(var(--k) * 36px); height: calc(var(--k) * 28px); }
 .card .count { display: flex; flex-direction: column; align-items: flex-end; gap: calc(var(--k) * 1px); }
@@ -541,6 +542,56 @@ kbd { display: inline-block; min-width: 1.4em; padding: 0 0.3em; border-radius: 
 }
 #join input::placeholder { letter-spacing: 0; text-transform: none; font-weight: 500; color: var(--muted); }
 #join input:focus { border-color: var(--pink); }
+
+/* the room's running points (the seats, the results: +what the place gave, then the total) */
+#seats .pts, #ranking .pts { flex: none; min-width: 1.6em; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 700; }
+#seats:not(.points) .pts { display: none; }
+#ranking .pts { display: flex; align-items: baseline; gap: 6px; margin-left: 4px; padding-left: 10px; border-left: 2px solid #e4dde9; }
+#ranking .pts small { font-size: 0.75em; color: var(--p1); }
+#seats li.empty { opacity: 0.55; }
+#seats li.empty .badge { filter: grayscale(1); opacity: 0.4; }
+#reset { margin-top: -6px; }
+/* the room's settings: the host's (the others see them) */
+#settings { margin: 0 0 4px; }
+#settings .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 20px; font-weight: 700; font-size: 14px; color: var(--muted); }
+#settings .row .levels button { padding: 7px clamp(8px, 2.6vw, 12px); font-size: 14px; }
+#settings .games { margin-top: 8px; }
+#privacy { margin: 0 0 6px; }
+#privacy button { padding: 4px 12px; font-size: 13px; }
+.levels button:disabled { opacity: 0.35; cursor: default; }
+/* the vote: the three games on offer, each with its voters' badges, and the level */
+#vote { margin: 4px 0 6px; }
+h3 { margin: 10px 20px 6px; font-size: 18px; color: var(--ink); }
+#vote .choices { display: grid; gap: 8px; padding: 0 20px 8px; }
+#vote .choices button {
+  position: relative; height: 64px; padding: 0; border: 0; border-radius: 14px; overflow: hidden;
+  background: #333 center 22% / cover; box-shadow: inset 0 0 0 3px transparent; transition: opacity 0.3s, transform 0.15s;
+}
+#vote .choices.one button { height: 92px; }
+#vote .choices button::before { content: ""; position: absolute; inset: 0; background: rgba(20, 14, 10, 0.3); }
+#vote .choices button > img { position: relative; display: block; width: 78%; margin: 0 auto; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.7)); }
+#vote .choices button[aria-checked="true"] { box-shadow: inset 0 0 0 3px var(--pink), 0 0 0 2px #fff; transform: scale(1.02); }
+#vote .choices button[aria-checked="true"]::before { background: none; }
+#vote .choices button.lost { opacity: 0.35; }
+#vote .voters { position: absolute; right: 6px; bottom: 5px; display: flex; gap: 2px; }
+#vote .voters img { width: 22px; height: 17px; display: block; }
+#voteLevels button { display: inline-flex; align-items: center; gap: 4px; }
+#voteLevels .voters { position: static; }
+#voteLevels .voters img { width: 18px; height: 14px; }
+#voteNote { margin-top: 8px; font-weight: 700; }
+/* online's lobby: your name, Quick play, a new room, the open rooms */
+#you { display: flex; align-items: center; gap: 10px; margin: 4px 20px 6px; font-weight: 700; font-size: 14px; color: var(--muted); }
+#myName { flex: 1; min-width: 0; font: inherit; font-size: 16px; color: var(--ink); border: 0; border-bottom: 2px dashed #d8d0de; background: none; padding: 4px 0; outline: none; }
+#myName:focus { border-bottom-color: var(--pink); }
+#rooms { list-style: none; margin: 0; padding: 0 20px; max-height: 40vh; overflow: auto; }
+#rooms button {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; width: 100%; margin: 5px 0; padding: 8px 14px;
+  border: 0; border-radius: 14px; background: #f6f3f8; text-align: left; color: var(--ink);
+}
+#rooms button:active { background: #fde4ee; }
+#rooms .host { font-weight: 700; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#rooms .what { grid-row: 2; font-size: 13px; color: var(--muted); }
+#rooms .count { grid-row: 1 / 3; grid-column: 2; font-weight: 700; color: var(--pink-dark); }
 
 #loading { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 12px; background: var(--sky); color: #fff; font-weight: 700; text-align: center; padding: 0 24px; }
 #loading .bar { width: 200px; height: 10px; border-radius: 5px; background: rgba(255, 255, 255, 0.4); overflow: hidden; }

@@ -313,6 +313,8 @@ export async function create(shell, onProgress) {
     }
     for (let z = 0; z < 4; z++) {
       const p = game.players[z], e = game.eevees[z];
+      // (an empty seat: nothing of it, its card hidden by the shell)
+      if (game.empty[z]) { prizeRows[z].hidden = secs[z].hidden = true; continue; }
       // the prizes won, one slot each in the order they came; the newest blinks
       // while its Eevee eats, the strawberries counted into theirs a frame at a time
       const slots = prizeRows[z].querySelectorAll("i");

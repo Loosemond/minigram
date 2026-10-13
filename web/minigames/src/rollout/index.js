@@ -235,11 +235,12 @@ export async function create(shell, onProgress) {
     },
 
     reset(round) {
-      const m = round.start;
-      // (online: the seats nobody was dealt are CPUs, as the server has them)
-      const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me)
-        : [0, 1, 2, 3].map((z) => !(round.lineup || []).some((p) => p.seat === z));
-      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, told: m?.rr, delay: round.delay });
+      const m = round.start, empty = round.empty || [false, false, false, false];
+      // (online: the seats nobody was dealt are CPUs, as the server has them; but not the empty
+      // ones, with the CPUs off: no Donphan there)
+      const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me && !empty[z])
+        : [0, 1, 2, 3].map((z) => !empty[z] && !(round.lineup || []).some((p) => p.seat === z));
+      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, empty, told: m?.rr, delay: round.delay });
       tune = null;
       shell.stopSound();
       keys.clear();
@@ -314,10 +315,10 @@ export async function create(shell, onProgress) {
     const playing = game.state === "play" || game.state === "ready";
     pads.hidden = !playing || !coarse?.matches;
     board.hidden = !(game.state === "play" || game.state === "over");
-    // each rank's coin and who has it (0x864082A8: the players' ranks, 1st to 4th)
+    // each rank's coin and who has it (0x864082A8: the players' ranks, 1st to 4th; as many as are there)
     const w = game.world;
     for (let k = 0; k < 4; k++) {
-      const z = w.d.findIndex((d) => d.rank === k), img = rows[k].querySelector(".rr-badge");
+      const z = w.d.findIndex((d) => d.rank === k && !d.empty), img = rows[k].querySelector(".rr-badge");
       rows[k].hidden = z < 0;
       if (z < 0) continue;
       const src = `assets/ui/badge_${game.cpus[z] ? "com_" + COLOUR_NAMES[z] : z + 1 + "p"}.png`;

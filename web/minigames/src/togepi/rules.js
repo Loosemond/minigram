@@ -17,6 +17,9 @@
 // its own player (so every device and the server can run it from that
 // player's stick alone): the rank shift is only drawn (game.js), and the
 // CPUs rank among themselves. Each lane has random numbers of its own too.
+// Online with the CPUs off, the seats no one plays are empty: their lanes
+// never run (no Togepi there; the belt stands still and bare), and they have
+// no place (placesOf's empty) and don't hold up the end.
 // Tools/togepi_rules.py is the rooms server's copy: keep the two the same.
 
 export const FPS = 30;
@@ -645,11 +648,12 @@ export function rankCpus(lanes) {
 // The places: by the frame each finished, the ones in on the same frame by their
 // progress the frame before (the game's ranks then: 0x867097D8, which the finish
 // keeps as 120 - 3 x rank, 0x86705960), then (if the race was called) by how far
-// each got; ties share a place. fin, prior and prog: each seat's.
-export function placesOf(fin, prior, prog) {
+// each got; ties share a place. fin, prior and prog: each seat's; empty: the
+// seats no one's in (online with the CPUs off): no place (null), and not counted.
+export function placesOf(fin, prior, prog, empty) {
   const key = (z) => (fin[z] !== null ? [0, fin[z], -(prior[z] ?? 0)] : [1, -prog[z], 0]);
   const before = (a, b) => a[0] < b[0] || (a[0] === b[0] && (a[1] < b[1] || (a[1] === b[1] && a[2] < b[2])));
-  return fin.map((f, z) => 1 + fin.filter((g, y) => before(key(y), key(z))).length);
+  return fin.map((f, z) => (empty?.[z] ? null : 1 + fin.filter((g, y) => !empty?.[y] && before(key(y), key(z))).length));
 }
 export const places = (lanes) => placesOf(lanes.map((l) => l.finish), lanes.map((l) => l.prior), lanes.map((l) => l.progress));
 

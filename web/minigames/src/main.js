@@ -27,19 +27,24 @@ const params = new URLSearchParams(location.search);
 const testing = config.debug || /^(localhost|127\.0\.0\.1|\[::1\])$|\.localhost$|\.test$/.test(location.hostname);
 telegram.init(GAMES.egg.color);
 
-// who is in each seat: people get the 1P-4P badges, CPUs "COM" in the seat's colour
+// who is in each seat: people get the 1P-4P badges, CPUs "COM" in the seat's
+// colour; an empty seat (online, with the CPUs off) has no one, so no card
 let me = 0; // this device's seat
 let seats = [];
-function soloSeats() { seats = [0, 1, 2, 3].map((i) => (i ? { human: false, name: "COM" } : { human: true, name: telegram.userName || "You" })); }
-function roundSeats(lineup) {
+const EMPTY = { human: false, empty: true, name: "" };
+function soloSeats(empty) {
+  seats = [0, 1, 2, 3].map((i) => (!i ? { human: true, name: telegram.userName || "You" } : empty?.[i] ? EMPTY : { human: false, name: "COM" }));
+}
+function roundSeats(lineup, empty) {
   seats = [0, 1, 2, 3].map((i) => {
     const p = lineup.find((x) => x.seat === i && x.here);
-    return p ? { human: true, name: p.name } : { human: false, name: "COM" };
+    return p ? { human: true, name: p.name } : empty?.[i] ? EMPTY : { human: false, name: "COM" };
   });
 }
 const badge = (i) => (seats[i].human ? i + 1 + "p" : "com_" + COLOUR_NAMES[i]);
 function applySeats() {
   cards.forEach((c, i) => {
+    c.classList.toggle("empty", !!seats[i].empty);
     c.style.setProperty("--c", PLAYER_COLOURS[i]);
     const b = c.querySelector(".badge");
     b.src = `${UI}badge_${badge(i)}.png`;
@@ -75,15 +80,16 @@ if (testing && params.has("norender")) {
 function place(el, style) { Object.assign(el.style, { left: "auto", right: "auto", top: "auto", bottom: "auto", transform: "none" }, style); }
 
 // Portrait, for the games that use it: your player fills the screen and the
-// other three get small boxed views along the top. aspect: a small box's
-// width / height; main, mini: extra fields for the big view and the small ones.
+// other three get small boxed views along the top (the empty seats none: the
+// boxes there are, centred). aspect: a small box's width / height; main,
+// mini: extra fields for the big view and the small ones.
 function miniViews(W, H, safe, seat, cams, aspect, main, mini) {
   const pad = 8, gap = 10, room = safe.right - safe.left - 2 * pad;
   let miniH = Math.round(H * 0.22), miniW = Math.round(miniH * aspect);
   if (3 * miniW + 2 * gap > room) { miniW = Math.floor((room - 2 * gap) / 3); miniH = Math.round(miniW / aspect); }
   const strip = safe.top + miniH + 2 * pad;
-  const x0 = Math.round((W - 3 * miniW - 2 * gap) / 2);
-  const others = [0, 1, 2, 3].filter((i) => i !== seat);
+  const others = [0, 1, 2, 3].filter((i) => i !== seat && !seats[i].empty);
+  const x0 = Math.round((W - others.length * miniW - (others.length - 1) * gap) / 2);
   const views = [{ cam: cams[0], zone: seat, x: 0, y: strip, w: W, h: H - strip, ...main }];
   others.forEach((z, k) => views.push({ cam: cams[k + 1], zone: z, mini: true, x: x0 + k * (miniW + gap), y: safe.top + pad, w: miniW, h: miniH, ...mini }));
   return views;
@@ -162,7 +168,7 @@ const shell = {
   hush: (on) => { if (!on || !catchingUp) hush(on); },
   // online: a message for the round, to the others (kept while offline, sent on reconnecting)
   send: (t, data) => { if (current?.online) net.send(t, { r: current.round, ...data }, true); },
-  get seats() { return seats; },
+  get seats() { return seats; }, // [{ human, name, empty }]: empty, no one's in it (no player at all)
   get round() { return current; },
   // s till the round's GO (on its clock: the server's online), < 0 after; null with none dealt
   toGo: () => (current?.goAt === undefined ? null : (current.goAt - (current.online ? net.now() : performance.now())) / 1000),
@@ -178,7 +184,8 @@ function loadGame(id) {
       hud.hidden = true;
       $("#hud").append(hud);
       hudOf.set(id, hud);
-      const g = await mod.create({ ...shell, hud }, (k) => { if (gameId === id) bar.style.width = k * 100 + "%"; });
+      // (the shell with the game's own HUD: on top of it, so its getters, seats and round, stay live)
+      const g = await mod.create(Object.create(shell, { hud: { value: hud } }), (k) => { if (gameId === id) bar.style.width = k * 100 + "%"; });
       g.sounds = mod.SOUNDS;
       try { sessionStorage.removeItem("egg-reloads"); } catch {} // the page's retries (index.html) start over
       return g;
@@ -293,7 +300,7 @@ for (let y = -240, v = 0; DROP.length < 60;) {
 const RESULTS_AT = DROP.indexOf(0) + 60; // frames: 60 after it's first down, A goes on to the menu
 function showWinners(results, drop) {
   const el = $("#winners"), won = results.filter((r) => r.place === 1).map((r) => r.i).sort((a, b) => a - b);
-  const draw = won.length === 0 || won.length === 4, was = el.dataset.draw;
+  const draw = won.length === 0 || won.length === results.length, was = el.dataset.draw;
   el.innerHTML = draw ? `<img class="word" src="${UI}draw.png" alt="Draw">`
     : won.map((i) => `<img src="${UI}winner_${badge(i)}.png" alt="${seats[i].human ? i + 1 + "P" : "COM"}">`).join("")
       + `<img class="word" src="${UI}wins.png" alt="wins">`;
@@ -320,7 +327,7 @@ function bigDigits(n, sign = false) {
 }
 
 function show(screen) {
-  for (const s of ["#title", "#results", "#lobby"]) $(s).hidden = s !== screen;
+  for (const s of ["#title", "#results", "#lobby", "#online"]) $(s).hidden = s !== screen;
   $("#hud").hidden = !!screen;
   if (screen) $("#waiting").hidden = $("#winners").hidden = true;
 }
@@ -373,7 +380,8 @@ function toTitle() {
   show("#title");
 }
 
-function play() { startRound({ online: false, game: gameId, level, me: 0 }); }
+// (?empty=2,3, testing: a solo round with those seats empty, as online with the CPUs off)
+function play() { startRound({ online: false, game: gameId, level, me: 0, empty: testing ? [0, 1, 2, 3].map((z) => z > 0 && (params.get("empty") || "").split(",").includes(String(z))) : undefined }); }
 
 async function startRound(s) {
   unlock();
@@ -384,10 +392,12 @@ async function startRound(s) {
   me = s.me;
   await showGame(s.game);
   if (round !== my) return;
-  if (s.online) roundSeats(s.lineup); else soloSeats();
+  // empty: the seats no one plays, not even a CPU (online, with the CPUs off): control "none"
+  s.empty = [0, 1, 2, 3].map((z) => z !== s.me && !!s.empty?.[z]);
+  if (s.online) roundSeats(s.lineup, s.empty); else soloSeats(s.empty);
   applySeats();
   layout();
-  s.control = [0, 1, 2, 3].map((z) => (z === me ? "local" : !s.online ? "cpu" : seats[z].human || s.host !== me ? "remote" : "cpu"));
+  s.control = [0, 1, 2, 3].map((z) => (z === me ? "local" : s.empty[z] ? "none" : !s.online ? "cpu" : seats[z].human || s.host !== me ? "remote" : "cpu"));
   // how far behind to show each other device's player (Egg Emergency; src/lag.js)
   s.delay = [0, 1, 2, 3].map((z) => startDelay(net?.typical, s.start?.rtt?.[z]));
   if (s.seed === undefined) s.seed = (Math.random() * 2 ** 31) | 0;
@@ -421,7 +431,7 @@ async function startRound(s) {
 // The round's over: when the game says (after its own show, as each game's
 // code has it), module #64's results (0x87F0A098) at once, for everyone: the
 // winners' banner over the game going on (the winners cheering, the others
-// not: celebrate()), with its song and sound; 60 frames after it's down, the
+// not: celebrate(); the empty seats left out: present()), with its song and sound; 60 frames after it's down, the
 // ranking (the remake's, for the menu the game goes on to with A). There's no
 // FINISH: none of the games has one. Online, the server's ranking is the
 // word (a device that's behind stops when it comes).
@@ -432,7 +442,7 @@ async function finish() {
   game.finish();
   telegram.haptic("success");
   if (current.online) net.send("done", { r: current.round }, true);
-  current.results = game.celebrate();
+  current.results = present(game.celebrate());
   showWinners(current.results, true);
   await wait(RESULTS_AT * FRAME);
   if (round !== my || phase !== "end") return;
@@ -440,6 +450,12 @@ async function finish() {
   showResults();
 }
 const resultsDue = () => performance.now() >= current.finishedAt + RESULTS_AT * FRAME;
+
+// a game's ranking without its empty seats, placed among those who played
+function present(results) {
+  const r = results.filter((x) => !seats[x.i].empty);
+  return r.map((x) => ({ ...x, place: 1 + r.filter((y) => y.place < x.place).length }));
+}
 
 function showResults() {
   if (phase !== "end") return;
@@ -450,11 +466,13 @@ function showResults() {
   const info = GAMES[current.game];
   $("#champion").hidden = !(mine.place === 1 && !tie);
   $("#verdict").textContent = mine.place === 1 ? (tie ? "It's a tie!" : "You win!") : ["", "", "2nd place", "3rd place", "4th place"][mine.place];
+  // online, the running points: what each place gave (+3...) and the total so far
+  const pts = current.online && current.points ? (i) => `<span class="pts"><small>+${current.gained[i] ?? 0}</small>${current.points[i] ?? 0}</span>` : () => "";
   $("#ranking").innerHTML = results.map((r) => `
     <li class="${r.i === me ? "me" : ""}" style="--c: ${PLAYER_COLOURS[r.i]}">
       <span class="place">${r.place}${["", "st", "nd", "rd", "th"][r.place]}</span>
       <img class="badge" src="${UI}badge_${badge(r.i)}.png" alt="">
-      <span class="n"></span><span class="e">${info.unit(r.score)}</span></li>`).join("");
+      <span class="n"></span><span class="e">${info.unit(r.score)}</span>${pts(r.i)}</li>`).join("");
   [...$("#ranking").children].forEach((li, k) => {
     const i = results[k].i;
     li.querySelector(".n").textContent = seats[i].name;
@@ -466,6 +484,7 @@ function showResults() {
     && (info.lower ? !(mine.score >= (had ?? Infinity)) : !(mine.score <= (had ?? -Infinity)));
   $("#newbest").hidden = !isBest;
   if (isBest) { best[key] = mine.score; telegram.set(bestKey(current.game, current.level), mine.score); showBest(); }
+  $("#ranking").classList.toggle("points", !!(current.online && current.points));
   phase = "results";
   resultButtons();
   telegram.back(current.online ? toLobby : toTitle);
@@ -475,6 +494,7 @@ function showResults() {
 const shown = [-1, -1, -1, -1];
 function updateHud() {
   for (let i = 0; i < 4; i++) {
+    if (seats[i].empty) continue;
     const n = game.score(i);
     if (n !== shown[i]) { cards[i].querySelector(".num").innerHTML = digits(Math.max(0, n)); shown[i] = n; }
   }
@@ -499,7 +519,7 @@ addEventListener("keydown", (e) => {
   if (e.target.closest?.("input")) return;
   if (playing() && game.keydown(e)) { e.preventDefault(); return; }
   if ((e.code === "Enter" || e.code === "Space") && !playing()) {
-    const b = { title: "#play", results: "#again", lobby: "#start" }[phase];
+    const b = { title: "#play", results: "#again", lobby: "#start", rooms: "#quick" }[phase];
     if (b && !$(b).hidden && !$(b).disabled) { e.preventDefault(); $(b).click(); }
   }
 });
@@ -512,6 +532,7 @@ addEventListener("blur", () => game?.blur?.());
 // page with ?room=CODE (from a browser, so friends without Telegram can come).
 
 let net = null, room = null, mySeat = 0, status = "", roomError = "";
+let publicRooms = []; // the lobby's list of rooms (the server's "rooms")
 
 function serverUrl() {
   const u = (testing && params.get("server")) || config.server;
@@ -534,6 +555,10 @@ function myName() {
   if (telegram.userName) return telegram.userName;
   try { return params.get("name") || localStorage.getItem("egg_name") || ""; } catch { return params.get("name") || ""; }
 }
+function setMyName(v) {
+  try { localStorage.setItem("egg_name", v); } catch { /* private mode */ }
+  if (net?.hello && !net.hello.browse) net.hello.name = v; // (and after a reconnect)
+}
 
 function setUrlRoom(code) { // so a reload (or a copied address) comes back to the room
   if (telegram.inside) return;
@@ -545,8 +570,31 @@ function setUrlRoom(code) { // so a reload (or a copied address) comes back to t
 }
 
 const hostName = () => room?.players.find((p) => p.seat === room.host)?.name || "the host";
+const nameOf = (seat) => room?.players.find((p) => p.seat === seat)?.name || "Player " + (seat + 1);
+const MODES = { pick: "Host picks", random: "Random", vote: "Vote" };
 
-function goOnline(code = "", create = false) {
+// Online's lobby: the public rooms (as they change), Quick play, a new room, or one by its code
+function goRooms(error = "") {
+  unlock();
+  if (!net) connectNet();
+  round++; // cancels a countdown
+  room = null; current = null; roomError = error;
+  phase = "rooms";
+  setUrlRoom(null);
+  game?.idle();
+  music(null);
+  stopSound();
+  $("#you").hidden = !!telegram.userName; // (inside Telegram, its name)
+  $("#myName").value = myName();
+  renderRooms();
+  show("#online");
+  telegram.back(toTitle);
+  net.open({ browse: true });
+}
+
+// into a room: code, or a new one (create: with that code); how: { quick } (Quick
+// play: the server finds a public room, or makes one), { public, mode } (a new room's)
+function goOnline(code = "", create = false, how = {}) {
   unlock();
   if (!net) connectNet();
   round++; // cancels a countdown
@@ -556,10 +604,10 @@ function goOnline(code = "", create = false) {
   music(null);
   renderLobby();
   show("#lobby");
-  telegram.back(toTitle);
+  telegram.back(goRooms);
   // a new room starts with the game on the title (the server keeps it)
   net.open({ room: code.toUpperCase(), id: clientId(), name: myName(), create, tg: telegram.initData || undefined,
-             game: !code || create ? gameId : undefined });
+             game: !code || create ? gameId : undefined, ...how });
 }
 
 function toLobby() {
@@ -570,32 +618,37 @@ function toLobby() {
   stopSound();
   renderLobby();
   show("#lobby");
-  telegram.back(toTitle);
+  telegram.back(goRooms);
 }
 
 function connectNet() {
   net = new Net(serverUrl(), testing ? +params.get("lag") || 0 : 0); // (?lag=: a slower connection, to test with)
   net.on("status", (s) => { status = s; renderStatus(); });
   net.on("welcome", (m) => {
+    if (m.browse) return;
     mySeat = m.seat;
     setUrlRoom(m.room);
     if (phase === "end" && current?.online) net.send("done", { r: current.round }); // (in case it was lost)
   });
+  net.on("rooms", (m) => { publicRooms = m.rooms; if (phase === "rooms") renderRooms(); });
   net.on("room", (r) => {
     room = r; roomError = "";
     if (current?.online && r.state === "playing" && r.round === current.round) followRound(r);
-    if (current?.online && phase === "end" && !current.resultsIn && r.state === "lobby" && r.round >= current.round) {
+    if (current?.online && phase === "end" && !current.resultsIn && r.state !== "playing" && r.round >= current.round) {
       current.resultsIn = true; // the results went out while this device was offline: go with its own counts
       if (resultsDue()) showResults();
     }
-    if (phase === "lobby") { renderLobby(); if (r.game && r.game !== gameId) showGame(r.game).catch(() => {}); }
+    // the next game's on its way (a vote, a spin): from the results to the room, to see it
+    if (phase === "results" && (r.state === "voting" || r.state === "loading")) toLobby();
+    prepare(r);
+    if (phase === "lobby") { renderLobby(); if (r.game && r.game !== gameId && r.state !== "voting") showGame(r.game).catch(() => {}); }
     if (phase === "results") resultButtons();
   });
   net.on("start", (m) => {
     if (current?.online && current.round === m.round) return; // already in it (a reconnect)
     if (!m.lineup.some((p) => p.seat === mySeat)) return; // joined mid-round: next one
     startRound({ online: true, game: m.game || "egg", round: m.round, level: m.level, seed: m.seed, goAt: m.go, me: mySeat,
-                 lineup: m.lineup, host: m.host, start: m });
+                 lineup: m.lineup, host: m.host, empty: [0, 1, 2, 3].map((z) => !!m.empty?.includes(z)), start: m });
   });
   // the games' own messages about the round
   for (const id of ORDER) {
@@ -606,16 +659,18 @@ function connectNet() {
   net.on("results", (m) => {
     if (!current?.online || m.round !== current.round || current.resultsIn) return;
     current.resultsIn = true;
+    current.gained = m.gained;
+    current.points = m.points;
     if (playing()) { game.stop(); game.setScores(m.scores); finish(); return; } // time's up (this device was behind)
     if (phase !== "end") return;
     game.setScores(m.scores);
     if (current.results.some((r) => r.score !== m.scores[r.i])) { // (not what this device made it: the server's ranking)
-      current.results = game.celebrate();
+      current.results = present(game.celebrate());
       showWinners(current.results, false);
     }
     if (resultsDue()) showResults();
   });
-  net.on("error", (m) => { roomError = m.code; room = null; renderLobby(); });
+  net.on("error", (m) => { if (phase === "lobby") goRooms(m.code); else { roomError = m.code; room = null; renderStatus(); } });
   net.on("notice", (m) => {
     if (m.code !== "name") return;
     try { if (localStorage.getItem("egg_name") === m.name) localStorage.removeItem("egg_name"); } catch { /* private mode */ }
@@ -623,6 +678,18 @@ function connectNet() {
     showNotice(`"${m.name}" can't be used as a name here.`);
     if (phase === "lobby") renderLobby();
   });
+}
+
+// the next game, loaded before its round: in a vote, the three on offer; then
+// the one it's on, and the server's told once it's ready here
+let readyFor = "";
+function prepare(r) {
+  if (r.state === "voting") for (const id of r.vote.games) loadGame(id).catch(() => {});
+  if (r.state !== "loading") return;
+  const id = r.loading.game, key = r.round + ":" + id;
+  if (readyFor === key) return;
+  readyFor = key;
+  loadGame(id).then(() => { if (room?.state === "loading" && room.loading.game === id) net.send("ready", { game: id }, true); }, () => {});
 }
 
 let notice = "", noticeTimer = 0;
@@ -637,59 +704,89 @@ function showNotice(text) {
 // host), or the host left (the next one takes over the CPUs)
 function followRound(r) {
   current.host = r.host;
-  roundSeats(r.lineup);
-  for (let z = 0; z < 4; z++) if (z !== me) game.setControl(z, seats[z].human || r.host !== me ? "remote" : "cpu");
+  roundSeats(r.lineup, current.empty);
+  for (let z = 0; z < 4; z++) if (z !== me && !current.empty[z]) game.setControl(z, seats[z].human || r.host !== me ? "remote" : "cpu");
   applySeats();
 }
 
 function resultButtons() {
   const on = current?.online, host = on && room?.host === mySeat;
   $("#again").disabled = on && !host;
-  $("#again").textContent = !on || host ? "Play again" : `Waiting for ${hostName()}…`;
-  $("#menu").textContent = on ? "Lobby" : "Menu";
+  $("#again").textContent = on && !host ? `Waiting for ${hostName()}…` : on && room?.mode !== "pick" ? "Next game" : "Play again";
+  $("#menu").textContent = on ? "Room" : "Menu";
 }
 
 function renderStatus() {
-  const el = $("#status");
   const text = {
     "no-room": "That room is closed. Make a new one, or check the code.",
     full: "That room is full (4 players).",
     "bad-code": "That isn't a room code.",
     busy: "The game server is busy. Try again in a bit.",
-  }[roomError] || notice || (room && status === "online" ? "" : {
+  }[roomError] || notice || (status === "online" && (room || phase === "rooms") ? "" : {
     connecting: "Connecting…",
     reconnecting: room ? "Reconnecting…" : "Can't reach the game server. Trying again…",
   }[status] || "");
-  el.textContent = text;
-  el.classList.toggle("bad", !!roomError || !!notice || (!room && status === "reconnecting"));
+  for (const el of [$("#status"), $("#onlineStatus")]) {
+    el.textContent = text;
+    el.classList.toggle("bad", !!roomError || !!notice || (!room && status === "reconnecting"));
+  }
+}
+
+const markRadio = (group, key, v) => { for (const b of group.querySelectorAll("button")) b.setAttribute("aria-checked", b.dataset[key] === String(v)); };
+
+function renderRooms() {
+  renderStatus();
+  const list = $("#rooms");
+  list.innerHTML = "";
+  for (const r of publicRooms) {
+    const b = list.appendChild(document.createElement("li")).appendChild(document.createElement("button"));
+    b.dataset.room = r.room;
+    const g = GAMES[r.game]?.name;
+    const what = r.state === "playing" ? `playing ${g}` : r.state === "loading" ? `starting ${g}` : r.state === "voting" ? "voting" : "waiting";
+    b.innerHTML = `<span class="host"></span><span class="what">${MODES[r.mode] || ""} · ${what}</span><span class="count">${r.players}/4</span>`;
+    b.querySelector(".host").textContent = r.host ? `${r.host}'s room` : "Room " + r.room;
+  }
+  $("#noRooms").hidden = publicRooms.length > 0;
 }
 
 function renderLobby() {
   renderStatus();
-  const r = room, host = !!r && r.host === mySeat, busy = r?.state === "playing";
+  const r = room, host = !!r && r.host === mySeat, between = r?.state === "lobby";
   $("#code").textContent = r ? r.room : "····";
   $("#invite").hidden = $("#link").hidden = !r;
   const link = r ? inviteLink(r.room) : "";
   if ($("#linkText").value !== link) $("#linkText").value = link;
-  $("#note").textContent = !r ? "" : busy ? "A round is on. You'll play in the next one."
-    : host ? "Up to 4 players. Empty spots are played by CPUs." : `Waiting for ${hostName()} to start…`;
-  $("#start").hidden = r ? !host || busy : !roomError;
-  $("#start").textContent = r ? "Start" : "New room";
-  markLevel($("#lobby .levels:not(.controls)"), r?.level || "normal");
-  for (const group of document.querySelectorAll("#lobby .levels:not(.controls), #lobby .games")) {
-    group.classList.toggle("locked", !host);
-    group.hidden = !r;
+  $("#privacy").hidden = !r;
+  if (r) markRadio($("#privacy"), "public", !!r.public);
+  const here = r ? r.players.filter((p) => !p.away).length : 0;
+  $("#note").textContent = !r ? "" : r.state === "playing" ? "A round is on. You'll play in the next one."
+    : !between ? "" : !host ? `Waiting for ${hostName()} to start…`
+    : r.cpus ? "Up to 4 players. Empty spots are played by CPUs." : "Up to 4 players. No CPUs: only the players here play.";
+  renderVote();
+  $("#settings").hidden = !r || !between;
+  $("#start").hidden = !r || !host || !between;
+  $("#start").textContent = { random: "Spin", vote: "Start the vote" }[r?.mode] || "Start";
+  if (r) {
+    markRadio($("#mode"), "mode", r.mode);
+    markRadio($("#bots"), "bots", r.bots && true);
+    $("#bots [data-bots=false]").disabled = here < 2 && r.bots; // (no CPUs takes two players)
+    markLevel($("#roomLevel"), r.level || "normal");
+    $("#levelRow").hidden = !r.cpus || r.mode === "vote"; // (no CPUs: no level; a vote: it's voted)
+    $("#settings .games").hidden = r.mode !== "pick";
   }
+  for (const group of [$("#privacy"), $("#mode"), $("#bots"), $("#roomLevel"), $("#settings .games")]) group.classList.toggle("locked", !host);
+  $("#reset").hidden = !host || !between || !r.points.some((p) => p > 0);
   for (const b of document.querySelectorAll("#lobby .games button")) b.setAttribute("aria-checked", b.dataset.game === (r?.game || gameId));
   const list = $("#seats");
   if (list.contains(document.activeElement)) return; // typing a name: don't pull it away
   list.innerHTML = "";
   list.hidden = !r;
+  list.classList.toggle("points", !!r?.points.some((p) => p > 0));
   for (let i = 0; i < 4 && r; i++) {
     const p = r.players.find((x) => x.seat === i);
     const li = list.appendChild(document.createElement("li"));
     li.style.setProperty("--c", PLAYER_COLOURS[i]);
-    li.className = (p ? "" : "cpu") + (p && i === mySeat ? " me" : "");
+    li.className = (p ? "" : r.cpus ? "cpu" : "cpu empty") + (p && i === mySeat ? " me" : "");
     const img = li.appendChild(document.createElement("img"));
     img.className = "badge";
     img.alt = p ? i + 1 + "P" : "COM";
@@ -703,14 +800,13 @@ function renderLobby() {
       n.addEventListener("change", () => {
         const v = n.value.trim();
         if (!v) return;
-        try { localStorage.setItem("egg_name", v); } catch { /* private mode */ }
-        net.hello.name = v; // and after a reconnect
+        setMyName(v);
         net.send("name", { name: v });
       });
       n.addEventListener("keydown", (e) => { if (e.key === "Enter") n.blur(); });
     } else {
       n = document.createElement("span");
-      n.textContent = p ? p.name : "CPU";
+      n.textContent = p ? p.name : r.cpus ? "CPU" : "Empty";
     }
     n.classList.add("n");
     li.appendChild(n);
@@ -723,6 +819,83 @@ function renderLobby() {
       t.className = "tag " + cls;
       t.textContent = text;
     }
+    const pts = li.appendChild(document.createElement("span"));
+    pts.className = "pts";
+    pts.textContent = r.points[i] ?? "";
+  }
+}
+
+// The vote (the three games on offer, each with its voters' badges, and the
+// level), then the game it's on while every device loads it; Random's spin
+// lands on its game the same way
+let voteClock = 0, spun = "";
+function renderVote() {
+  const r = room, el = $("#vote");
+  const on = !!r && (r.state === "voting" || r.state === "loading");
+  el.hidden = !on;
+  clearTimeout(voteClock);
+  if (!on) return;
+  const v = r.state === "voting" || r.loading.by === "vote" ? r.vote : null, l = r.loading;
+  const ids = v ? v.games : [l.game], won = l?.game;
+  $("#voteTitle").textContent = r.state === "voting" ? "Vote for the next game" : "Next game";
+  const box = el.querySelector(".choices");
+  if (box.dataset.ids !== ids.join()) {
+    box.dataset.ids = ids.join();
+    box.innerHTML = "";
+    for (const id of ids) {
+      const b = box.appendChild(document.createElement("button"));
+      b.dataset.game = id;
+      b.setAttribute("role", "radio");
+      b.style.backgroundImage = `url(${GAMES[id].art})`;
+      b.innerHTML = `<img src="${GAMES[id].banner}" alt="${GAMES[id].name}"><span class="voters"></span>`;
+      b.addEventListener("click", () => {
+        if (room?.state !== "voting") return;
+        sfx.tap(); telegram.haptic("select");
+        for (const x of box.children) x.setAttribute("aria-checked", x === b);
+        net.send("vote", { game: id });
+      });
+    }
+  }
+  box.classList.toggle("one", ids.length === 1);
+  const votes = v ? v.votes : [], mine = votes[mySeat] || {};
+  const badges = (k, val) => votes.map((x, s) => (x?.[k] === val ? `<img src="${UI}badge_${s + 1}p.png" alt="${s + 1}P">` : "")).join("");
+  for (const b of box.children) {
+    b.setAttribute("aria-checked", r.state === "voting" ? mine.game === b.dataset.game : b.dataset.game === won);
+    b.classList.toggle("lost", r.state === "loading" && b.dataset.game !== won);
+    b.querySelector(".voters").innerHTML = badges("game", b.dataset.game);
+  }
+  const levels = $("#voteLevels");
+  levels.hidden = !v?.levels;
+  for (const b of levels.querySelectorAll("button")) {
+    b.setAttribute("aria-checked", r.state === "voting" ? mine.level === b.dataset.level : b.dataset.level === r.level);
+    b.querySelector(".voters").innerHTML = badges("level", b.dataset.level);
+  }
+  // Random: a spin through the games, slowing, onto the one it's on (once)
+  const key = r.round + ":" + won;
+  if (r.state === "loading" && l.by === "random" && spun !== key) {
+    spun = key;
+    const card = box.firstElementChild, img = card.querySelector("img"), order = [...ORDER].sort(() => Math.random() - 0.5);
+    let k = 0, wait = 40;
+    const turn = () => {
+      if (spun !== key || !card.isConnected) return;
+      const id = wait > 260 ? won : order[k++ % order.length];
+      card.style.backgroundImage = `url(${GAMES[id].art})`;
+      img.src = GAMES[id].banner;
+      img.alt = GAMES[id].name;
+      sfx.tap();
+      if (id !== won || wait <= 260) { wait *= 1.18; setTimeout(turn, wait); }
+    };
+    turn();
+  }
+  // what's left: the vote's time, or who it's waiting for
+  const note = $("#voteNote");
+  if (r.state === "voting") {
+    const left = Math.max(0, Math.ceil((v.ends - net.now()) / 1000));
+    note.textContent = `${left} s left` + (mine.game ? "" : " · tap a game to vote");
+    voteClock = setTimeout(renderVote, 250);
+  } else {
+    const wait = l.waiting.filter((s) => s !== mySeat);
+    note.textContent = l.waiting.includes(mySeat) ? "Loading…" : wait.length ? `Waiting for ${wait.map(nameOf).join(", ")}…` : "Get ready!";
   }
 }
 
@@ -817,14 +990,30 @@ async function boot() {
   for (const b of document.querySelectorAll("#title .levels:not(.controls) button")) {
     b.addEventListener("click", () => { sfx.tap(); telegram.haptic("select"); setLevel(b.dataset.level); telegram.set("level", level); });
   }
-  for (const b of document.querySelectorAll("#lobby .levels:not(.controls) button")) {
+  // the room's settings: the host's
+  const setting = (group, key, send) => {
+    for (const b of group.querySelectorAll("button")) {
+      b.addEventListener("click", () => {
+        if (room?.host !== mySeat || b.disabled) return;
+        sfx.tap(); telegram.haptic("select");
+        markRadio(group, key, b.dataset[key]);
+        send(b.dataset[key]);
+      });
+    }
+  };
+  setting($("#roomLevel"), "level", (l) => net.send("level", { level: l }));
+  setting($("#mode"), "mode", (m) => net.send("mode", { mode: m }));
+  setting($("#bots"), "bots", (v) => net.send("bots", { on: v === "true" }));
+  setting($("#privacy"), "public", (v) => net.send("public", { on: v === "true" }));
+  for (const b of document.querySelectorAll("#voteLevels button")) {
     b.addEventListener("click", () => {
-      if (room?.host !== mySeat) return;
+      if (room?.state !== "voting") return;
       sfx.tap(); telegram.haptic("select");
-      markLevel($("#lobby .levels:not(.controls)"), b.dataset.level);
-      net.send("level", { level: b.dataset.level });
+      markLevel($("#voteLevels"), b.dataset.level);
+      net.send("vote", { level: b.dataset.level });
     });
   }
+  $("#reset").addEventListener("click", () => { sfx.tap(); net.send("reset"); });
   for (const group of document.querySelectorAll(".controls")) {
     group.addEventListener("click", (e) => {
       const c = e.target.closest("[data-controls]")?.dataset.controls;
@@ -840,21 +1029,27 @@ async function boot() {
     sfx.tap();
   });
   $("#play").addEventListener("click", play);
-  $("#friends").addEventListener("click", () => { sfx.tap(); goOnline(); });
+  $("#friends").addEventListener("click", () => { sfx.tap(); goRooms(); });
   $("#again").addEventListener("click", () => (current?.online ? net.send("start") : play()));
   $("#menu").addEventListener("click", () => (current?.online ? toLobby() : toTitle()));
-  $("#start").addEventListener("click", () => { sfx.tap(); if (room) net.send("start"); else goOnline(); });
+  $("#start").addEventListener("click", () => { sfx.tap(); if (room) net.send("start"); });
+  $("#quick").addEventListener("click", () => { sfx.tap(); goOnline("", false, { quick: true }); });
+  $("#make").addEventListener("click", () => { sfx.tap(); goOnline("", false, { public: true, mode: "vote" }); });
+  $("#rooms").addEventListener("click", (e) => { const c = e.target.closest("[data-room]")?.dataset.room; if (c) { sfx.tap(); goOnline(c); } });
+  $("#back").addEventListener("click", () => { sfx.tap(); toTitle(); });
+  $("#myName").addEventListener("change", () => { const v = $("#myName").value.trim(); if (v) setMyName(v); });
+  $("#myName").addEventListener("keydown", (e) => { if (e.key === "Enter") e.target.blur(); });
   $("#invite").addEventListener("click", () => { sfx.tap(); invite(); });
   $("#copy").addEventListener("click", () => { sfx.tap(); copyLink(); });
   $("#linkText").addEventListener("click", (e) => e.target.setSelectionRange(0, e.target.value.length));
-  $("#leave").addEventListener("click", () => { sfx.tap(); toTitle(); });
+  $("#leave").addEventListener("click", () => { sfx.tap(); goRooms(); });
   $("#join").addEventListener("submit", (e) => {
     e.preventDefault();
     const c = $("#joinCode").value.trim();
     if (!CODE.test(c)) { roomError = "bad-code"; renderStatus(); return; }
     $("#joinCode").value = "";
     $("#joinCode").blur();
-    if (c.toUpperCase() !== room?.room) goOnline(c);
+    goOnline(c);
   });
 
   new ResizeObserver(layout).observe(app);

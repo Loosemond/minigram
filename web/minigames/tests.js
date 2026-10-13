@@ -22,24 +22,67 @@ function eggScript(z, g, d) {
   for (const r of d.drops) if (r.reach >= g && (z === 0 || r.kind === "e") && (!best || r.reach < best.reach)) best = r;
   return best ? best.side : 0;
 }
+// and with empty seats (the CPUs off: c 3, the speed-up on), the players there playing eggPlayer():
+// [seed, the empty seats, what came of their drops and the speed-ups], as JS_EGG_EMPTY in tools/test_rooms.py
+const EGG_EMPTY = [[1, [2, 3], "b7f6ed6d28ca48fa"], [12345, [0, 2], "a714244ee34e0bb5"]];
+// (for the next egg, but still 30 frames in 500, at the seat's own times)
+const eggPlayer = (z, g, d) => ((g + 100 * z) % 500 < 30 ? 0 : eggScript(1, g, d));
 // Clear Cut Challenge's deal() for every level code: the same as JS_DEALS in tools/test_rooms.py
 const DEALS = { 1: "845261658a294406", 12345: "dcaad7cc4c79a603", 2147483647: "8c853818348d493e" };
+// and rounds with empty seats ([seed, level, CPUs, the empty seats]): the seats there swinging on cutScript(),
+// the empty ones' swings refused: the same as JS_CUT_EMPTY in tools/test_rooms.py
+const CUT_EMPTY = [[12345, "normal", false, [2, 3], "ffc1df54c77cbe79"], [2147483647, "hard", true, [0], "879415174c7383a3"],
+  [1, "easy", true, [1, 3], "91e3a1cd7cce9694"]];
+// (the frames after log n's drop seat z swings on: on the target, early, late, a miss too soon (then locked), none, a late miss and another)
+const cutScript = (z, n, T) => [[T], [T - 1], [T + 2], [T], [2, T], [T - 3], [30, 77], []][(n + 3 * z) % 8];
 // Eager Eevee's deal() for levels 1-3, with no one outside and with EEVEE_OUTS: the same as JS_EEVEE in tools/test_rooms.py
 const EEVEE = { 1: "1d47aa9501e2a387", 12345: "d330183e33ae66eb", 2147483647: "708a50a8a21e7b38" };
 const EEVEE_OUTS = [0, 1, 9, 6, 15];
+// and games with empty seats ([seed, level code, the empty seats]): the seats there on eeveeScript(), the
+// empty ones' presses refused: the same as JS_EEVEE_EMPTY in tools/test_rooms.py
+const EEVEE_EMPTY = [[12345, 2, [2, 3], "fa7d211d1425ccaf"], [2147483647, 3, [0], "0a98774f58e9397e"], [1, 1, [1, 3], "2a392eaf5c783e25"]];
+// (seat z's press on frame t of round n: a feint now and then, a dash just after the basket's up, one too soon)
+const eeveeScript = (z, n, t, T) => (t === T.play + 4 + 3 * z && (n + z) % 3 === 0 ? "b" : t === T.open + [2, 5, 9, 5][(z + n) % 4] ? "a" : null);
 // Streaming Stampede's questions (and the CPUs' answers and presses) for levels 1-3: the same as JS_STAMPEDE in tools/test_rooms.py
 const STAMPEDE = { 1: "c33c69d5058f2c41", 12345: "8bad5c3faf1e1fa4", 2147483647: "ff29a0ea8c1ddc98" };
+// and games with empty seats ([seed, level, CPUs, the empty seats]): the people there counting to stampedeTarget(),
+// the empty seats' presses refused: the same as JS_STAMPEDE_EMPTY in tools/test_rooms.py
+const STAMPEDE_EMPTY = [[12345, "normal", [false, false, false, false], [2, 3], "44e3046e704839f5"],
+  [2147483647, "hard", [false, true, false, false], [0], "c2196f423db9e617"], [1, "easy", [false, false, true, false], [1, 3], "aea274b2c68c4721"]];
+// (what seat z counts to in question q: right, or off by a little)
+const stampedeTarget = (z, q, answer) => Math.max(0, answer + [0, 0, 0, 1, -2, 0, 3][(3 * q + z) % 7]);
 // Pichu's Power Plant's Electrodes and CPUs for c 0-3: the same as JS_PICHU in tools/test_rooms.py
 const PICHU = { 1: "85b689e086341c65", 12345: "7a2d41e41a9793ae", 2147483647: "2f91d5687bee0e4b" };
+// and games with empty seats ([seed, level, CPUs, the empty seats]): the people there pressing on pichuScript(),
+// the empty seats' presses refused: the same as JS_PICHU_EMPTY in tools/test_rooms.py
+const PICHU_EMPTY = [[12345, "normal", [false, false, false, false], [2, 3], "d2db24ef281e7782"],
+  [2147483647, "hard", [false, true, false, false], [0], "2addb28a30122a56"], [1, "easy", [false, false, true, false], [1, 3], "b5991cbf73631ec4"]];
+// (seat z's press on frame t: every 3 or 4 frames at the Electrode that's out, now and then the wrong button)
+function pichuScript(z, t, P) {
+  if (t < 1 || (t + 2 * z) % (3 + (z % 2))) return null;
+  const e = P.list[P.at.cur[t - 1]];
+  if (!(e.from < t)) return null;
+  return [e.dir, (Math.floor(t / 7) + z) % 23 === 0 ? 11 - e.btn : e.btn];
+}
 // Tumbling Togepi: a race with seat 0 on TOGEPI_SCRIPT ([frame, x, y]) and three normal CPUs, every lane
 // every 50 frames: the same as JS_TOGEPI in tools/test_rooms.py
 const TOGEPI = { 1: "efcaeb571cb83ba1", 12345: "98649f14c45fb285", 2147483647: "897e6c53dd29b182" };
 const TOGEPI_SCRIPT = [[0, 0, -60], [100, 45, -60], [160, 0, -60], [260, -60, -45], [300, 0, -60], [500, 30, 0], [530, 0, -60],
   [700, -45, -45], [760, 60, -60], [800, 0, -60]];
+// and races with empty seats (no Togepi there, its lane never runs), the people there on TOGEPI_SCRIPT 20 x seat
+// frames on ([seed, level, CPUs, the empty seats]): every lane every 50 frames till those there are in, the
+// finishes and the places: the same as JS_TOGEPI_EMPTY in tools/test_rooms.py
+const TOGEPI_EMPTY = [[1, "normal", [false, true, false, false], [2, 3], "66f420942a50b9c6"],
+  [12345, "hard", [false, false, false, false], [0], "5a99fd84dc37d5d3"]];
 // Gutsy Golbat: a round with seats 0 and 2 on golbatPad() and two CPUs (normal, hard, easy), the
 // world's digest() every 50 frames, the end and the hearts: the same as JS_GOLBAT in tools/test_rooms.py
 const GOLBAT = { 1: "ef999629c57bfe9c", 12345: "fd9fbc24e01eae26", 2147483647: "a1db3b0f2ef6720e" };
 const GOLBAT_LEVEL = { 1: "normal", 12345: "hard", 2147483647: "easy" };
+// and with empty seats (no Golbat there): 1 with seat 0 on golbatPad(0) and seat 1 a CPU, 2 and 3 empty; 12345 with
+// seat 0 empty and the other three people (seat 3 golbatPad(2) 35 frames on): the same as JS_GOLBAT_EMPTY in tools/test_rooms.py
+const GOLBAT_EMPTY = { 1: ["normal", [false, true, false, false], [false, false, true, true], "c8f40880b4dce0eb"],
+  12345: ["hard", [false, false, false, false], [true, false, false, false], "27b0795d6200ac5d"] };
+const golbatEmptyPads = (seed, t) => (+seed === 1 ? [golbatPad(0, t), null, null, null] : [null, golbatPad(0, t), golbatPad(2, t), golbatPad(2, t + 35)]);
 // Barrier Ball: a round with seats 0 and 2 on barrierPad() and two CPUs (normal, hard, easy), the
 // world's digest() every 50 frames on to the results, the end, the results' frame and the points;
 // and two with four CPUs (normal): one with a goal after the end, one whose results come a frame
@@ -47,6 +90,14 @@ const GOLBAT_LEVEL = { 1: "normal", 12345: "hard", 2147483647: "easy" };
 const BARRIER = { 1: "baed3467350c0520", 12345: "46d69816c8c7591b", 2147483647: "7181b8b79a86077e" };
 const BARRIER_CPU = { 22: "66c104cfdcadda70", 250: "420c8089c67e52e1" };
 const BARRIER_LEVEL = { 1: "normal", 12345: "hard", 2147483647: "easy", 22: "normal", 250: "normal" };
+// and two with empty seats (online with the CPUs off; the remake's: no Mr. Mime there, its lane shut): 21 (hard)
+// with seats 2 and 3 empty, seat 0 on barrierPad() and seat 1 a CPU, and 14 (normal) with seat 0 empty and the
+// other three on it (seat 3 35 frames on): the same as JS_BARRIER_EMPTY in tools/test_rooms.py
+const BARRIER_EMPTY = { 21: "28736fddb731d26e", 14: "769a726f112471bf" };
+const BARRIER_EMPTY_SEATS = { 21: ["hard", [false, true, false, false], [false, false, true, true]],
+  14: ["normal", [false, false, false, false], [true, false, false, false]] };
+const barrierEmptyPads = (seed, t) => (+seed === 21 ? [barrierPad(0, t), null, null, null]
+  : [null, barrierPad(0, t), barrierPad(2, t), barrierPad(2, t + 35)]);
 const barrierPad = (z, t) => (z === 0 ? [[64, 0, -64, 32, -32, 0][Math.floor(t / 40) % 6], t % 23 === 0 || t % 61 === 7]
   : [[-64, 64][Math.floor(t / 70) % 2], t % 19 === 0]);
 const golbatPad = (z, t) => (z === 0 ? [[64, 0, -64, 32, -32, 0][Math.floor(t / 90) % 6], t % 12 === 0 || t % 47 === 5]
@@ -62,18 +113,39 @@ const rolloutWay = (d) => (d.y < -150 && d.x > -200 ? 2 : d.x < -200 && d.y < 15
 const rolloutDrive = (d) => [d.x < -171.2 ? 4 : 2, d.y > 115.7 ? 1 : 4, d.x > 171.2 ? 8 : 1, d.y < -115.7 ? 2 : 8, 4, 8, 2, 1][d.seg];
 const rolloutPad = (z, t, w) => (z === 0 ? [rolloutWay(w.d[0]) | (t === 0 ? 16 : 0), t % 47 === 3]
   : [[8, 4, 2, 1, 0, 2][Math.floor(t / 40) % 6], t % 61 === 11]);
+// and three with empty seats (online with the CPUs off: no Donphan there), the same but the places and the
+// frames in with -1 for none: 21 (hard) with seats 2 and 3 empty, seat 0 on rolloutPad() and seat 1 a CPU;
+// 14 (normal, no CPUs) with seat 0 empty, seat 1 round the track and seats 2 and 3 on the pattern (seat 3
+// 35 frames on); 1 (easy) with seats 1 and 3 empty, seat 0 on rolloutPad() and seat 2 a CPU: the same as
+// JS_ROLLOUT_EMPTY in tools/test_rooms.py
+const ROLLOUT_EMPTY = { 21: "c02f22f1c8d77d6e", 14: "beb0018de37dffbd", 1: "969ce491f001da4f" };
+const ROLLOUT_EMPTY_SEATS = { 21: ["hard", [false, true, false, false], [false, false, true, true]],
+  14: ["normal", [false, false, false, false], [true, false, false, false]], 1: ["easy", [false, false, true, false], [false, true, false, true]] };
+const rolloutEmptyPads = (seed, t, w) => (+seed === 14
+  ? [null, [rolloutWay(w.d[1]) | (t === 0 ? 16 : 0), t % 47 === 3], rolloutPad(2, t, w), rolloutPad(2, t + 35, w)]
+  : [rolloutPad(0, t, w), null, null, null]);
 // Topsy-Turvy: a round with seats 0 and 2 on topsyPad() and two CPUs (normal, hard, easy), the world's
 // digest() every 100 frames (the hard one to its end and the show after, the others 600 frames), the end,
 // the points and the places: the same as JS_TOPSY in tools/test_rooms.py
 const TOPSY = { 1: "787fac9096d5b8ba", 157: "272f45629a21406c", 2147483647: "a9b0c75e0b95888e" };
 const TOPSY_LEVEL = { 1: "normal", 157: "hard", 2147483647: "easy" };
+// and two with empty seats (online with the CPUs off: no Hitmontop there), each to its end and the show after
+// (120 frames), the places with -1 for none: 21 (hard) with seats 2 and 3 empty, seat 0 on topsyPad() and seat 1
+// a CPU; 14 (normal, no CPUs) with seat 0 empty, seat 1 after whoever's nearest (as topsyPad()'s seat 0) and
+// seats 2 and 3 on the pattern (seat 3 35 frames on): the same as JS_TOPSY_EMPTY in tools/test_rooms.py
+const TOPSY_EMPTY = { 21: "465153d464b05b47", 14: "977fcf924d9b8542" };
+const TOPSY_EMPTY_SEATS = { 21: ["hard", [false, true, false, false], [false, false, true, true]],
+  14: ["normal", [false, false, false, false], [true, false, false, false]] };
+const topsyEmptyPads = (seed, t, w) => (+seed === 14
+  ? [null, topsyPad(0, t, { p: [w.p[1], ...w.p.filter((q) => q !== w.p[1])] }), topsyPad(2, t, w), topsyPad(2, t + 35, w)]
+  : [topsyPad(0, t, w), null, null, null]);
 // (seat 0 at whoever's nearest, a RAPID SPIN now and then; seat 2 a pattern)
 function topsyPad(z, t, w) {
   if (z !== 0) return [...[[64, 0], [0, 64], [-45, -45], [0, 0]][Math.floor(t / 60) % 4], t % 71 === 13];
   const me = w.p[0];
   let best = null, bd = Infinity;
   for (const q of w.p) {
-    if (q === me) continue;
+    if (q === me || q.empty) continue; // (no one there: an empty seat)
     const dx = q.pos[0] - me.pos[0], dz = q.pos[2] - me.pos[2];
     if (dx * dx + dz * dz < bd) { bd = dx * dx + dz * dz; best = [dx, dz]; }
   }
@@ -85,6 +157,15 @@ function topsyPad(z, t, w) {
 // the points and the places: the same as JS_FURRET in tools/test_rooms.py
 const FURRET = { 1: "d8bba6ac13cb2e76", 157: "8a791b70fad491c7", 2147483647: "1feb9cfed6ca125d" };
 const FURRET_LEVEL = { 1: "normal", 157: "hard", 2147483647: "easy" };
+// and two with empty seats (online with the CPUs off: no Furret there), each to its end and the show after (120
+// frames), the places with -1 for none: 21 (hard) with seats 2 and 3 empty, seat 0 on furretPad() and seat 1 a
+// CPU; 14 (normal, no CPUs) with seat 0 empty, seat 1 as furretPad()'s seat 0 and seats 2 and 3 on its pattern
+// (seat 3 35 frames on): the same as JS_FURRET_EMPTY in tools/test_rooms.py
+const FURRET_EMPTY = { 21: "af39c1c0c2428c80", 14: "67dbe3cc9c86efe5" };
+const FURRET_EMPTY_SEATS = { 21: ["hard", [false, true, false, false], [false, false, true, true]],
+  14: ["normal", [false, false, false, false], [true, false, false, false]] };
+const furretEmptyPads = (seed, t, w) => (+seed === 14 ? [null, furretPad(0, t, w), furretPad(2, t, w), furretPad(2, t + 35, w)]
+  : [furretPad(0, t, w), null, null, null]);
 // (seat 0 at the first ball's hollow, a swing now and then; seat 2 a pattern)
 function furretPad(z, t, w) {
   if (z !== 0) return [[1, 2, 0, 3, 4, 0][Math.floor(t / 45) % 6], t % 29 === 7];
@@ -100,6 +181,11 @@ function furretPad(z, t, w) {
 // frames), the end, the points and the places: the same as JS_DELIBIRD in tools/test_rooms.py
 const DELIBIRD = { 1: "ed072f802be05f26", 157: "1172bf54263dbb00", 2147483647: "093aaa33d9bd2928" };
 const DELIBIRD_LEVEL = { 1: "normal", 157: "hard", 2147483647: "easy" };
+// and with empty seats (no Delibird there), to a second into the show: 1 (hard) with seat 0 on deliPad() and seat 1 a
+// CPU, 2 and 3 empty; 157 with seat 0 empty and the other three on it; the world's digest() every 100 frames, the end,
+// the points, the places and who won: the same as JS_DELIBIRD_EMPTY in tools/test_rooms.py
+const DELIBIRD_EMPTY = { 1: ["hard", [false, true, false, false], [false, false, true, true], "b374a34425079a10"],
+  157: ["normal", [false, false, false, false], [true, false, false, false], "b244b0ca1ba7e9f1"] };
 // (down to a gift on the belt, each in turn; up with two, or one now and then)
 function deliPad(z, t, w) {
   const p = w.p[z];
@@ -156,7 +242,10 @@ function pump(w) {
   }, 100);
 }
 
+// ?only=<regex>: just the tests whose names match it (case aside)
+const ONLY = new URLSearchParams(location.search).get("only");
 async function test(name, fn, { live = false } = {}) {
+  if (ONLY && !new RegExp(ONLY, "i").test(name)) return;
   const li = $("#list").appendChild(document.createElement("li"));
   li.className = "run";
   li.append(name);
@@ -494,6 +583,45 @@ await test("Egg Emergency: the deal and the judging are the same as the server's
   return stats.map(([v, f], c) => `${["hard", "normal", "easy"][c]} ${v} Voltorbs, ${(f / 30).toFixed(0)} s`).join(", ");
 });
 
+await test("Egg Emergency: with empty seats, only the players there play and count for the speed-up, as on the server", async () => {
+  const R = await moduleOf(solo, "./src/egg/rules.js");
+  const K = { catch: "c", hit: "h", pass: "m", miss: "m" };
+  for (const [seed, gone, want] of EGG_EMPTY) {
+    const empty = [0, 1, 2, 3].map((z) => gone.includes(z)), out = [[], [], [], []];
+    const seats = [0, 1, 2, 3].map((z) => new R.Seat(z, (what, row) => { if (K[what]) out[z].push(`${row.n}:${K[what]}:${seats[z].eggs}:${seats[z].f}`); }));
+    const d = new R.Deal(seed, R.levelCode("easy", false), { allHuman: true, want: R.everyone(seats, empty) });
+    for (let g = 1; ; g++) {
+      d.step();
+      seats.forEach((st, z) => { if (!empty[z]) st.step(g, d, R.LEAN[eggPlayer(z, g, d)]); });
+      if (d.clear(g)) break;
+    }
+    const got = await sha16(out.map((o) => o.join(";")).join("|") + "|" + d.ups.join(","));
+    assert(got === want, `seed ${seed}, seats ${gone} empty: ${got}; tools/egg_rules.py expects ${want} (update both)`);
+    assert(d.ups.length > 0, "no speed-up");
+  }
+  // in the round: the empty seats don't play, aren't ranked, and a draw is everyone there level
+  return headless(solo, (g) => {
+    g.reset("normal", 3, { me: 1, control: ["none", "local", "cpu", "none"], empty: [true, false, false, true] });
+    assert(g.cpus.join() === "false,false,true,false" && g.c === R.levelCode("normal", true), `CPUs ${g.cpus}, c ${g.c}`);
+    g.start();
+    for (let n = 0; g.state === "play" && n < 30 * 120; n++) { g.held = eggScript(1, g.frame + 1, g.deal); g.update(1 / 30); }
+    assert(g.state === "over", "the round didn't end: " + g.state);
+    assert(g.seats[0].f === 0 && g.seats[3].f === 0 && g.seats[0].eggs === 0 && g.seats[3].eggs === 0, "an empty seat played");
+    assert(!g.chansey[0].root.visible && !g.chansey[3].root.visible && g.chansey[1].root.visible && g.chansey[2].root.visible, "who's shown");
+    const res = g.celebrate(), there = res.filter((r) => r.i === 1 || r.i === 2), [e1, e2] = [g.seats[1].eggs, g.seats[2].eggs];
+    const placeOf = (i) => res.find((r) => r.i === i).place;
+    assert(placeOf(1) === 1 + (e2 > e1) && placeOf(2) === 1 + (e1 > e2), JSON.stringify(res));
+    assert(g.cheer[0] === null && g.cheer[3] === null, "an empty seat cheers");
+    for (const z of [1, 2]) g.seats[z].eggs = 40;
+    g.celebrate();
+    assert(g.seats[1].state === R.CLIP.lose && g.seats[2].state === R.CLIP.lose, "a draw between the two there: both sit back");
+    g.seats[2].eggs = 39;
+    g.celebrate();
+    assert(g.seats[1].state === R.CLIP.win && g.seats[2].state === R.CLIP.lose, "the winner of the two cheers");
+    return `seats 1 and 2 in: ${there.map((r) => r.score).join(", ")} eggs`;
+  });
+});
+
 await test("Egg Emergency: a drop lands by the lean when it reaches the hands, as the server judges it", async () => {
   const got = [];
   const end = headless(solo, (g) => {
@@ -675,6 +803,56 @@ await test("Clear Cut Challenge: CPU levels, what it takes to win a solo round",
   return report.join(", ");
 });
 
+await test("Clear Cut Challenge: empty seats (no one there, not even a CPU), the same as the server's copy", async () => {
+  await solo.mg.show("clearcut");
+  const R = await moduleOf(solo, "./src/clearcut/rules.js");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners, out = [];
+  solo.mg.paused = true;
+  try {
+    for (const [seed, level, cpus, gone, want] of CUT_EMPTY) {
+      g.listeners = {};
+      const control = [0, 1, 2, 3].map((z) => (gone.includes(z) ? "none" : "local"));
+      g.reset(level, seed, { me: control.indexOf("local"), control, c: R.levelCode(level, cpus) });
+      g.start();
+      for (let k = 0; g.state === "play"; k++) {
+        g.time = (k + 0.5) / 30; // (mid-frame: a press now is on frame k)
+        g.update(0);
+        const at = g.logAt(k);
+        if (!at) continue;
+        for (let z = 0; z < 4; z++) {
+          if (!cutScript(z, at.n, g.logs[at.n].T).some((f) => k === at.t.drop + f)) continue;
+          const did = g.press(z);
+          assert(!did || !gone.includes(z), `seat ${z} is empty, but it swung`);
+        }
+      }
+      const r = g.results(), places = [0, 1, 2, 3].map((z) => r.find((x) => x.i === z)?.place ?? "-");
+      const s = g.players.map((p) => p.cuts.map((c) => (c ? `${c.f === null ? "n" : c.f}:${c.pts}` : "-")).join()).join("|")
+        + `|${g.players.map((p) => p.total).join()}|${places.join()}`;
+      const got = await sha16(s);
+      assert(got === want, `seed ${seed}, seats ${gone} empty: ${got}; tools/clearcut_rules.py expects ${want} (update both)`);
+      const l = (z) => g.lanes[z];
+      assert(r.length === 4 - gone.length && gone.every((z) => !l(z).scyther.root.visible && !l(z).log.visible && !l(z).spinarak.visible
+                                                          && !l(z).sign.root.visible && g.players[z].cuts.every((c) => !c)),
+             "the empty seats are ranked, shown or cut: " + JSON.stringify(r));
+      out.push(`${gone} empty: ${g.players.map((p) => p.total).join(", ")}`);
+    }
+    // the end: a draw (everyone there tied) has no winner, the empty seats aside
+    g.reset("normal", 5, { me: 1, control: ["none", "local", "none", "local"] });
+    g.players.forEach((p, z) => { p.total = z % 2 ? 20 : 0; });
+    g.celebrate();
+    assert(g.lanes.map((l) => l.end).join() === "0,1,0,1", "a draw among those there has winners: " + g.lanes.map((l) => l.end));
+    g.players[3].total = 21;
+    g.celebrate();
+    assert(g.lanes.map((l) => l.end).join() === "0,1,0,2", "the winner of those there: " + g.lanes.map((l) => l.end));
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  return out.join("; ");
+});
+
 await test("Clear Cut Challenge: its music and sound effects play from sound.bin", () => soundTest("assets/clearcut/sound.bin", [
   ["hang", 6, (r) => assert(r.notes > 10 && r.peak > 0.05 && r.peak < 1, `song 18: ${r.notes} notes, peak ${r.peak.toFixed(2)}`)],
   ["show", 6, (r) => assert(r.notes > 10 && r.peak > 0.05 && r.peak < 1, `song 19: ${r.notes} notes, peak ${r.peak.toFixed(2)}`)],
@@ -811,6 +989,45 @@ await test("Eager Eevee: a solo game, played headless: a quick player beats the 
   return "totals over 6 games on Hard: " + tally.join(", ");
 });
 
+await test("Eager Eevee: empty seats (no one there, not even a CPU), the same as the server's copy", async () => {
+  await solo.mg.show("eevee");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners, out = [];
+  solo.mg.paused = true;
+  try {
+    for (const [seed, level, gone, want] of EEVEE_EMPTY) {
+      const log = [];
+      g.listeners = { press: [(m) => log.push(`${m.s}${m.k}${m.f}`)] };
+      const control = [0, 1, 2, 3].map((z) => (gone.includes(z) ? "none" : "local"));
+      g.reset("normal", seed, { me: control.indexOf("local"), control, level });
+      g.start();
+      while (g.state === "play") {
+        g.update(1 / 30);
+        const t = g.lastFrame, n = g.roundAt(t);
+        for (let z = 0; z < 4; z++) { const k = eeveeScript(z, n, t, g.times[n]); if (k) g.press(k, z); }
+      }
+      const r = g.results(), places = [0, 1, 2, 3].map((z) => r.find((x) => x.i === z)?.place ?? "-");
+      const s = [log.join(), g.outs.join(), g.verdict.map((v) => (v ? v.pts : [0, 0, 0, 0]).join("/")).join(";"),
+                 g.players.map((p) => p.total).join(), places.join()].join("|");
+      const got = await sha16(s);
+      assert(got === want, `seed ${seed}, seats ${gone} empty: ${got}; tools/eevee_rules.py expects ${want} (update both)`);
+      assert(r.length === 4 - gone.length && gone.every((z) => !g.eevees[z].m.root.visible && !g.eevees[z].shadow.visible),
+             "the empty seats are ranked or shown: " + JSON.stringify(r));
+      out.push(`${gone} empty: ${g.players.map((p) => p.total).join(", ")}`);
+    }
+    // the hand-over: a draw (everyone there tied) has no winner, the empty seats aside
+    g.reset("normal", 5, { me: 1, control: ["none", "local", "none", "local"] });
+    g.players.forEach((p, z) => { p.total = z % 2 ? 1000 : 0; });
+    g.celebrate();
+    assert(g.winners.every((w) => !w), "a draw among those there has winners: " + g.winners);
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  return out.join("; ");
+});
+
 await test("Streaming Stampede: the questions are the same as the server's copy of them", async () => {
   const R = await moduleOf(solo, "./src/stampede/rules.js");
   const hex = (x) => { const d = new DataView(new ArrayBuffer(8)); d.setFloat64(0, x); return [...new Uint8Array(d.buffer)].map((b) => b.toString(16).padStart(2, "0")).join(""); };
@@ -902,6 +1119,47 @@ await test("Streaming Stampede: a solo game, played headless: a player who count
   }
   assert(tally[0] > Math.max(...tally.slice(1)), "the player who counted right didn't win: " + tally);
   return "totals over 4 games on Hard: " + tally.join(", ");
+});
+
+await test("Streaming Stampede: empty seats (no one there, not even a CPU), the same as the server's copy", async () => {
+  await solo.mg.show("stampede");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners, out = [];
+  solo.mg.paused = true;
+  g.listeners = {};
+  try {
+    for (const [seed, level, cpus, gone, want] of STAMPEDE_EMPTY) {
+      const control = [0, 1, 2, 3].map((z) => (gone.includes(z) ? "none" : cpus[z] ? "cpu" : "local"));
+      g.reset(level, seed, { me: control.indexOf("local"), control, cpus });
+      g.start();
+      while (g.state === "play") {
+        g.update(1 / 30);
+        const { q, Q, f, k } = g.now;
+        if (!(f >= 0 && k < 0 && f % 3 === 0)) continue;
+        for (let z = 0; z < 4; z++) {
+          if (g.players[z].presses[q].length >= stampedeTarget(z, q, Q.answer)) continue;
+          assert(g.press(z) !== (gone.includes(z) || cpus[z]), `seat ${z}'s press, question ${q}`);
+        }
+      }
+      const r = g.results(), places = [0, 1, 2, 3].map((z) => r.find((x) => x.i === z)?.place ?? "-");
+      const s = g.qs.map((Q, q) => `b${g.states[q].bonus}l${g.states[q].level}:${Q.answer}:${g.verdicts[q].counts.join()}:${g.verdicts[q].pts.join()}`).join(";")
+        + `|${g.players.map((p) => p.total).join()}|${places.join()}`;
+      const got = await sha16(s);
+      assert(got === want, `seed ${seed}, seats ${gone} empty: ${got}; tools/stampede_rules.py expects ${want} (update both)`);
+      assert(r.length === 4 - gone.length && gone.every((z) => !g.booths[z].holder.visible && g.booths[z].digits.every((m) => !m.visible)),
+             "the empty seats are ranked or shown: " + JSON.stringify(r));
+      out.push(`${gone} empty: ${g.players.map((p) => p.total).join(", ")}`);
+    }
+    // the end: the winners' booths go up, the others' sink back turning; an empty booth stays where it is
+    g.celebrate();
+    for (let n = 0; n < 200; n++) g.update(1 / 30);
+    assert([1, 3].every((z) => g.booths[z].spin === 0 && g.booths[z].height === 0 && !g.booths[z].win), "an empty booth moved");
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  return out.join("; ");
 });
 
 await test("Pichu's Power Plant: the Electrodes and the CPUs are the same as the server's copy of them", async () => {
@@ -1007,6 +1265,51 @@ await test("Pichu's Power Plant: a solo game, played headless: a quick, right pl
   return `wins over 4 games on Hard: ${wins.join(", ")}; full at frames ${at.join(", ")}`;
 });
 
+await test("Pichu's Power Plant: empty seats (no one there, not even a CPU), the same as the server's copy", async () => {
+  await solo.mg.show("pichu");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners, out = [];
+  solo.mg.paused = true;
+  g.listeners = {};
+  try {
+    for (const [seed, level, cpus, gone, want] of PICHU_EMPTY) {
+      const control = [0, 1, 2, 3].map((z) => (gone.includes(z) ? "none" : cpus[z] ? "cpu" : "local"));
+      g.reset(level, seed, { me: control.indexOf("local"), control, cpus });
+      g.start();
+      while (g.state === "play") {
+        g.update(1 / 30);
+        const t = g.frame;
+        for (let z = 0; z < 4; z++) {
+          const k = pichuScript(z, t, g.P);
+          if (k && g.press(k[0], k[1], z)) assert(!gone.includes(z) && !cpus[z], `seat ${z} pressed`);
+        }
+      }
+      const f = g.fin(), r = g.results(), places = [0, 1, 2, 3].map((z) => r.find((x) => x.i === z)?.place ?? "-");
+      const s = [0, 1, 2, 3].map((z) => (gone.includes(z) ? "-" : cpus[z] ? `c${g.cpu[z].full}` : g.runners[z].presses.map((p) => p.join("/")).join(";"))).join("|")
+        + `|${f.at}:${f.winners.map(Number).join()}|${[0, 1, 2, 3].map((z) => g.charge(z)).join()}|${places.join()}`;
+      const got = await sha16(s);
+      assert(got === want, `seed ${seed}, seats ${gone} empty: ${got}; tools/pichu_rules.py expects ${want} (update both)`);
+      assert(r.length === 4 - gone.length && gone.every((z) => !g.players[z].model.root.visible && !f.winners[z]),
+             "the empty seats are ranked, shown or won: " + JSON.stringify(r));
+      out.push(`${gone} empty: ${[0, 1, 2, 3].map((z) => g.charge(z)).join(", ")}`);
+    }
+    // the end: everyone there full on the same frame is "all won" (no zap, no losers), the empty seats aside
+    g.reset("normal", 5, { me: 1, control: ["none", "local", "none", "local"] });
+    g.start();
+    g.result = { at: 0, winners: [false, true, false, true], e: [0, 80, 0, 80] };
+    g.update(1 / 30);
+    for (let n = 0; n < 60; n++) g.update(1 / 30);
+    assert(g.players.every((p) => !p.bolt.visible) && [1, 3].every((z) => g.players[z].end?.win), "all those there won, but a zap");
+    const r = g.results();
+    assert(r.map((x) => `${x.i}:${x.place}`).join() === "1:1,3:1", "a draw among those there: " + JSON.stringify(r));
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  return out.join("; ");
+});
+
 await test("Tumbling Togepi: the lanes and the CPUs are the same as the server's copy of them", async () => {
   const R = await moduleOf(solo, "./src/togepi/rules.js");
   const q = (v) => Math.floor(v * 1000 + 0.5);
@@ -1080,6 +1383,56 @@ await test("Tumbling Togepi: a solo race, played headless: all four get there, a
   return "finish frames: " + out.join("; ");
 });
 
+await test("Tumbling Togepi: empty seats (no one there, not even a CPU), the same as the server's copy", async () => {
+  await solo.mg.show("togepi");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners, out = [];
+  const q = (v) => Math.floor(v * 1000 + 0.5);
+  solo.mg.paused = true;
+  g.listeners = {};
+  try {
+    for (const [seed, level, cpus, gone, want] of TOGEPI_EMPTY) {
+      const there = (z) => !gone.includes(z), control = [0, 1, 2, 3].map((z) => (!there(z) ? "none" : cpus[z] ? "cpu" : "remote"));
+      g.reset(level, seed, { me: control.indexOf("remote"), control, cpus });
+      for (let z = 0; z < 4; z++) if (control[z] === "remote") g.inputs[z] = TOGEPI_SCRIPT.map(([f, x, y]) => [f + 20 * z, x, y]);
+      g.start();
+      let s = "", t = 0;
+      for (; t < 3000; t++) {
+        g.step(t);
+        g.lastFrame = t;
+        if (t % 50 === 0) s += g.lanes.map((l, z) => (!there(z) ? "-" : l.finish !== null ? "F" : [q(l.x), q(l.z), l.tile, q(l.px), q(l.progress), l.state].join(","))).join("|") + ";";
+        if (g.lanes.every((l, z) => !there(z) || l.finish !== null)) break;
+      }
+      s += g.lanes.map((l) => l.finish ?? "").join(",") + ";" + g.places().map((p) => p ?? "").join(",");
+      const got = await sha16(s);
+      assert(got === want, `seed ${seed}, seats ${gone} empty: ${got}; tools/togepi_rules.py expects ${want} (update both)`);
+      // the end comes with those there in; nothing of the empty seats is drawn (nor their markers on the other belts)
+      for (t++; g.ended === null && t < 3200; t++) { g.step(t); g.lastFrame = t; }
+      assert(g.ended !== null, "no end with those there in");
+      g.animate(0);
+      const shown = gone.filter((z) => { const v = g.lanesView[z]; return v.togepi.root.visible || v.shadow.visible || v.coin.visible; });
+      const marked = g.lanesView.flatMap((v) => v.ghosts.filter((m) => !there(m.q) && m.s.visible));
+      const r = g.results();
+      assert(!shown.length && !marked.length && r.length === 4 - gone.length && r.every((x) => there(x.i)), `shown ${shown}, markers ${marked.length}, results ${JSON.stringify(r)}`);
+      out.push(`${gone} empty: in at ${g.finishes().join(", ")}`);
+    }
+    // the end: everyone there in together (the same frame, the same progress before) is a draw, no one cheers
+    const winners = [];
+    g.listeners = { end: [(w) => winners.push(w.join())] };
+    g.reset("normal", 5, { me: 1, control: ["none", "remote", "remote", "none"] });
+    g.result = { f: 960, fin: [null, 930, 930, null], p: [0, 1000, 1000, 0], prior: [null, 99.5, 99.5, null] };
+    g.ending(0);
+    g.result.prior[2] = 99.7;
+    g.ending(0);
+    assert(winners.join("/") === "false,false,false,false/false,false,true,false", "winners: " + winners.join(" / "));
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  return out.join("; ");
+});
+
 await test("Gutsy Golbat: the world and the CPUs are the same as the server's copy of them", async () => {
   const R = await moduleOf(solo, "./src/golbat/rules.js");
   for (const [seed, want] of Object.entries(GOLBAT)) {
@@ -1093,6 +1446,54 @@ await test("Gutsy Golbat: the world and the CPUs are the same as the server's co
     const got = await sha16(parts.join(";"));
     assert(got === want, `seed ${seed}: ${got}; tools/golbat_rules.py expects ${want} (update both, and the digests)`);
   }
+});
+
+await test("Gutsy Golbat: empty seats (no Golbat there), the same as the server's copy", async () => {
+  const R = await moduleOf(solo, "./src/golbat/rules.js"), out = [];
+  for (const [seed, [level, cpus, empty, want]] of Object.entries(GOLBAT_EMPTY)) {
+    const w = new R.World(+seed, level, cpus, empty), parts = [];
+    for (let t = 0; w.end === null; t++) {
+      w.step(t, golbatEmptyPads(seed, t));
+      assert(!w.events.some((e) => e[1] >= 0 && empty[e[1]]), `seed ${seed}: something of an empty seat at frame ${t}: ${JSON.stringify(w.events)}`);
+      w.events = [];
+      if (t % 50 === 0) parts.push(w.digest());
+    }
+    parts.push(w.end + ":" + w.scores.join(","));
+    const got = await sha16(parts.join(";"));
+    assert(got === want, `empty seats, seed ${seed}: ${got}; tools/golbat_rules.py expects ${want} (update both)`);
+    out.push(`seed ${seed}: hearts ${w.scores.join(", ")}`);
+  }
+  // in the game: nothing of the empty seats drawn, the places among those there, a draw no winners
+  await solo.mg.show("golbat");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners;
+  solo.mg.paused = true;
+  g.listeners = {};
+  try {
+    g.reset("normal", 5, { me: 1, control: ["none", "local", "cpu", "none"] });
+    assert(g.cpus.join() === "false,false,true,false" && g.world.level === 2, `CPUs ${g.cpus}, level ${g.world.level}`);
+    for (let n = 0; n < 130; n++) g.update(1 / 30); // (the fly-in)
+    g.start();
+    for (let n = 0; n < 400; n++) { if (n % 9 === 0) g.flap(); g.update(1 / 30); }
+    const shown = [0, 3].filter((z) => { const v = g.golbats[z]; return v.model.root.visible || v.badge.visible || v.glow.visible; });
+    assert(!shown.length && g.golbats[1].model.root.visible && g.golbats[2].model.root.visible, "shown: " + shown);
+    assert([0, 3].every((z) => g.world.g[z].x === R.START[z][0] && g.world.g[z].hearts === 0), "an empty seat's Golbat moved");
+    g.result = { f: g.lastFrame, h: [0, 5, 5, 0] };
+    g.ending();
+    assert(g.winners.every((x) => !x) && g.handed, "a draw between the two there: winners " + g.winners);
+    assert(g.results().map((r) => `${r.i}:${r.place}`).join() === "1:1,2:1", "results " + JSON.stringify(g.results()));
+    g.endAt = null; g.handed = false;
+    g.result.h = [0, 5, 3, 0];
+    g.ending();
+    assert(g.winners.join() === "false,true,false,false" && g.places().join() === ",1,2,", `winners ${g.winners}, places ${g.places()}`);
+    for (let k = 0; k < 120; k++) g.endFrame(k);
+    assert(g.ends[0].n === 0 && g.ends[3].n === 0 && g.ends[2].n === 120, "the end ran an empty seat's Golbat");
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  return out.join("; ");
 });
 
 await test("Gutsy Golbat: its music and sound effects play from sound.bin", () => soundTest("assets/golbat/sound.bin", [
@@ -1215,6 +1616,20 @@ await test("Barrier Ball: the world and the CPUs are the same as the server's co
   }
   // a goal in the first step after the end still counts (0x86306710 doesn't check the play)
   assert(late[22] === 1, "goals after the end: " + JSON.stringify(late));
+  // with empty seats: no goal in a shut lane, and no points for no one
+  for (const [seed, want] of Object.entries(BARRIER_EMPTY)) {
+    const [level, cpus, empty] = BARRIER_EMPTY_SEATS[seed], w = new R.World(+seed, level, cpus, empty), parts = [];
+    for (let t = 0; w.handOver === null; t++) {
+      w.step(t, barrierEmptyPads(seed, t));
+      assert(!w.events.some((e) => e[0] === "goal" && empty[e[1]]), `empty seats, seed ${seed}: a goal in a shut lane at frame ${t}`);
+      w.events = [];
+      if (t % 50 === 0) parts.push(w.digest());
+    }
+    parts.push(`${w.end}:${w.handOver}:${w.scores.join(",")}`);
+    const got = await sha16(parts.join(";"));
+    assert(got === want, `empty seats, seed ${seed}: ${got}; tools/barrier_rules.py expects ${want} (update both, and the digests)`);
+    assert(w.scores.every((p, z) => !empty[z] || p === 0), `empty seats, seed ${seed}: points ${w.scores}`);
+  }
   // its sines are the main program's table's (0x80087FB0), to the last bit
   const s = [0, 1024, 2048, 3072, 512].map((i) => R.sine(i));
   assert(s.join() === `0,1,0,-1,${Math.fround(Math.SQRT1_2)}`, "sines " + s);
@@ -1286,6 +1701,28 @@ await test("Barrier Ball: a solo round, played headless: it ends at 5 points or 
       assert(p.some((x) => x > 0), `${level}: no one scored: ${p}`);
       out.push(`${level}: ${p.join(", ")} at frame ${end}`);
     }
+    // seat 0 empty (online, the CPUs off: no Mr. Mime there, its lane shut): only the three there ranked,
+    // and a draw is all of them level (barrier_rules.Round.places() the same)
+    g.reset("normal", 33, { me: 1, control: ["none", "local", "cpu", "cpu"] });
+    assert(g.empty.join() === "true,false,false,false" && g.cpus.join() === "false,false,true,true", `empty ${g.empty}, CPUs ${g.cpus}`);
+    assert(!g.mimes[0].root.visible && g.shut[0].visible && g.mimes.slice(1).every((v) => v.root.visible) && g.shut.slice(1).every((s) => !s.visible), "seat 0's Mr. Mime shown, or the wrong lanes shut");
+    g.start();
+    while (g.state === "play" && g.frame < 2500) {
+      const t = g.lastFrame + 1;
+      g.setStick(Math.round(Math.sin(t / 30) * 4) * 16);
+      if (t % 17 === 0) g.smash();
+      g.update(1 / 30);
+    }
+    const res = g.results(), p = g.world.scores;
+    assert(g.state === "over" && p[0] === 0 && res.map((r) => r.i).sort().join() === "1,2,3" && !g.winners[0], `seat 0 empty: results ${JSON.stringify(res)}, points ${p}, winners ${g.winners}`);
+    assert(res.every((r) => r.place === 1 + [1, 2, 3].filter((o) => p[o] > p[r.i]).length), `seat 0 empty: places ${JSON.stringify(res)}`);
+    const E = g.world.end;
+    for (const [q, places, winners] of [[[0, 2, 2, 2], [null, 1, 1, 1], "false,false,false,false"], [[5, 2, 3, 3], [null, 3, 1, 1], "false,false,true,true"]]) {
+      g.result = { f: E, p: q };
+      g.ending();
+      assert(g.places().join() === places.join() && g.winners.join() === winners, `seat 0 empty, points ${q}: places ${g.places()}, winners ${g.winners}`);
+    }
+    out.push(`seat 0 empty: ${p.join(", ")} at frame ${E}`);
   } finally {
     g.listeners = saved;
     solo.mg.paused = false;
@@ -1331,6 +1768,30 @@ await test("Rampage Rollout: the world and the CPUs are the same as the server's
     parts.push(w.digest(), `${w.end}:${w.places.join()}:${w.d.map((d) => d.fin).join()}`);
     const got = await sha16(parts.join(";"));
     assert(got === want, `seed ${seed}: ${got}; tools/rollout_rules.py expects ${want} (update both, and the digests)`);
+  }
+  // with empty seats: nothing of no one, those there placed 1 to n, the camera as the first of them stops
+  for (const [seed, want] of Object.entries(ROLLOUT_EMPTY)) {
+    const [level, cpus, empty] = ROLLOUT_EMPTY_SEATS[seed], w = new R.World(+seed, level, cpus, empty), parts = [];
+    let cam = null;
+    for (let t = 0; w.end === null || t <= w.end + 90; t++) {
+      w.step(t, rolloutEmptyPads(seed, t, w));
+      assert(!w.events.some((e) => e[0] !== "camera" && empty[e[1]]), `empty seats, seed ${seed}: ${JSON.stringify(w.events)} at frame ${t}`);
+      if (w.events.some((e) => e[0] === "camera")) cam = t;
+      w.events = [];
+      if (t % 50 === 0) parts.push(w.digest());
+    }
+    parts.push(w.digest(), `${w.end}:${w.places.map((p) => p ?? -1).join()}:${w.d.map((d) => d.fin ?? -1).join()}`);
+    const got = await sha16(parts.join(";"));
+    assert(got === want, `empty seats, seed ${seed}: ${got}; tools/rollout_rules.py expects ${want} (update both, and the digests)`);
+    const here = w.d.filter((d) => !d.empty), placed = w.places.filter((p) => p !== null).sort();
+    assert(placed.join() === here.map((d, k) => k + 1).join() && here.every((d) => d.done) && cam === here[0].halt, `empty seats, seed ${seed}: places ${w.places}, the camera at ${cam}`);
+  }
+  {
+    const w = new R.World(4, "normal", [false, false, false, false], [true, false, false, false]);
+    for (const d of w.d.slice(1)) d.laps = 0;
+    w.step(0, []);
+    w.step(1, []);
+    assert(w.end === 1 && !w.d.some((d) => d.won) && w.places.join() === ",1,1,1", `all there in together: the end ${w.end}, places ${w.places}`);
   }
   // the main program's arctangent table (0x8008CFB0), and its angles; its sine table (0x80087FB0)
   const a = [0, 1, 512, 1023, 1024].map((i) => R.ATAN[i]), b = [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1]].map(([x, y]) => R.angle(x, y));
@@ -1419,6 +1880,24 @@ await test("Rampage Rollout: a solo race, played headless: everyone gets in, pla
       g.listeners = {};
       out.push(`${level}: ${fin.join(", ")} (stopped at ${halts.map((h) => h - end).join(", ")} after)`);
     }
+    // seat 0 empty (online, the CPUs off: no Donphan there): nothing of it shown, only the three there
+    // ranked, the camera to the winners as the first of them (2P) stops
+    g.reset("normal", 33, { me: 1, control: ["none", "local", "cpu", "cpu"] });
+    assert(g.empty.join() === "true,false,false,false" && g.cpus.join() === "false,false,true,true", `empty ${g.empty}, CPUs ${g.cpus}`);
+    g.start();
+    const parts = (v) => [v.root, v.shadow, v.label, ...v.stars.map((st) => st.s)];
+    while (g.state === "play" && g.frame < 4000) {
+      g.setDpad(rolloutWay(g.world.d[1]));
+      if ((g.lastFrame + 1) % 47 === 3) g.press();
+      g.update(1 / 30);
+      assert(!parts(g.donphan[0]).some((o) => o.visible), `frame ${g.lastFrame}: seat 0's Donphan shown`);
+    }
+    for (let k = 0; k < 150; k++) g.update(1 / 30);
+    const res = g.results(), fin = g.world.d.map((d) => d.fin), halts = g.world.d.map((d) => d.halt);
+    assert(res.map((r) => r.i).sort().join() === "1,2,3" && res.map((r) => r.place).join() === "1,2,3" && fin[0] === null && !g.winners[0],
+      `seat 0 empty: results ${JSON.stringify(res)}, in at ${fin}, winners ${g.winners}`);
+    assert(halts[0] === null && halts.slice(1).every((h) => h !== null) && g.camTo?.f === halts[1], `seat 0 empty: stopped at ${halts}, the camera at ${g.camTo?.f}`);
+    out.push(`seat 0 empty: ${fin.join(", ")}`);
   } finally {
     g.listeners = saved;
     solo.mg.paused = false;
@@ -1463,6 +1942,21 @@ await test("Topsy-Turvy: the world and the CPUs are the same as the server's cop
     parts.push(`${w.end ?? -1}:${w.scores.join()}:${w.places.join()}`);
     const got = await sha16(parts.join(";"));
     assert(got === want, `seed ${seed}: ${got}; tools/topsy_rules.py expects ${want} (update both, and the digests)`);
+  }
+  // with empty seats: nothing of no one; an empty seat never comes in, nor wins or loses
+  for (const [seed, want] of Object.entries(TOPSY_EMPTY)) {
+    const [level, cpus, empty] = TOPSY_EMPTY_SEATS[seed], w = new R.World(+seed, level, cpus, empty), parts = [];
+    for (let t = 0; !(w.over && t > w.end + 120); t++) {
+      w.step(t, topsyEmptyPads(seed, t, w));
+      const bad = w.events.find((e) => (e[0] === "hit" || e[0] === "point") && (empty[e[1]] || empty[e[2]]) || ["jump", "out", "spin"].includes(e[0]) && empty[e[1]]);
+      assert(!bad, `empty seats, seed ${seed}: ${JSON.stringify(bad)} at frame ${t}`);
+      w.events = [];
+      if (t % 100 === 0) parts.push(w.digest());
+    }
+    parts.push(`${w.end ?? -1}:${w.scores.join()}:${w.places.map((p) => p ?? -1).join()}`);
+    const got = await sha16(parts.join(";"));
+    assert(got === want, `empty seats, seed ${seed}: ${got}; tools/topsy_rules.py expects ${want} (update both, and the digests)`);
+    assert(w.p.every((p) => !p.empty || (p.state === 0 && !p.on && p.score === 0)), `empty seats, seed ${seed}: states ${w.p.map((p) => p.state)}`);
   }
   // the game's sine, cosine and arctangent: close to the browser's own
   const far = Math.max(...[0, 0.3, -1.2, 2.5, 3.1, -3.14, 7, 40].map((x) => Math.max(Math.abs(R.sinf(x) - Math.sin(x)), Math.abs(R.cosf(x) - Math.cos(x)))),
@@ -1558,6 +2052,29 @@ await test("Topsy-Turvy: a solo round, played headless: it ends by points or the
       assert(g.winners.every((w, z) => w === (s[z] === Math.max(...s) && !s.every((x) => x === s[0]))), `${level}: winners ${g.winners} for ${s}`);
       out.push(`${level}: ${s.join(", ")} at frame ${end}`);
     }
+    // seat 0 empty (online, the CPUs off: no Hitmontop there): nothing of it shown, only the three there
+    // ranked, and a draw is all of them level
+    g.reset("normal", 33, { me: 1, control: ["none", "local", "cpu", "cpu"] });
+    assert(g.empty.join() === "true,false,false,false" && g.cpus.join() === "false,false,true,true", `empty ${g.empty}, CPUs ${g.cpus}`);
+    g.start();
+    const v0 = g.tops[0], shown0 = () => [v0.model.root, v0.shadow.root, v0.ring.root, ...v0.glows, ...v0.middles].some((o) => o.visible);
+    while (g.state === "play" && g.frame < R.TIME_LIMIT + AFTER + 60) {
+      const [x, y, a] = topsyPad(0, g.lastFrame + 1, { p: [g.world.p[1], ...g.world.p.filter((q) => q !== g.world.p[1])] });
+      g.setStick(x, y);
+      if (a) g.press();
+      g.update(1 / 60);
+      assert(!shown0(), `frame ${g.lastFrame}: seat 0's Hitmontop shown`);
+    }
+    const res = g.results(), s = g.world.scores, here = [1, 2, 3].map((z) => s[z]);
+    assert(g.state === "over" && s[0] === 0 && g.world.p[0].state === 0 && res.map((r) => r.i).sort().join() === "1,2,3" && !g.winners[0],
+      `seat 0 empty: results ${JSON.stringify(res)}, points ${s}, winners ${g.winners}`);
+    assert(res.every((r) => r.place === 1 + here.filter((x) => x > s[r.i]).length), `seat 0 empty: places ${JSON.stringify(res)}`);
+    for (const [q, places, winners] of [[[9, 2, 2, 2], [null, 1, 1, 1], "false,false,false,false"], [[9, 2, 3, 3], [null, 3, 1, 1], "false,false,true,true"]]) {
+      g.result = { f: g.world.end, s: q };
+      g.ending();
+      assert(g.places().join() === places.join() && g.winners.join() === winners, `seat 0 empty, points ${q}: places ${g.places()}, winners ${g.winners}`);
+    }
+    out.push(`seat 0 empty: ${s.join(", ")} at frame ${g.world.end}`);
   } finally {
     g.listeners = saved;
     solo.mg.paused = false;
@@ -1603,6 +2120,32 @@ await test("Furret's Frolic: the world and the CPUs are the same as the server's
     parts.push(`${w.end ?? -1}:${w.scores.join()}:${w.places.join()}`);
     const got = await sha16(parts.join(";"));
     assert(got === want, `seed ${seed}: ${got}; tools/furret_rules.py expects ${want} (update both, and the digests)`);
+  }
+  // with empty seats: nothing of no one; an empty seat's Furret never stepped
+  for (const [seed, want] of Object.entries(FURRET_EMPTY)) {
+    const [level, cpus, empty] = FURRET_EMPTY_SEATS[seed], w = new R.World(+seed, level, cpus, empty), parts = [];
+    for (let t = 0; !(w.over && t > w.end + 120); t++) {
+      w.step(t, furretEmptyPads(seed, t, w));
+      const bad = w.events.find((e) => ["goal", "swing", "shot", "cheer"].includes(e[0]) && empty[e[1]]);
+      assert(!bad, `empty seats, seed ${seed}: ${JSON.stringify(bad)} at frame ${t}`);
+      w.events = [];
+      if (t % 100 === 0) parts.push(w.digest());
+    }
+    parts.push(`${w.end ?? -1}:${w.scores.join()}:${w.places.map((p) => p ?? -1).join()}`);
+    const got = await sha16(parts.join(";"));
+    assert(got === want, `empty seats, seed ${seed}: ${got}; tools/furret_rules.py expects ${want} (update both, and the digests)`);
+    assert(w.p.every((p) => !p.empty || (p.score === 0 && !p.won && p.f.clip === R.CLIP.up)), `empty seats, seed ${seed}: ${w.scores}`);
+  }
+  {
+    // a ball over an empty seat's goal line: in, for no one; over a seat's there, its points
+    const w = new R.World(3, "normal", [false, false, false, false], [true, false, false, false]);
+    w.spawn(2);
+    w.balls[0].pos = [700, 0, 700]; // (goal 3: seat 0's)
+    w.goal(w.balls[0]);
+    w.spawn(3);
+    w.balls[1].pos = [700, 0, -700]; // (goal 1: seat 1's)
+    w.goal(w.balls[1]);
+    assert(w.balls.every((b) => b.scored) && w.scores.join() === "0,3,0,0" && w.events.filter((e) => e[0] === "goal").length === 1, `goals: ${w.scores}`);
   }
   // the floor (module #50's own mesh): 4 pieces of 38 triangles; the middle hollow 46 down, a spot's too
   const mid = R.groundY(0, 0), spot = R.groundY(282.84, 282.84);
@@ -1705,6 +2248,30 @@ await test("Furret's Frolic: a solo round, played headless: it ends on the clock
       assert(cries.every((c, z) => (g.winners[z] ? c.length === 2 && c[1] - c[0] === 36 : !c.length)), `${level}: the cries ${JSON.stringify(cries)}`);
       out.push(`${level}: ${s.join(", ")}`);
     }
+    // seat 0 empty (online, the CPUs off: no Furret there): nothing of it shown (nor a badge over its goal),
+    // only the three there ranked, and a draw is all of them level
+    g.reset("normal", 33, { me: 1, control: ["none", "local", "cpu", "cpu"] });
+    assert(g.empty.join() === "true,false,false,false" && g.cpus.join() === "false,false,true,true", `empty ${g.empty}, CPUs ${g.cpus}`);
+    g.start();
+    const v0 = g.furret[0], shown0 = () => [v0.play.root, v0.end.root, v0.label, g.badges[R.GOALS[0]]].some((o) => o.visible);
+    while (g.state === "play" && g.frame < R.TIME + AFTER + 60) {
+      const [s, a] = furretPad(0, g.lastFrame + 1, g.world);
+      g.setSpot(s);
+      if (a) g.press();
+      g.update(1 / 30);
+      assert(!shown0(), `frame ${g.lastFrame}: seat 0's Furret shown`);
+    }
+    for (let k = 0; k < 120; k++) g.update(1 / 30);
+    const res = g.results(), s = g.world.scores, here = [1, 2, 3].map((z) => s[z]);
+    assert(g.state === "over" && s[0] === 0 && res.map((r) => r.i).sort().join() === "1,2,3" && !g.winners[0] && !shown0(),
+      `seat 0 empty: results ${JSON.stringify(res)}, points ${s}, winners ${g.winners}`);
+    assert(res.every((r) => r.place === 1 + here.filter((x) => x > s[r.i]).length), `seat 0 empty: places ${JSON.stringify(res)}`);
+    for (const [q, places, winners] of [[[9, 2, 2, 2], [null, 1, 1, 1], "false,false,false,false"], [[9, 2, 3, 3], [null, 3, 1, 1], "false,false,true,true"]]) {
+      g.result = { f: g.world.end, s: q };
+      g.ending();
+      assert(g.places().join() === places.join() && g.winners.join() === winners, `seat 0 empty, points ${q}: places ${g.places()}, winners ${g.winners}`);
+    }
+    out.push(`seat 0 empty: ${s.join(", ")}`);
   } finally {
     g.listeners = saved;
     solo.mg.paused = false;
@@ -1802,6 +2369,50 @@ await test("Delibird's Delivery: the world and the CPUs are the same as the serv
   const w = new R.World(9, "hard", [true, true, true, true]);
   for (let t = 0; w.phase !== "show"; t++) { w.step(t, []); w.events = []; }
   assert(w.shown - w.end === R.tallyFrames(w.scores) && R.tallyFrames([0, 0, 0, 0]) === 2, `the tally: ${w.end} to ${w.shown} for ${w.scores}`);
+});
+
+await test("Delibird's Delivery: empty seats (no Delibird there), the same as the server's copy", async () => {
+  const R = await moduleOf(solo, "./src/delibird/rules.js"), out = [];
+  for (const [seed, [level, cpus, empty, want]] of Object.entries(DELIBIRD_EMPTY)) {
+    const w = new R.World(+seed, level, cpus, empty), parts = [];
+    for (let t = 0; !(w.phase === "show" && t > w.shown + 30); t++) {
+      w.step(t, [0, 1, 2, 3].map((z) => (cpus[z] || empty[z] ? null : deliPad(z, t, w))));
+      assert(!w.events.some((e) => e[1] >= 0 && empty[e[1]]), `seed ${seed}: something of an empty seat at frame ${t}: ${JSON.stringify(w.events)}`);
+      w.events = [];
+      if (t % 100 === 0) parts.push(w.digest());
+    }
+    parts.push(`${w.end}:${w.scores.join()}:${w.places.map((p) => p ?? "").join()}:${w.p.map((p) => +p.won).join()}`);
+    const got = await sha16(parts.join(";"));
+    assert(got === want, `empty seats, seed ${seed}: ${got}; tools/delibird_rules.py expects ${want} (update both)`);
+    out.push(`seed ${seed}: ${w.scores.join(", ")}`);
+  }
+  // in the game: nothing of the empty seats drawn, no tally row, the places among those there, a draw no winners
+  await solo.mg.show("delibird");
+  const api = solo.mg.mini, g = api.game, saved = g.listeners;
+  solo.mg.paused = true;
+  g.listeners = {};
+  try {
+    api.reset({ level: "normal", seed: 5, me: 1, control: ["none", "local", "cpu", "none"], empty: [true, false, false, true] });
+    assert(g.cpus.join() === "false,false,true,false" && g.world.level === 2, `CPUs ${g.cpus}, level ${g.world.level}`);
+    g.start();
+    for (let n = 0; n < 300; n++) { g.setStick(...deliPad(1, g.lastFrame + 1, g.world)); g.update(1 / 30); }
+    const shown = [0, 3].filter((z) => { const v = g.birds[z]; return v.bird.root.visible || v.sack.root.visible || v.shadow.visible || v.label.visible || v.full.visible; });
+    assert(!shown.length && g.birds[1].bird.root.visible && g.birds[2].bird.root.visible, "shown: " + shown);
+    const rows = [...solo.document.querySelectorAll(".dd-row")].map((r) => !r.hidden);
+    assert(rows.join() === "false,true,true,false", "the tally's rows: " + rows);
+    g.result = { f: g.lastFrame, s: [0, 500, 500, 0] };
+    g.ending();
+    assert(g.winners.every((x) => !x) && g.results().map((r) => `${r.i}:${r.place}`).join() === "1:1,2:1", `a draw: winners ${g.winners}, ${JSON.stringify(g.results())}`);
+    g.result.s = [0, 500, 300, 0];
+    g.ending();
+    assert(g.winners.join() === "false,true,false,false" && g.places().join() === ",1,2,", `winners ${g.winners}, places ${g.places()}`);
+  } finally {
+    g.listeners = saved;
+    solo.mg.paused = false;
+    api.idle();
+    await solo.mg.show("egg");
+  }
+  return out.join("; ");
 });
 
 await test("Delibird's Delivery: the harder CPUs are better (more points, and the Swinub get them less)", async () => {
@@ -2158,6 +2769,69 @@ lane(2, async (f) => {
     return ranking(ann);
   }, { live: true });
 }, 64);
+
+lane(2, (f) => test("online: the lobby lists a public room, Bob joins it from there, and a vote picks the game and the level", async () => {
+  const ann = await f.open("norender&as=t-lobby-0&name=Ann"), bob = await f.open("norender&as=t-lobby-1&name=Bob");
+  const click = (w, q) => { const el = w.document.querySelector(q); assert(el, "no " + q); el.click(); };
+  click(ann, "#friends");
+  await until(() => ann.mg.phase() === "rooms" && !ann.document.querySelector("#online").hidden, "Ann's lobby");
+  click(ann, "#make");
+  await until(() => ann.mg.room()?.public && ann.mg.room().mode === "vote", "Ann's public room, voting on the games");
+  const code = ann.mg.room().room;
+  click(bob, "#friends");
+  await until(() => bob.document.querySelector(`#rooms [data-room="${code}"]`), "Ann's room in Bob's list", 8000);
+  const row = bob.document.querySelector(`#rooms [data-room="${code}"]`).textContent;
+  assert(/Ann's room/.test(row) && /1\/4/.test(row) && /Vote · waiting/.test(row), "the row " + row);
+  click(bob, `#rooms [data-room="${code}"]`);
+  await until(() => [ann, bob].every((w) => w.mg.room()?.players.length === 2), "both in the room");
+  assert(bob.document.querySelector("#settings").querySelector("#mode").classList.contains("locked"), "Bob can change the settings");
+  assert(ann.document.querySelector("#start").textContent === "Start the vote" && bob.document.querySelector("#start").hidden, "the Start buttons");
+  click(ann, "#start");
+  await until(() => [ann, bob].every((w) => w.mg.room()?.state === "voting" && w.document.querySelectorAll("#vote .choices button").length === 3), "the vote on both");
+  const games = ann.mg.room().vote.games;
+  click(ann, `#vote .choices button[data-game="${games[0]}"]`);
+  click(ann, '#voteLevels button[data-level="hard"]');
+  click(bob, `#vote .choices button[data-game="${games[2]}"]`); // ...then Bob changes his mind
+  await until(() => ann.mg.room().vote.votes[1]?.game === games[2], "Bob's vote at Ann's");
+  assert(ann.document.querySelector(`#vote .choices button[data-game="${games[2]}"] .voters img[alt="2P"]`), "Bob's badge on his vote");
+  click(bob, `#vote .choices button[data-game="${games[0]}"]`);
+  await sleep(300);
+  click(bob, '#voteLevels button[data-level="hard"]');
+  await until(() => [ann, bob].every((w) => w.mg.phase() === "countdown" || w.mg.phase() === "play"), "the round", 20000);
+  const r = ann.mg.room();
+  assert(r.game === games[0] && r.level === "hard" && ann.mg.mini && bob.document.title === ann.document.title, `the round: ${r.game}, ${r.level}`);
+  return `${games.join(", ")}: ${games[0]} on hard`;
+}, { live: true }), 30);
+
+lane(2, (f) => test("online: CPUs off, with two players: an Egg Emergency round with just them, ranked and given running points", async () => {
+  const { ann, bob } = await f.pair("egg");
+  const stop = [];
+  try {
+    bob.document.querySelector('#bots [data-bots="false"]').click(); // (not the host: nothing)
+    await sleep(800);
+    assert(ann.mg.room().bots === true, "Bob turned the CPUs off");
+    ann.document.querySelector('#bots [data-bots="false"]').click();
+    await until(() => bob.mg.room()?.cpus === false && bob.document.querySelectorAll("#seats li.empty").length === 2, "the empty spots, at Bob's");
+    assert(ann.document.querySelector("#levelRow").hidden, "a CPU level with no CPUs");
+    ann.mg.net().send("start");
+    await until(() => ann.mg.phase() === "play" && bob.mg.phase() === "play", "the round", 20000);
+    const g = bob.mg.game;
+    assert(g.control.join() === "remote,local,none,none" && ann.mg.game.control.join() === "local,remote,none,none", "seats " + g.control);
+    assert([...bob.document.querySelectorAll("#hud .card")].map((c) => c.classList.contains("empty")).join() === "false,false,true,true", "the empty seats' cards show");
+    stop.push(autoplay(ann), autoplay(bob));
+    await until(() => ann.mg.phase() === "results" && bob.mg.phase() === "results", "the results", 150000);
+    const rows = (w) => [...w.document.querySelectorAll("#ranking li")];
+    assert(rows(ann).length === 2 && rows(bob).length === 2, "ranked: " + ranking(ann));
+    assert(ranking(ann) === ranking(bob), `the rankings differ: ${ranking(ann)} / ${ranking(bob)}`);
+    const pts = rows(ann).map((li) => li.querySelector(".pts")?.textContent);
+    assert(pts.every((t) => /^\+[23][23]$/.test(t)), "points (+gained, total) " + pts);
+    assert(ann.document.querySelector("#again").textContent === "Play again", "the host's button: " + ann.document.querySelector("#again").textContent);
+    await until(() => ann.mg.room()?.points.slice(0, 2).every((p) => p >= 2) && ann.mg.room().points[2] === null, "the running points");
+    return ranking(ann);
+  } finally {
+    stop.forEach((s) => s());
+  }
+}, { live: true }), 100);
 
 lane(2, (f) => test("online: a Gutsy Golbat round, the same on both devices, and cheating doesn't work", async () => {
   const { ann, bob } = await f.pair("golbat");
@@ -2529,6 +3203,36 @@ lane(1, (f) => test("a solo round starts and plays: Egg Emergency", async () => 
   assert(solo.mg.phase() === "title", "back to the title: " + solo.mg.phase());
 }, { live: true }));
 
+lane(1, (f) => test("a solo Egg Emergency round with seats 2 and 3 empty, run on to the end, ranks only the two there", async () => {
+  // (through the shell, as a person plays it, but quicker: from GO this test runs the frames itself)
+  const solo = await f.open("norender&game=egg&empty=2,3");
+  solo.document.querySelector("#play").click();
+  await until(() => solo.mg.phase() === "play", "GO", 15000);
+  const g = solo.mg.game;
+  assert(g.control.join() === "local,cpu,none,none" && g.empty.join() === "false,false,true,true", "seats " + g.control);
+  // what's on show of each seat (its Chansey, drops and effects: on layer seat + 1)
+  const shown = () => { const n = [0, 0, 0, 0]; g.scene.traverseVisible((o) => { for (let z = 0; z < 4; z++) if (o.layers.mask === 1 << (z + 1) && (o.isMesh || o.isSprite)) n[z]++; }); return n; };
+  let mid = null;
+  solo.mg.paused = true;
+  try {
+    for (let k = 0; k < 30 * 120 && solo.mg.phase() === "play"; k++) {
+      let next = null;
+      for (const d of g.drops) if (d.kind === "e" && d.reach > g.frame && (!next || d.reach < next.reach)) next = d;
+      solo.mg.lean(next ? next.side : 0);
+      solo.mg.tick(1 / 30);
+      if (k === 900) mid = shown();
+    }
+  } finally { solo.mg.paused = false; solo.mg.lean(0); }
+  assert(mid[2] === 0 && mid[3] === 0 && mid[0] > 0 && mid[1] > 0, "on show mid-round, by seat: " + mid);
+  const cards = [...solo.document.querySelectorAll(".card")].map((c) => getComputedStyle(c).display !== "none");
+  assert(cards.join() === "true,true,false,false", "the cards shown: " + cards);
+  await until(() => solo.mg.phase() === "results", `the results (${solo.mg.phase()})`, 20000);
+  const end = shown(), rows = ranking(solo).split(" | ");
+  assert(end[2] === 0 && end[3] === 0 && rows.length === 2, `the ranking: ${ranking(solo)}; on show by seat: ${end}`);
+  assert(g.seats[2].eggs === 0 && g.seats[3].eggs === 0 && g.seats[0].eggs > 20, "eggs " + g.seats.map((p) => p.eggs));
+  return ranking(solo);
+}, { live: true }));
+
 lane(1, (f) => test("a solo round starts and plays: Clear Cut Challenge", async () => {
   const solo = await f.open("game=clearcut");
   solo.document.querySelector("#play").click();
@@ -2545,6 +3249,35 @@ lane(1, (f) => test("a solo round starts and plays: Clear Cut Challenge", async 
   return "the first log: " + first.join(", ");
 }, { live: true }));
 
+lane(1, (f) => test("a solo Clear Cut Challenge round with seats 2 and 3 empty, run on to the results: only those there ranked", async () => {
+  // (through the shell, but quicker: from GO this test runs the frames itself)
+  const solo = await f.open("norender&game=clearcut&empty=2,3");
+  solo.document.querySelector("#play").click();
+  await until(() => solo.mg.phase() === "play", "GO", 15000);
+  const g = solo.mg.game, cards = [...solo.document.querySelectorAll(".card")];
+  assert(g.control.join() === "local,cpu,none,none", "seats " + g.control);
+  // what's on show of each lane (its Scyther, log, Spinarak, signpost, flashes and sparkles: on layer lane + 1), and the cards
+  const shown = () => { const n = [0, 0, 0, 0]; g.scene.traverseVisible((o) => { for (let z = 0; z < 4; z++) if (o.layers.mask === 1 << (z + 1) && (o.isMesh || o.isSprite)) n[z]++; }); return n; };
+  const cardsOn = () => cards.map((c) => solo.getComputedStyle(c).display !== "none").join();
+  let mid = null;
+  solo.mg.paused = true;
+  try {
+    for (let k = 0; k < 4000 && solo.mg.phase() === "play"; k++) {
+      const fr = g.time * 30, at = g.logAt(fr);
+      if (at && !g.players[0].cuts[at.n] && fr >= at.t.drop + g.logs[at.n].T) g.press();
+      solo.mg.tick(1 / 30);
+      if (k === g.times[1].drop + 10) mid = shown();
+    }
+  } finally { solo.mg.paused = false; }
+  assert(mid[2] === 0 && mid[3] === 0 && mid[0] > 0 && mid[1] > 0, "on show mid-round, by lane: " + mid);
+  assert(cardsOn() === "true,true,false,false", "the cards shown: " + cardsOn());
+  await until(() => solo.mg.phase() === "results", `the results (${solo.mg.phase()})`, 20000);
+  const end = shown(), rows = ranking(solo).split(" | ");
+  assert(end[2] === 0 && end[3] === 0 && rows.length === 2, `the ranking: ${ranking(solo)}; on show by lane: ${end}`);
+  assert(g.players[2].total === 0 && g.players[3].total === 0 && g.players[0].total > 50, "points " + g.players.map((p) => p.total));
+  return ranking(solo);
+}, { live: true }));
+
 lane(1, (f) => test("a solo round starts and plays: Eager Eevee", async () => {
   const solo = await f.open("game=eevee");
   solo.document.querySelector("#play").click();
@@ -2557,6 +3290,31 @@ lane(1, (f) => test("a solo round starts and plays: Eager Eevee", async () => {
   const rd = g.rounds[0], v = g.verdict[0];
   assert(rd.kind === 2 ? !v || v.pts.every((x) => x === 0) : v && v.got[0], `the first race (kind ${rd.kind}): ${JSON.stringify(v)}`);
   return `the first race: ${v ? v.pts.join(", ") : "no one"}`;
+}, { live: true }));
+
+lane(1, (f) => test("a solo Eager Eevee game with seats 2 and 3 empty, run on to the results: only those there ranked", async () => {
+  // (through the shell, but quicker: from GO this test runs the frames itself)
+  const solo = await f.open("norender&game=eevee&empty=2,3");
+  solo.document.querySelector("#play").click();
+  await until(() => solo.mg.phase() === "play", "GO", 15000);
+  const g = solo.mg.game, hud = [...solo.document.querySelectorAll(".ee-prizes")], secs = [...solo.document.querySelectorAll(".ee-secs")];
+  const cards = [...solo.document.querySelectorAll(".card")];
+  assert(g.control.join() === "local,cpu,none,none", "seats " + g.control);
+  const shown = () => [2, 3].filter((z) => g.eevees[z].m.root.visible || g.eevees[z].shadow.visible || !hud[z].hidden || !secs[z].hidden
+                                         || solo.getComputedStyle(cards[z]).display !== "none");
+  solo.mg.paused = true;
+  try {
+    for (let k = 0; k < 4000 && solo.mg.phase() === "play"; k++) {
+      const { T, rd, t } = g.now;
+      if (rd.kind !== 2 && t >= T.open + 6 && g.players[0].runner.can(t)) g.press("a");
+      solo.mg.tick(1 / 30);
+      assert(!shown().length, `frame ${g.lastFrame}: seat ${shown()} shows`);
+    }
+  } finally { solo.mg.paused = false; }
+  await until(() => solo.mg.phase() === "results", `the results (${solo.mg.phase()})`, 20000);
+  const rows = ranking(solo).split(" | ");
+  assert(rows.length === 2 && g.players[2].total === 0 && g.players[3].total === 0 && !shown().length, "the ranking: " + ranking(solo));
+  return ranking(solo);
 }, { live: true }));
 
 lane(1, (f) => test("a solo round starts and plays: Streaming Stampede", async () => {
@@ -2574,6 +3332,32 @@ lane(1, (f) => test("a solo round starts and plays: Streaming Stampede", async (
   return "the first answer: " + answer.pts.join(", ");
 }, { live: true }));
 
+lane(1, (f) => test("a solo Streaming Stampede game with seats 2 and 3 empty, run on to the results: only those there ranked", async () => {
+  // (through the shell, but quicker: from GO this test runs the frames itself)
+  const solo = await f.open("norender&game=stampede&empty=2,3");
+  solo.document.querySelector("#play").click();
+  await until(() => solo.mg.phase() === "play", "GO", 15000);
+  const g = solo.mg.game, cards = [...solo.document.querySelectorAll(".card")], boxes = [...solo.document.querySelectorAll(".ss-counts > div")];
+  assert(g.control.join() === "local,cpu,none,none" && g.cpus.join() === "false,true,false,false", `seats ${g.control}, CPUs ${g.cpus}`);
+  // (nothing of seats 2 and 3 on show: no one in their booths, their screens blank, their cards and counts)
+  const shown = () => [2, 3].filter((z) => { const b = g.booths[z]; return b.holder.visible || b.digits.some((m) => m.visible) || b.spin !== 0
+                                                  || !boxes[z].hidden || solo.getComputedStyle(cards[z]).display !== "none"; });
+  solo.mg.paused = true;
+  try {
+    for (let k = 0; k < 9000 && solo.mg.phase() === "play"; k++) {
+      solo.mg.tick(1 / 30);
+      const { q, Q, f: c, k: a } = g.now;
+      if (c >= 0 && a < 0 && c % 3 === 0 && g.players[0].presses[q].length < Q.answer) g.press();
+      if (k % 30 === 0) assert(!shown().length, `frame ${g.lastFrame}: seat ${shown()} shows`);
+    }
+  } finally { solo.mg.paused = false; }
+  await until(() => solo.mg.phase() === "results", `the results (${solo.mg.phase()})`, 20000);
+  const rows = ranking(solo).split(" | ");
+  assert(rows.length === 2 && g.players[0].total === 100 && g.players[2].total === 0 && g.players[3].total === 0 && !shown().length,
+         "the ranking: " + ranking(solo));
+  return ranking(solo);
+}, { live: true }));
+
 lane(1, (f) => test("a solo round starts and plays: Pichu's Power Plant", async () => {
   const solo = await f.open("game=pichu");
   solo.document.querySelector("#play").click();
@@ -2588,6 +3372,32 @@ lane(1, (f) => test("a solo round starts and plays: Pichu's Power Plant", async 
   return "the charges 4 s in: " + charges.join(", ");
 }, { live: true }));
 
+lane(1, (f) => test("a solo Pichu's Power Plant game with seats 2 and 3 empty, run on to the results: only those there ranked", async () => {
+  // (through the shell, but quicker: from GO this test runs the frames itself)
+  const solo = await f.open("norender&game=pichu&empty=2,3");
+  solo.document.querySelector("#play").click();
+  await until(() => solo.mg.phase() === "play", "GO", 15000);
+  const g = solo.mg.game, cards = [...solo.document.querySelectorAll(".card")], gauges = [...solo.document.querySelectorAll(".pp-gauge")];
+  assert(g.control.join() === "local,cpu,none,none" && g.cpus.join() === "false,true,false,false", `seats ${g.control}, CPUs ${g.cpus}`);
+  // (nothing of seats 2 and 3 on show: their Pichu, sparks, lightning, stars, gauges or cards)
+  const shown = () => [2, 3].filter((z) => { const p = g.players[z]; return p.model.root.visible || p.spark.visible || p.bolt.visible || p.stars.root.visible
+                                                  || !gauges[z].hidden || solo.getComputedStyle(cards[z]).display !== "none"; });
+  solo.mg.paused = true;
+  let last = -9;
+  try {
+    for (let k = 0; k < 9000 && solo.mg.phase() === "play"; k++) {
+      solo.mg.tick(1 / 30);
+      const t = g.frame, e = g.P.list[g.P.at.cur[Math.max(0, t - 1)]];
+      if (t - last >= 4 && e.from < t && g.press(e.dir, e.btn)) last = t;
+      if (k % 30 === 0) assert(!shown().length, `frame ${g.lastFrame}: seat ${shown()} shows`);
+    }
+  } finally { solo.mg.paused = false; }
+  await until(() => solo.mg.phase() === "results", `the results (${solo.mg.phase()})`, 20000);
+  const rows = ranking(solo).split(" | ");
+  assert(rows.length === 2 && g.charge(2) === 0 && g.charge(3) === 0 && !shown().length, "the ranking: " + ranking(solo));
+  return ranking(solo);
+}, { live: true }));
+
 lane(1, (f) => test("a solo round starts and plays: Tumbling Togepi", async () => {
   const solo = await f.open("game=togepi");
   solo.document.querySelector("#play").click();
@@ -2600,6 +3410,91 @@ lane(1, (f) => test("a solo round starts and plays: Tumbling Togepi", async () =
   assert(g.cpus.join() === "false,true,true,true", "CPUs " + g.cpus);
   assert(far.every((x) => x >= 5 && x < 30), "4 s in, the progress is " + far);
   return `the progress 4 s in: ${far.join(", ")}%`;
+}, { live: true }));
+
+lane(1, (f) => test("a solo Tumbling Togepi race with seats 2 and 3 empty, run on to the results: only the two there ranked", async () => {
+  // (through the shell, but quicker: from GO this test runs the frames itself)
+  const solo = await f.open("norender&game=togepi&empty=2,3");
+  solo.document.querySelector("#play").click();
+  await until(() => solo.mg.phase() === "play", "GO", 15000);
+  const g = solo.mg.game, cards = [...solo.document.querySelectorAll(".card")], { BOX } = await moduleOf(solo, "./src/togepi/rules.js");
+  assert(g.control.join() === "local,cpu,none,none" && g.cpus.join() === "false,true,false,false", `seats ${g.control}, CPUs ${g.cpus}`);
+  // (nothing of seats 2 and 3 on show: their Togepi, shadows, coins, auras, what's on their belts, their markers, their cards)
+  const shown = () => [0, 1, 2, 3].filter((z) => {
+    const v = g.lanesView[z], marked = g.lanesView.some((w) => w.ghosts.some((m) => m.q === z && m.s.visible));
+    const any = v.togepi.root.visible || v.shadow.visible || v.coin.visible || v.aura.root.visible || v.slots.some((s) => s.obj) || v.digs.some((d) => d.visible)
+      || marked || solo.getComputedStyle(cards[z]).display !== "none";
+    return g.empty[z] ? any : !v.togepi.root.visible;
+  });
+  solo.mg.paused = true;
+  try {
+    for (let k = 0; k < 30 * 120 && solo.mg.phase() === "play"; k++) {
+      g.setStick(steerFor(g.lanes[0], BOX), -60);
+      solo.mg.tick(1 / 30);
+      if (k % 50 === 0) assert(!shown().length, `frame ${g.lastFrame}: seats ${shown()} shown wrong`);
+    }
+  } finally { solo.mg.paused = false; }
+  await until(() => solo.mg.phase() === "results", `the results (${solo.mg.phase()})`, 20000);
+  const rows = ranking(solo).split(" | "), fin = g.finishes();
+  assert(rows.length === 2 && fin[0] !== null && fin[1] !== null && fin[2] === null && g.lanes[2].progress === 0 && !shown().length,
+         `the ranking: ${ranking(solo)}; in at ${fin}`);
+  return ranking(solo) + `; in at ${fin}`;
+}, { live: true }));
+
+lane(1, (f) => test("a solo Gutsy Golbat round with seats 2 and 3 empty, run on to the results: only the two there ranked", async () => {
+  // (through the shell, but quicker: from GO this test runs the frames itself)
+  const solo = await f.open("norender&game=golbat&empty=2,3");
+  solo.document.querySelector("#play").click();
+  await until(() => solo.mg.phase() === "play", "GO", 15000);
+  const g = solo.mg.game, cards = [...solo.document.querySelectorAll(".card")], { START } = await moduleOf(solo, "./src/golbat/rules.js");
+  assert(g.control.join() === "local,cpu,none,none" && g.cpus.join() === "false,true,false,false", `seats ${g.control}, CPUs ${g.cpus}`);
+  // (nothing of seats 2 and 3 on show, their Golbat, glows, badges or cards; and they stay where they'd start, with no hearts)
+  const shown = () => [0, 1, 2, 3].filter((z) => {
+    const v = g.golbats[z], any = v.model.root.visible || v.badge.visible || v.glow.visible || solo.getComputedStyle(cards[z]).display !== "none";
+    return g.empty[z] ? any || g.world.g[z].x !== START[z][0] || g.world.g[z].hearts : !v.model.root.visible;
+  });
+  solo.mg.paused = true;
+  try {
+    for (let k = 0; k < 30 * 120 && solo.mg.phase() === "play"; k++) {
+      const t = g.lastFrame + 1;
+      g.setStick(Math.round(Math.sin(t / 37) * 4) * 16);
+      if (t % 10 === 0) g.flap();
+      solo.mg.tick(1 / 30);
+      if (k % 50 === 0) assert(!shown().length, `frame ${g.lastFrame}: seats ${shown()} shown wrong`);
+    }
+  } finally { solo.mg.paused = false; }
+  await until(() => solo.mg.phase() === "results", `the results (${solo.mg.phase()})`, 30000);
+  const rows = ranking(solo).split(" | "), h = g.world.scores;
+  assert(rows.length === 2 && h[2] === 0 && h[3] === 0 && !shown().length, `the ranking: ${ranking(solo)}; hearts ${h}`);
+  return ranking(solo) + `; hearts ${h}`;
+}, { live: true }));
+
+lane(1, (f) => test("a solo Delibird's Delivery round with seats 2 and 3 empty, run on to the results: only the two there ranked", async () => {
+  // (through the shell, but quicker: from GO this test runs the frames itself)
+  const solo = await f.open("norender&game=delibird&empty=2,3");
+  solo.document.querySelector("#play").click();
+  await until(() => solo.mg.phase() === "play", "GO", 15000);
+  const g = solo.mg.game, cards = [...solo.document.querySelectorAll(".card")], rows = [...solo.document.querySelectorAll(".dd-row")];
+  const { START } = await moduleOf(solo, "./src/delibird/rules.js");
+  assert(g.control.join() === "local,cpu,none,none" && g.cpus.join() === "false,true,false,false", `seats ${g.control}, CPUs ${g.cpus}`);
+  // (nothing of seats 2 and 3 on show: their Delibird, sacks, shadows, badges, cards, tally rows; and they stay where they'd start)
+  const shown = () => [0, 1, 2, 3].filter((z) => {
+    const v = g.birds[z], any = v.bird.root.visible || v.sack.root.visible || v.shadow.visible || v.label.visible
+      || solo.getComputedStyle(cards[z]).display !== "none" || !rows[z].hidden;
+    return g.empty[z] ? any || g.world.p[z].x !== START[z][0] || g.world.p[z].score : !v.bird.root.visible;
+  });
+  solo.mg.paused = true;
+  try {
+    for (let k = 0; k < 30 * 120 && solo.mg.phase() === "play"; k++) {
+      g.setStick(...deliPad(0, g.lastFrame + 1, g.world));
+      solo.mg.tick(1 / 30);
+      if (k % 50 === 0) assert(!shown().length, `frame ${g.lastFrame}: seats ${shown()} shown wrong`);
+    }
+  } finally { solo.mg.paused = false; }
+  await until(() => solo.mg.phase() === "results", `the results (${solo.mg.phase()})`, 30000);
+  const ranked = ranking(solo).split(" | "), s = g.world.scores;
+  assert(ranked.length === 2 && s[2] === 0 && s[3] === 0 && !shown().length, `the ranking: ${ranking(solo)}; points ${s}`);
+  return ranking(solo) + `; points ${s}`;
 }, { live: true }));
 
 lane(1, (f) => test("a solo round starts and plays: Gutsy Golbat", async () => {
@@ -2635,6 +3530,32 @@ lane(1, (f) => test("a solo round starts and plays: Barrier Ball", async () => {
   return "slid 4 s in: " + slid.join(", ");
 }, { live: true }));
 
+lane(1, (f) => test("a solo Barrier Ball round with seats 2 and 3 empty, run on to the results: only those there ranked", async () => {
+  // (through the shell, but quicker: from GO this test runs the frames itself)
+  const solo = await f.open("norender&game=barrier&empty=2,3");
+  solo.document.querySelector("#play").click();
+  await until(() => solo.mg.phase() === "play", "GO", 15000);
+  const g = solo.mg.game, cards = [...solo.document.querySelectorAll(".card")];
+  assert(g.control.join() === "local,cpu,none,none" && g.cpus.join() === "false,true,false,false", `seats ${g.control}, CPUs ${g.cpus}`);
+  // (nothing of seats 2 and 3 on show, their Mr. Mime or their cards; their lanes shut, the others' not)
+  const shown = () => [0, 1, 2, 3].filter((z) => g.mimes[z].root.visible === g.empty[z] || g.shut[z].visible !== g.empty[z]
+                                               || (solo.getComputedStyle(cards[z]).display !== "none") === g.empty[z]);
+  solo.mg.paused = true;
+  try {
+    for (let k = 0; k < 4000 && solo.mg.phase() === "play"; k++) {
+      const t = g.lastFrame + 1;
+      g.setStick(Math.round(Math.sin(t / 23) * 4) * 16);
+      if (t % 20 === 0) g.smash();
+      solo.mg.tick(1 / 30);
+      if (k % 50 === 0) assert(!shown().length, `frame ${g.lastFrame}: seats ${shown()} shown wrong`);
+    }
+  } finally { solo.mg.paused = false; }
+  await until(() => solo.mg.phase() === "results", `the results (${solo.mg.phase()})`, 20000);
+  const rows = ranking(solo).split(" | "), p = g.world.scores;
+  assert(rows.length === 2 && p[2] === 0 && p[3] === 0 && !shown().length, `the ranking: ${ranking(solo)}; points ${p}`);
+  return ranking(solo) + `; points ${p}`;
+}, { live: true }));
+
 lane(1, (f) => test("a solo Rampage Rollout race, run on to the end, gets to the results", async () => {
   // (through the shell, as a person plays it, but quicker: from GO this test runs the frames itself)
   const solo = await f.open("norender&game=rollout");
@@ -2655,6 +3576,34 @@ lane(1, (f) => test("a solo Rampage Rollout race, run on to the end, gets to the
   return ranking(solo);
 }, { live: true }));
 
+lane(1, (f) => test("a solo Rampage Rollout race with seats 2 and 3 empty, run on to the results: only those there ranked", async () => {
+  // (through the shell, but quicker: from GO this test runs the frames itself)
+  const solo = await f.open("norender&game=rollout&empty=2,3");
+  solo.document.querySelector("#play").click();
+  await until(() => solo.mg.phase() === "play", "GO", 15000);
+  const g = solo.mg.game, cards = [...solo.document.querySelectorAll(".card")], coins = [...solo.document.querySelectorAll(".rr-places li")];
+  assert(g.control.join() === "local,cpu,none,none" && g.cpus.join() === "false,true,false,false", `seats ${g.control}, CPUs ${g.cpus}`);
+  // (nothing of seats 2 and 3 on show: their Donphan, shadows, badges, stars, cards; two rank coins)
+  const shown = () => [0, 1, 2, 3].filter((z) => g.donphan[z].root.visible === g.empty[z] || (g.empty[z] && (g.donphan[z].shadow.visible || g.donphan[z].label.visible))
+                                               || (solo.getComputedStyle(cards[z]).display !== "none") === g.empty[z]);
+  solo.mg.paused = true;
+  try {
+    for (let k = 0; k < 4000 && solo.mg.phase() === "play"; k++) {
+      g.setDpad(rolloutDrive(g.world.d[g.me]));
+      if (k % 40 === 0) g.press();
+      solo.mg.tick(1 / 30);
+      if (k % 50 === 0) {
+        assert(!shown().length, `frame ${g.lastFrame}: seats ${shown()} shown wrong`);
+        if (k) assert(coins.filter((li) => !li.hidden).length === 2, `frame ${g.lastFrame}: ${coins.filter((li) => !li.hidden).length} rank coins`);
+      }
+    }
+  } finally { solo.mg.paused = false; }
+  await until(() => solo.mg.phase() === "results", `the results (the race over at frame ${g.world.end}, ${solo.mg.phase()})`, 20000);
+  const rows = ranking(solo).split(" | ");
+  assert(rows.length === 2 && g.world.d[2].fin === null && g.world.d[3].fin === null && !shown().length, "the ranking: " + ranking(solo));
+  return ranking(solo);
+}, { live: true }));
+
 lane(1, (f) => test("a solo round starts and plays: Topsy-Turvy", async () => {
   const solo = await f.open("game=topsy");
   solo.document.querySelector("#play").click();
@@ -2669,6 +3618,32 @@ lane(1, (f) => test("a solo round starts and plays: Topsy-Turvy", async () => {
   return "states 4 s in: " + states.join(", ");
 }, { live: true }));
 
+lane(1, (f) => test("a solo Topsy-Turvy round with seats 2 and 3 empty, run on to the results: only those there ranked", async () => {
+  // (through the shell, but quicker: from GO this test runs the frames itself)
+  const solo = await f.open("norender&game=topsy&empty=2,3");
+  solo.document.querySelector("#play").click();
+  await until(() => solo.mg.phase() === "play", "GO", 15000);
+  const g = solo.mg.game, cards = [...solo.document.querySelectorAll(".card")], dots = [...solo.document.querySelectorAll(".tt-points")];
+  assert(g.control.join() === "local,cpu,none,none" && g.cpus.join() === "false,true,false,false", `seats ${g.control}, CPUs ${g.cpus}`);
+  // (nothing of seats 2 and 3 on show: their Hitmontop, shadows, cards, points)
+  const shown = () => [0, 1, 2, 3].filter((z) => g.tops[z].model.root.visible === g.empty[z] || (g.empty[z] && (g.tops[z].shadow.root.visible || g.tops[z].ring.root.visible))
+                                               || (solo.getComputedStyle(cards[z]).display !== "none") === g.empty[z] || (dots[z] && g.empty[z] && !dots[z].hidden));
+  solo.mg.paused = true;
+  try {
+    for (let k = 0; k < 4000 && solo.mg.phase() === "play"; k++) {
+      const [x, y, a] = topsyPad(0, g.lastFrame + 1, g.world);
+      g.setStick(x, y);
+      if (a) g.press();
+      solo.mg.tick(1 / 30);
+      if (k % 50 === 0) assert(!shown().length, `frame ${g.lastFrame}: seats ${shown()} shown wrong`);
+    }
+  } finally { solo.mg.paused = false; }
+  await until(() => solo.mg.phase() === "results", `the results (${solo.mg.phase()})`, 20000);
+  const rows = ranking(solo).split(" | "), p = g.world.scores;
+  assert(rows.length === 2 && p[2] === 0 && p[3] === 0 && !shown().length, `the ranking: ${ranking(solo)}; points ${p}`);
+  return ranking(solo) + `; points ${p}`;
+}, { live: true }));
+
 lane(1, (f) => test("a solo round starts and plays: Furret's Frolic", async () => {
   const solo = await f.open("game=furret");
   solo.document.querySelector("#play").click();
@@ -2681,6 +3656,32 @@ lane(1, (f) => test("a solo round starts and plays: Furret's Frolic", async () =
   // (at GO they pop up; 5 s on, they're up and about, and a ball's come)
   assert(w.p.every((p) => !p.f.frozen) && w.ids >= 1 && w.left === 1800 - 1 - w.t, `5 s in: clips ${clips}, ${w.ids} balls, ${w.left} left`);
   return `5 s in: clips ${clips.join(", ")}; ${w.balls.length} ball(s) on the field`;
+}, { live: true }));
+
+lane(1, (f) => test("a solo Furret's Frolic round with seats 2 and 3 empty, run on to the results: only those there ranked", async () => {
+  // (through the shell, but quicker: from GO this test runs the frames itself)
+  const solo = await f.open("norender&game=furret&empty=2,3");
+  solo.document.querySelector("#play").click();
+  await until(() => solo.mg.phase() === "play", "GO", 15000);
+  const g = solo.mg.game, cards = [...solo.document.querySelectorAll(".card")], R = await moduleOf(solo, "./src/furret/rules.js");
+  assert(g.control.join() === "local,cpu,none,none" && g.cpus.join() === "false,true,false,false", `seats ${g.control}, CPUs ${g.cpus}`);
+  // (nothing of seats 2 and 3 on show: their Furret, labels, the badges over their goals, their cards)
+  const shown = () => [0, 1, 2, 3].filter((z) => (g.empty[z] && [g.furret[z].play.root, g.furret[z].end.root, g.furret[z].label].some((o) => o.visible))
+    || g.badges[R.GOALS[z]].visible === g.empty[z] || (solo.getComputedStyle(cards[z]).display !== "none") === g.empty[z]);
+  solo.mg.paused = true;
+  try {
+    for (let k = 0; k < 4000 && solo.mg.phase() === "play"; k++) {
+      const [s, a] = furretPad(0, g.lastFrame + 1, g.world);
+      g.setSpot(s);
+      if (a) g.press();
+      solo.mg.tick(1 / 30);
+      if (k % 50 === 0) assert(!shown().length, `frame ${g.lastFrame}: seats ${shown()} shown wrong`);
+    }
+  } finally { solo.mg.paused = false; }
+  await until(() => solo.mg.phase() === "results", `the results (${solo.mg.phase()})`, 20000);
+  const rows = ranking(solo).split(" | "), p = g.world.scores;
+  assert(rows.length === 2 && p[2] === 0 && p[3] === 0 && !shown().length, `the ranking: ${ranking(solo)}; points ${p}`);
+  return ranking(solo) + `; points ${p}`;
 }, { live: true }));
 
 lane(1, (f) => test("a solo round starts and plays: Delibird's Delivery", async () => {

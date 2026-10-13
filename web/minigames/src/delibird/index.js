@@ -241,15 +241,17 @@ export async function create(shell, onProgress) {
 
     reset(round) {
       const m = round.start;
-      // (online: the seats nobody was dealt are CPUs, as the server has them)
-      const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me)
-        : [0, 1, 2, 3].map((z) => !(round.lineup || []).some((p) => p.seat === z));
-      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, told: m?.dd, delay: round.delay });
+      // (online: the seats nobody was dealt are CPUs, as the server has them; but
+      // for the empty ones (the CPUs off): no one plays those, not even a CPU)
+      const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me && !round.empty?.[z])
+        : [0, 1, 2, 3].map((z) => !round.empty?.[z] && !(round.lineup || []).some((p) => p.seat === z));
+      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, empty: round.empty, told: m?.dd, delay: round.delay });
       shell.stopSound();
       keys.clear();
       steer = null;
       restStick();
       for (let z = 0; z < 4; z++) {
+        rows[z].hidden = game.empty[z]; // (the tally: only those there)
         rows[z].querySelector(".dd-badge").src = `${UI}badge_${cpus[z] ? ["com_blue", "com_green", "com_red", "com_yellow"][z] : `${z + 1}p`}.png`;
       }
     },
@@ -329,6 +331,7 @@ export async function create(shell, onProgress) {
     hint.textContent = coarse?.matches ? "Slide a finger to walk · take gifts up to your door" : "Arrows to walk · take gifts up to your door";
     // each card: its count in the HUD's digits (380), on its box (376) in the player's colour
     (api.cards || []).forEach((card, z) => {
+      if (game.empty[z]) return; // (its card's hidden)
       const num = card.querySelector(".num"), n = game.delivered()[z];
       if (!(num.firstElementChild?.classList.contains("dd-c") && num.dataset.dd === String(n))) {
         const html = digitsOf(n, "d", "dd-c");

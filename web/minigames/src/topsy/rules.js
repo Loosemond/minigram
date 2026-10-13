@@ -210,10 +210,12 @@ export function upAt(p) {
   return [0, 1, 0];
 }
 
-// One round's world. cpus: which seats are CPUs; step() runs a frame from the
-// people's pads. The scene reads it all.
+// One round's world. cpus: which seats are CPUs; empty: which have no one in
+// them at all (the remake's, online with the CPUs off: no Hitmontop there, so
+// it never comes into the ring, and isn't counted in the end's checks);
+// step() runs a frame from the people's pads. The scene reads it all.
 export class World {
-  constructor(seed, level = "normal", cpus = [false, true, true, true]) {
+  constructor(seed, level = "normal", cpus = [false, true, true, true], empty = [false, false, false, false]) {
     this.level = levelCode(level, cpus);
     this.seed = seed >>> 0; // the game's random numbers' state (rnd())
     this.t = -1; // the last frame run
@@ -224,7 +226,7 @@ export class World {
     // each Hitmontop (0x86002070: a ball, and what the game keeps for its player)
     this.p = [0, 1, 2, 3].map((z) => {
       const p = {
-        z, cpu: !!cpus[z], rec: null, auto: false,
+        z, cpu: !!cpus[z], empty: !!empty[z], rec: null, auto: false,
         pos: [0, 0, 0], vel: [0, 0, 0], w: [0, 0, 0], F: [0, 0, 0], T: [0, 0, 0],
         r: RADIUS, m: MASS, I: 0, maxV: MAX_SPEED,
         state: 0, on: false, solid: false, hold: 0, spin: 0, cool: 0, touch: 0, recent: -1, hard: false, landed: false,
@@ -276,6 +278,7 @@ export class World {
       }
     }
     for (const p of this.p) {
+      if (p.empty) continue;
       let x = 0, y = 0, press = false;
       if (!p.cpu && !p.auto) [x, y, press] = pads[p.z] || [0, 0, false];
       if (steerable(p)) {
@@ -335,6 +338,7 @@ export class World {
 
   // ---- each Hitmontop, once a frame (0x860033E8) ----
   update(p) {
+    if (p.empty) return; // (no one: it stays where it waits, out of it)
     p.w = [0, 0, 0];
     if (p.recent > 0) { p.recent -= DT; if (p.recent <= 0) p.recent = -1; }
     const spinTo = (to, k = 1) => { p.turn = approach(p.turn, to, DT * 80 * k); };
@@ -466,24 +470,26 @@ export class World {
   // none of the others too near to turn solid (0x86004494)
   roomy(p) {
     for (const q of this.p) {
-      if (q.z !== p.z && sqrtf(len2(sub(p.pos, q.pos))) < RADIUS + RADIUS + ROOM) return false;
+      if (q.z !== p.z && !q.empty && sqrtf(len2(sub(p.pos, q.pos))) < RADIUS + RADIUS + ROOM) return false;
     }
     return true;
   }
 
   // ---- the end (0x86005434): five points, a minute, or (never, as it's set) three out of it ----
+  // (an empty seat's no part of it: the draw is all those there level)
   done(t) {
+    const here = this.p.filter((p) => !p.empty);
     let best = 0, out = 0;
-    for (const p of this.p) {
+    for (const p of here) {
       if (p.state >= 7) out++;
       else if (p.score >= best) best = p.score;
     }
     if (t + 1 < TIME_LIMIT && out < 3 && best < WINNERS_POINT) return false;
-    if (this.p.every((p) => p.score === this.p[0].score)) { // (a draw: nobody wins)
-      for (const p of this.p) { p.hold = 0; if (p.state < 7) this.enter(p, 8); }
+    if (here.every((p) => p.score === here[0].score)) { // (a draw: nobody wins)
+      for (const p of here) { p.hold = 0; if (p.state < 7) this.enter(p, 8); }
     } else {
-      for (const p of this.p) { p.hold = 0; if (p.state < 7 && p.score < best) this.enter(p, 8); }
-      for (const p of this.p) {
+      for (const p of here) { p.hold = 0; if (p.state < 7 && p.score < best) this.enter(p, 8); }
+      for (const p of here) {
         if (p.state >= 7) continue;
         if (p.state !== 3) { this.enter(p, 1); this.enter(p, 2); this.enter(p, 3); }
         this.enter(p, 6);
@@ -571,8 +577,8 @@ export class World {
 
   // each one's points, by seat
   get scores() { return this.p.map((p) => p.score); }
-  // the places (1-4) by points
-  get places() { return this.p.map((p) => 1 + this.p.filter((q) => q.score > p.score).length); }
+  // the places (1-4) by points (among those there; an empty seat's: null)
+  get places() { return this.p.map((p) => (p.empty ? null : 1 + this.p.filter((q) => q.score > p.score && !q.empty).length)); }
   // the frames left on the clock
   get left() { return Math.max(0, TIME_LIMIT - ((this.end ?? this.t) + 1)); }
   // a fingerprint of the world, exact, to check two runs of it agree (the tests;

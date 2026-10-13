@@ -253,11 +253,14 @@ def finish(fulls):
 class Round:
     """One round's presses and finish, on the server."""
 
-    def __init__(self, seed, level="normal", cpus=(False, True, True, True), after=None):
+    def __init__(self, seed, level="normal", cpus=(False, True, True, True), after=None, empty=None):
         """after: the room's last round (any game's): a Pichu's Power Plant
         one before makes this a "play again", whose CPUs' margins take that
-        round's W (rules.js cpuPresses())."""
-        self.cpus = list(cpus)
+        round's W (rules.js cpuPresses()). empty: [bool x4], the seats no one
+        plays (online with the CPUs off): no Pichu there, so no presses, no
+        charge, no place (and never a winner)."""
+        self.empty = [bool(e) for e in empty] if empty else [False] * SEATS
+        self.cpus = [bool(c) and not e for c, e in zip(cpus, self.empty)]
         self.c = level_code(level, any(self.cpus))
         self.w = WARN[after.c] if isinstance(after, Round) else 30
         self.P = pattern(seed, self.c)
@@ -303,7 +306,7 @@ class Round:
         device's word); it came in at round time now (s after GO), and may be
         at most allow s old (the way here). Returns (the frame it counts on,
         "hit" or "miss"), or None if it doesn't work."""
-        if self.cpus[s] or self.done or type(f) is not int or d not in (1, 2, 3, 4) or btn not in (A, B):
+        if self.cpus[s] or self.empty[s] or self.done or type(f) is not int or d not in (1, 2, 3, 4) or btn not in (A, B):
             return None
         here = int(now * FPS)
         f = min(max(f, here - int(allow * FPS)), here + 1)  # (no older than the way here allows; not in the future)
@@ -326,6 +329,13 @@ class Round:
         self.done = fin
         self.end = (fin[0] + END) / FPS
         return fin
+
+    def places(self):
+        """Each seat's place (1 the best; a tie shares the better one) as the
+        game's results() ranks them, by charge (at the finish); None for an
+        empty seat."""
+        sc, here = self.scores, [s for s in range(SEATS) if not self.empty[s]]
+        return [None if self.empty[s] else 1 + sum(sc[o] > sc[s] for o in here) for s in range(SEATS)]
 
     def next_settle(self, allow):
         """When (round time, s) the finish there is now can be decided."""

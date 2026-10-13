@@ -3,8 +3,10 @@
 // from (0, 0, 1200) with a fov of 30, the cave's backdrops behind at z = -100;
 // the Golbat are models, Magnemite and the hearts sprites. In the game's units.
 //
-// Who plays each seat: "local" (this device's player), "cpu" or "remote"
-// (someone on another device, online). The CPUs think in the world, so every
+// Who plays each seat: "local" (this device's player), "cpu", "remote"
+// (someone on another device, online) or "none": online with the CPUs off, a
+// seat no one plays is empty, with no Golbat at all (not in the fly-in, the
+// play or the end; rules.js leaves it out of the world). The CPUs think in the world, so every
 // device runs them alike. This device's player's pad emits "send" as it
 // changes (a frame's stick, and a flap); online, the others' come in
 // told("pad"), mostly a few frames late: the world runs on guessing they held
@@ -157,16 +159,17 @@ export class Game {
   emit(name, ...args) { for (const fn of this.listeners[name] || []) fn(...args); }
 
   // A game. level: easy / normal / hard; setup: { me, control, cpus (which
-  // seats are CPUs), told (online, the server's word so far: to rejoin it midway) }
+  // seats are CPUs), empty (which are no one's: control "none"), told (online, the server's word so far: to rejoin it midway) }
   reset(level, seed = (Math.random() * 2 ** 31) | 0, setup = {}) {
     this.levelName = level;
     this.seed = seed;
     this.me = setup.me ?? 0;
     this.control = setup.control || [0, 1, 2, 3].map((z) => (z === this.me ? "local" : "cpu"));
-    this.cpus = setup.cpus || this.control.map((c) => c === "cpu");
+    this.empty = [0, 1, 2, 3].map((z) => !!setup.empty?.[z] || this.control[z] === "none");
+    this.cpus = (setup.cpus || this.control.map((c) => c === "cpu")).map((c, z) => !!c && !this.empty[z]);
     // (online, with other people: this device's player's pads count this many frames on, src/lag.js)
     this.lead = leadFor(this.control.map((c, z) => c === "remote" && !this.cpus[z]), setup.delay);
-    this.world = new R.World(seed, level, this.cpus);
+    this.world = new R.World(seed, level, this.cpus, this.empty);
     this.inputs = [[], [], [], []]; // each person's pad: [frame, stick x, flap 0/1]
     this.snaps = [[0, this.world.save()]]; // the world as it was before a frame
     this.simT = -1; // the last frame the world has run
@@ -214,7 +217,7 @@ export class Game {
     for (const s of this.leaving || []) { s.visible = false; this.free[s.userData.kind].push(s); }
     this.leaving = [];
     const told = setup.told;
-    if (told?.pads) told.pads.forEach((list, z) => { if (list && !this.cpus[z]) this.inputs[z] = list.map((e) => [...e]); });
+    if (told?.pads) told.pads.forEach((list, z) => { if (list && !this.cpus[z] && !this.empty[z]) this.inputs[z] = list.map((e) => [...e]); });
     if (told?.done) this.told("won", told.done);
     this.draw(0);
   }
@@ -261,7 +264,7 @@ export class Game {
   told(type, m) {
     if (type === "pad") {
       const z = m.s;
-      if (!(z >= 0 && z < 4) || this.cpus[z] || !Number.isInteger(m.f) || !Number.isInteger(m.x) || (m.a !== 0 && m.a !== 1)) return;
+      if (!(z >= 0 && z < 4) || this.cpus[z] || this.empty[z] || !Number.isInteger(m.f) || !Number.isInteger(m.x) || (m.a !== 0 && m.a !== 1)) return;
       const list = this.inputs[z];
       let k = list.length;
       if (this.control[z] === "local") { // one of this device's own, as the server has it (on another frame)
@@ -304,7 +307,7 @@ export class Game {
         while (this.snaps.length > 2 && this.snaps[1][0] < f - KEEP) this.snaps.shift();
       }
       this.yawWas = w.g.map((g) => g.yaw); // (to draw its turn between frames, as its place)
-      w.step(f, [0, 1, 2, 3].map((z) => (this.cpus[z] ? null : this.padAt(z, f))));
+      w.step(f, [0, 1, 2, 3].map((z) => (this.cpus[z] || this.empty[z] ? null : this.padAt(z, f))));
       this.simT = f;
       if (f > this.shownT) { this.show(f); this.shownT = f; }
       w.events = [];
@@ -335,6 +338,7 @@ export class Game {
       }
     }
     for (const g of w.g) {
+      if (g.empty) continue; // (no one there: no wingbeats)
       const v = this.golbats[g.z];
       // its colour (0x8610362C): the branch it took this frame, and a dash's knock before it or after
       // (its hurt's over: 26 frames up, or another Magnemite's after it; a knock after it zeroes its frames too)
@@ -380,7 +384,7 @@ export class Game {
       v.flyWas = { ...v.fly };
       F.flyFrame(v.fly);
       v.wingWas = v.wing;
-      if (Math.floor(v.wing) % FLY_LEN === 0) this.emit("wing", v.z, pan(v.fly.x));
+      if (Math.floor(v.wing) % FLY_LEN === 0 && !this.empty[v.z]) this.emit("wing", v.z, pan(v.fly.x));
       v.wing += 1;
     }
   }
@@ -424,22 +428,23 @@ export class Game {
 
   // each one's hearts: the server's once it's said, else the world's
   heartsOf(z) { return this.result ? this.result.h[z] : this.world.g[z].hearts; }
-  // the places: by hearts
+  // the places: by hearts (among those there: null for an empty seat)
   places() {
     const h = [0, 1, 2, 3].map((z) => (this.scores ? this.scores[z] : this.heartsOf(z)));
-    return h.map((x) => 1 + h.filter((y) => y > x).length);
+    return h.map((x, z) => (this.empty[z] ? null : 1 + h.filter((y, o) => !this.empty[o] && y > x).length));
   }
 
   // ---- the end (state 5: 0x861008E8, 0x86103C48) ----
-  // As the cave stops: the most hearts win (none, if all four have the same),
+  // As the cave stops: the most hearts win (none, if all four have the same;
+  // here all those there, the empty seats out of it all),
   // the song fades (0x86109404); they're startled, then the winners cheer and
   // the others drop to the floor (flight.js), Jynx throws hearts, and what's
   // left of the play's hearts goes on (no more to count)
   ending() {
     this.endAt = this.time;
-    const h = [0, 1, 2, 3].map((z) => this.heartsOf(z)), most = Math.max(...h);
-    const win = h.map((x) => x === most);
-    this.winners = win.every((x) => x) ? [false, false, false, false] : win;
+    const h = [0, 1, 2, 3].map((z) => this.heartsOf(z)), most = Math.max(...h.filter((x, z) => !this.empty[z]));
+    const win = h.map((x, z) => !this.empty[z] && x === most);
+    this.winners = win.every((x, z) => x || this.empty[z]) ? [false, false, false, false] : win;
     this.emit("end", this.winners);
     this.ends = this.world.g.map((g, z) => F.endStart(g, this.winners[z]));
     this.golbats.forEach((v, z) => { v.end = this.ends[z]; v.endWas = { ...v.end }; });
@@ -452,7 +457,9 @@ export class Game {
   endFrame(k) {
     const at = END + 1 + k;
     for (const v of this.golbats) v.endWas = { ...v.end };
-    for (let i = 0; i < 4; i++) if (F.endFrame(this.ends, i)) this.handed = true; // (the first loser down: the results, 0x86100874)
+    // (an empty seat's Golbat isn't there to fly, or to bump)
+    const here = this.ends.filter((e, z) => !this.empty[z]);
+    for (let i = 0; i < here.length; i++) if (F.endFrame(here, i)) this.handed = true; // (the first loser down: the results, 0x86100874)
     // the hearts (0x86106C54): Jynx's, and what was left of the play's, caught for show (no sound, and no
     // more counted: 0x86106504 only counts in the play)
     for (const h of [...this.endHearts]) {
@@ -494,7 +501,7 @@ export class Game {
   endCatch(h) {
     for (let z = 0; z < 4; z++) {
       const e = this.ends[z];
-      if (!e.landed && ((z !== h.owner && !h.knocked) || h.timer >= 16) && Math.abs(h.x - e.x) < 58 && Math.abs(h.y - e.y) < 58) return z;
+      if (!this.empty[z] && !e.landed && ((z !== h.owner && !h.knocked) || h.timer >= 16) && Math.abs(h.x - e.x) < 58 && Math.abs(h.y - e.y) < 58) return z;
     }
     return null;
   }
@@ -591,6 +598,9 @@ export class Game {
         else if (g.hurt) { clip = CLIP.hurt; f = g.timer - 1 + between; }
       }
       v.at = [x, y, zz];
+      // (an empty seat: nothing of it, its glow and badge too)
+      m.root.visible = !this.empty[z];
+      if (this.empty[z]) { v.badge.visible = v.glow.visible = false; return; }
       m.root.position.set(x, y, zz);
       m.root.scale.setScalar(s);
       m.root.rotation.y = deg(yaw);
@@ -755,9 +765,10 @@ export class Game {
   }
 
   // ---- the end ----
+  // (the seats there: an empty seat isn't ranked, tools/golbat_rules.py places())
   results() {
     const places = this.places();
-    return [0, 1, 2, 3].map((i) => ({ i, score: this.scores ? this.scores[i] : this.heartsOf(i), place: places[i] }))
+    return [0, 1, 2, 3].filter((i) => !this.empty[i]).map((i) => ({ i, score: this.scores ? this.scores[i] : this.heartsOf(i), place: places[i] }))
       .sort((a, b) => a.place - b.place || a.i - b.i);
   }
   celebrate() { return this.results(); }

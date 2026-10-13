@@ -104,17 +104,19 @@ export class Game {
   emit(name, ...args) { for (const fn of this.listeners[name] || []) fn(...args); }
 
   // A round. level: easy / normal / hard; setup: { me, control, cpus (which
-  // seats are CPUs), told (online, the server's word so far: to rejoin it
+  // seats are CPUs), empty (which have no one: no Furret there, nor a badge
+  // over its goal), told (online, the server's word so far: to rejoin it
   // midway), delay (each seat's, src/lag.js) }
   reset(level, seed = (Math.random() * 2 ** 31) | 0, setup = {}) {
     this.levelName = level;
     this.seed = seed;
     this.me = setup.me ?? 0;
     this.control = setup.control || [0, 1, 2, 3].map((z) => (z === this.me ? "local" : "cpu"));
-    this.cpus = setup.cpus || this.control.map((c) => c === "cpu");
+    this.empty = [0, 1, 2, 3].map((z) => !!setup.empty?.[z] || this.control[z] === "none");
+    this.cpus = (setup.cpus || this.control.map((c) => c === "cpu")).map((c, z) => c && !this.empty[z]);
     // (online, with other people: this device's player's pads count this many frames on)
     this.lead = leadFor(this.control.map((c, z) => c === "remote" && !this.cpus[z]), setup.delay);
-    this.world = new R.World(seed, level, this.cpus);
+    this.world = new R.World(seed, level, this.cpus, this.empty);
     this.inputs = [[], [], [], []]; // each person's pad: [frame, spot, A 0/1]
     this.snaps = [[0, this.world.save()]]; // the world as it was before a frame
     this.simT = -1; // the last frame the world has run
@@ -137,12 +139,13 @@ export class Game {
     for (const [, v] of this.balls) this.drop(v);
     this.balls.clear();
     const told = setup.told;
-    if (told?.pads) told.pads.forEach((list, z) => { if (list && !this.cpus[z]) this.inputs[z] = list.map((e) => [...e]); });
+    if (told?.pads) told.pads.forEach((list, z) => { if (list && !this.cpus[z] && !this.empty[z]) this.inputs[z] = list.map((e) => [...e]); });
     if (told?.done) this.told("won", told.done);
     // the badges: each goal's player's (1P-4P; a CPU's COM in its colour)
     for (let z = 0; z < 4; z++) {
       const m = this.badges[R.GOALS[z]].seat(z, this.cpus[z]);
       m.position.set(...BADGE_AT[R.GOALS[z]]);
+      m.visible = !this.empty[z]; // (no one's goal: no badge)
       const v = this.furret[z];
       v.label.material.map = this.assets[`label${this.cpus[z] ? 4 : z}`];
       v.label.material.needsUpdate = true;
@@ -152,7 +155,7 @@ export class Game {
   start() { this.state = "play"; }
   stop() { this.state = "over"; }
   setControl(z, c) {
-    if (c === "cpu" && !this.cpus[z]) return; // (a person who left: their Furret stays where it was)
+    if (this.empty[z] || (c === "cpu" && !this.cpus[z])) return; // (a person who left: their Furret stays where it was)
     this.control[z] = c;
   }
 
@@ -178,7 +181,7 @@ export class Game {
   told(type, m) {
     if (type === "pad") {
       const z = m.s;
-      if (!(z >= 0 && z < 4) || this.cpus[z] || !Number.isInteger(m.f) || !(Number.isInteger(m.x) && m.x >= 0 && m.x <= 4)
+      if (!(z >= 0 && z < 4) || this.cpus[z] || this.empty[z] || !Number.isInteger(m.f) || !(Number.isInteger(m.x) && m.x >= 0 && m.x <= 4)
         || (m.a !== 0 && m.a !== 1)) return;
       const list = this.inputs[z];
       let k = list.length;
@@ -222,7 +225,7 @@ export class Game {
         while (this.snaps.length > 2 && this.snaps[1][0] < f - KEEP) this.snaps.shift();
       }
       if (f === t) this.before = this.drawn();
-      w.step(f, [0, 1, 2, 3].map((z) => (this.cpus[z] ? null : this.padAt(z, f))));
+      w.step(f, [0, 1, 2, 3].map((z) => (this.cpus[z] || this.empty[z] ? null : this.padAt(z, f))));
       this.simT = f;
       if (f > this.shownT) { this.sounds(f); this.shownT = f; }
       w.events = [];
@@ -310,16 +313,16 @@ export class Game {
 
   // each one's points: the server's once it's said, else the world's
   points() { return this.result ? this.result.s : this.world.scores; }
-  // the places (1-4) by points
-  places() { const s = this.points(); return s.map((x) => 1 + s.filter((y) => y > x).length); }
+  // the places (1-4) by points, among those there (an empty seat's: null)
+  places() { const s = this.points(); return s.map((x, z) => (this.empty[z] ? null : 1 + s.filter((y, o) => y > x && !this.empty[o]).length)); }
   // the seconds on the clock (the game's: rounded up, 60 at GO: 0x862040AC)
   secondsLeft() { return Math.ceil(this.world.left / R.FPS); }
 
   // ---- the end: the winners hop to the middle and cheer, the others sulk ----
   ending() {
     this.endAt = this.time;
-    const p = this.places(), s = this.points();
-    this.winners = p.map((x) => x === 1 && !s.every((y) => y === s[0])); // (all level: nobody)
+    const p = this.places(), s = this.points().filter((x, z) => !this.empty[z]);
+    this.winners = p.map((x) => x === 1 && !s.every((y) => y === s[0])); // (all level: nobody; of those there)
     this.emit("end", this.winners);
   }
 
@@ -344,6 +347,7 @@ export class Game {
     // the Furret (where the world has them: they hop from spot to spot as their clips land)
     w.p.forEach((p, z) => {
       const v = this.furret[z], f = p.f, end = f.layout === 1, was = before?.furret[z];
+      if (p.empty) { v.play.root.visible = v.end.root.visible = v.label.visible = false; return; } // (no one: no Furret)
       v.play.root.visible = !end;
       v.end.root.visible = end;
       const m = end ? v.end : v.play;
@@ -443,9 +447,10 @@ export class Game {
   }
 
   // ---- the end ----
+  // (the seats there are: an empty one isn't ranked)
   results() {
     const places = this.places(), s = this.points();
-    return [0, 1, 2, 3].map((i) => ({ i, score: this.scores ? this.scores[i] : s[i], place: places[i] }))
+    return [0, 1, 2, 3].filter((i) => !this.empty[i]).map((i) => ({ i, score: this.scores ? this.scores[i] : s[i], place: places[i] }))
       .sort((a, b) => a.place - b.place || a.i - b.i);
   }
   celebrate() { return this.results(); }

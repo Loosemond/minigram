@@ -13,7 +13,7 @@
 // comes in (the Mr. Mime and the balls eased to where they really are). The
 // server runs the same world and says how it ended (told("won")).
 import * as THREE from "three";
-import { makeModel, piece, COURT_PIECES } from "./assets.js";
+import { makeModel, piece, shutWall, COURT_PIECES } from "./assets.js";
 import { combiner, dress } from "../n64fx.js";
 import * as R from "./rules.js";
 import { leadFor } from "../lag.js";
@@ -85,6 +85,9 @@ const KEEP = 20 * R.FPS; // and how far back they go
 const SMOOTH = 0.82; // a corrected ball's ease to where it is, a 60th of a second
 const SMOOTH_MIME = 0.88; // and a Mr. Mime's (gentler: a stick on its way shifts it a little at a time)
 const deg = (a) => (a / 0x10000) * 2 * Math.PI;
+// (the remake's) the wall shutting an empty seat's lane at its mouth (rules.js
+// SHUT): as high as the court's walls (object 120's, 14 x 0.1 x 100), this thick
+const SHUT_HIGH = 140, SHUT_THICK = 24;
 
 export class Game {
   constructor(scene, assets) {
@@ -107,6 +110,14 @@ export class Game {
       root.rotation.z = (s.angle * Math.PI) / 180;
       return v;
     });
+    // the empty seats' lanes' walls (shown in reset())
+    this.shut = R.SHUT.map((e) => {
+      const len = Math.hypot(e.bx - e.ax, e.by - e.ay), wall = add(shutWall(assets.lines, len, SHUT_THICK, SHUT_HIGH));
+      wall.position.set((e.ax + e.bx) / 2, (e.ay + e.by) / 2, 0);
+      wall.rotation.z = Math.atan2(e.by - e.ay, e.bx - e.ax); // (its face, +y, the way of n: towards the middle)
+      wall.visible = false;
+      return wall;
+    });
     // the balls and their glows, by the world's ids; the trail's sprites
     this.balls = new Map();
     this.freeBalls = [];
@@ -118,17 +129,21 @@ export class Game {
   emit(name, ...args) { for (const fn of this.listeners[name] || []) fn(...args); }
 
   // A game. level: easy / normal / hard; setup: { me, control, cpus (which
-  // seats are CPUs), told (online, the server's word so far: to rejoin it midway) }
+  // seats are CPUs), empty (which have no one: no Mr. Mime, the lane shut),
+  // told (online, the server's word so far: to rejoin it midway) }
   reset(level, seed = (Math.random() * 2 ** 31) | 0, setup = {}) {
     this.levelName = level;
     this.seed = seed;
     this.me = setup.me ?? 0;
     this.control = setup.control || [0, 1, 2, 3].map((z) => (z === this.me ? "local" : "cpu"));
-    this.cpus = setup.cpus || this.control.map((c) => c === "cpu");
+    this.empty = [0, 1, 2, 3].map((z) => !!setup.empty?.[z] || this.control[z] === "none");
+    this.cpus = (setup.cpus || this.control.map((c) => c === "cpu")).map((c, z) => c && !this.empty[z]);
     // (online, with other people: this device's player's pads count this many frames on, src/lag.js)
     this.lead = leadFor(this.control.map((c, z) => c === "remote" && !this.cpus[z]), setup.delay);
     this.stats = { rewinds: 0, again: 0, mimes: 0, balls: 0, most: 0, heard: 0, late: 0 }; // (for the tests: runs again, frames run again, how far things were put right, others' pads heard, late)
-    this.world = new R.World(seed, level, this.cpus);
+    this.world = new R.World(seed, level, this.cpus, this.empty);
+    this.mimes.forEach((v, z) => { v.root.visible = !this.empty[z]; });
+    this.shut.forEach((wall, z) => { wall.visible = this.empty[z]; });
     this.world.onStep = (t, k) => this.noteStep(t, k);
     // where each ball was after each of its last 16 steps (id -> by step & 15), and the trail's
     // copies ("id:step" -> { g: the step, x, y, s: its size, c: its colour })
@@ -161,14 +176,14 @@ export class Game {
     this.balls.clear();
     for (const s of this.trails) s.sprite.visible = false;
     const told = setup.told;
-    if (told?.pads) told.pads.forEach((list, z) => { if (list && !this.cpus[z]) this.inputs[z] = list.map((e) => [...e]); });
+    if (told?.pads) told.pads.forEach((list, z) => { if (list && !this.cpus[z] && !this.empty[z]) this.inputs[z] = list.map((e) => [...e]); });
     if (told?.done) this.told("won", told.done);
     this.draw(0);
   }
   start() { this.state = "play"; this.intro = Infinity; }
   stop() { this.state = "over"; }
   setControl(z, c) {
-    if (c === "cpu" && !this.cpus[z]) return; // (a person who left: their Mr. Mime keeps their last stick)
+    if (this.empty[z] || (c === "cpu" && !this.cpus[z])) return; // (a person who left: their Mr. Mime keeps their last stick)
     this.control[z] = c;
   }
 
@@ -198,7 +213,7 @@ export class Game {
   told(type, m) {
     if (type === "pad") {
       const z = m.s;
-      if (!(z >= 0 && z < 4) || this.cpus[z] || !Number.isInteger(m.f) || !Number.isInteger(m.x) || (m.a !== 0 && m.a !== 1)) return;
+      if (!(z >= 0 && z < 4) || this.cpus[z] || this.empty[z] || !Number.isInteger(m.f) || !Number.isInteger(m.x) || (m.a !== 0 && m.a !== 1)) return;
       const list = this.inputs[z];
       let k = list.length;
       if (this.control[z] === "local") { // one of this device's own, as the server has it (on another frame)
@@ -250,7 +265,7 @@ export class Game {
         while (this.snaps.length > 2 && this.snaps[1][0] < f - KEEP) this.snaps.shift();
       }
       if (f === t) this.before = this.positions();
-      w.step(f, [0, 1, 2, 3].map((z) => (this.cpus[z] ? null : this.padAt(z, f))));
+      w.step(f, [0, 1, 2, 3].map((z) => (this.cpus[z] || this.empty[z] ? null : this.padAt(z, f))));
       if (w.end === f) this.endScores = w.scores; // (the dance's: not a goal in the first step after, ending())
       this.simT = f;
       if (f > this.shownT) { this.sounds(f); this.shownT = f; }
@@ -355,9 +370,10 @@ export class Game {
 
   // each one's points: the server's once it's said, else the world's
   pointsOf(z) { return this.result ? this.result.p[z] : this.world.m[z].score; }
+  // each one's place by them (an empty seat's none: null)
   places() {
     const p = [0, 1, 2, 3].map((z) => (this.scores ? this.scores[z] : this.pointsOf(z)));
-    return p.map((x) => 1 + p.filter((y) => y > x).length);
+    return p.map((x, z) => (this.empty[z] ? null : 1 + p.filter((y, o) => y > x && !this.empty[o]).length));
   }
   // the time left, in seconds as the game shows it (0x8630271C)
   secondsLeft() {
@@ -373,9 +389,9 @@ export class Game {
   // goes by the points then (0x86300074)
   ending() {
     this.endAt = this.time;
-    this.winners = winnersOf([0, 1, 2, 3].map((z) => this.pointsOf(z)));
+    this.winners = winnersOf([0, 1, 2, 3].map((z) => this.pointsOf(z)), this.empty);
     const E = this.endFrame(), w = this.world, ran = Math.max(0, w.t - E);
-    const first = winnersOf(this.endScores && w.end === E ? this.endScores : [0, 1, 2, 3].map((z) => this.pointsOf(z)));
+    const first = winnersOf(this.endScores && w.end === E ? this.endScores : [0, 1, 2, 3].map((z) => this.pointsOf(z)), this.empty);
     this.dance = w.m.map((m) => {
       const T = m.timer - R.STEPS * ran, fresh = !m.smash && T === R.STEPS * (E + 1); // (its timer as the play ended)
       if (!(m.smash && T <= SMASH_POSE)) return { at: E + 1, T, fresh, win: first[m.z] };
@@ -440,7 +456,7 @@ export class Game {
         const e = this.dance[z], E = this.endFrame();
         if (d < e.at - 0.5) { show = false; this.playPose(v, e.T, E, d, e.fresh); }
         else {
-          if (e.win === null) e.win = winnersOf([0, 1, 2, 3].map((i) => this.pointsOf(i)))[z];
+          if (e.win === null) e.win = winnersOf([0, 1, 2, 3].map((i) => this.pointsOf(i)), this.empty)[z];
           const f = Math.max(0, d - e.at);
           if (e.win) { v.show.pose(SHOW.win, f); v.bar.pose(BAR.win, f, true); }
           else { v.show.pose(SHOW.lose, f * LOSE_RATE, true); v.bar.pose(BAR.lose, f * LOSE_RATE, true); }
@@ -544,9 +560,10 @@ export class Game {
   }
 
   // ---- the end ----
+  // (the seats there are: an empty one isn't ranked)
   results() {
     const places = this.places();
-    return [0, 1, 2, 3].map((i) => ({ i, score: this.scores ? this.scores[i] : this.pointsOf(i), place: places[i] }))
+    return [0, 1, 2, 3].filter((i) => !this.empty[i]).map((i) => ({ i, score: this.scores ? this.scores[i] : this.pointsOf(i), place: places[i] }))
       .sort((a, b) => a.place - b.place || a.i - b.i);
   }
   celebrate() { return this.results(); }
@@ -556,9 +573,10 @@ export class Game {
 // device's player's: index.js)
 export const CAMERA = { eye: [0, 0, EYE], at: [0, 0, 0], fov: 15 };
 
-// who wins on these points: the most (0x86300074), no one if all four have them
-function winnersOf(p) {
-  const most = Math.max(...p), win = p.map((x) => x === most);
-  return win.every((x) => x) ? [false, false, false, false] : win;
+// who wins on these points: the most (0x86300074), no one if all four have
+// them (or all there are: an empty seat has none, and doesn't count)
+function winnersOf(p, empty = [false, false, false, false]) {
+  const most = Math.max(...p.filter((x, z) => !empty[z])), win = p.map((x, z) => x === most && !empty[z]);
+  return win.every((x, z) => x || empty[z]) ? [false, false, false, false] : win;
 }
 const s16 = (v) => (((v & 0xffff) ^ 0x8000) - 0x8000);

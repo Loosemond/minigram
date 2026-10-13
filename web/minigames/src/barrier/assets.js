@@ -181,3 +181,25 @@ export function piece(a, s = 1) {
   model.scale.setScalar(GLB * s);
   return model;
 }
+
+// (the remake's, not the game's) a wall shutting an empty seat's lane: a bar
+// len long (along x), thick across (y: 0 its face, out to -thick) and high (z),
+// in the grey of the court's rims (the lines' first picture, a ramp from dark
+// to light: across its top dark, light, dark, its long sides dark), lit as the
+// walls are
+export function shutWall(lines, len, thick, high) {
+  let pic = null;
+  lines.scene.traverse((o) => {
+    if (!o.isMesh || pic) return;
+    for (const m of [o.material].flat()) if (m.name === "120_court_lines_tex00" && m.map) pic = m.map;
+  });
+  const map = pic?.clone();
+  if (map) { map.wrapS = THREE.MirroredRepeatWrapping; map.needsUpdate = true; }
+  const geo = new THREE.BoxGeometry(len, thick, high);
+  geo.translate(0, -thick / 2, high / 2);
+  const pos = geo.attributes.position, uv = geo.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, ((pos.getY(i) + thick) / thick) * 2, 0.5);
+  const mesh = new THREE.Mesh(geo, n64Look(new THREE.MeshLambertMaterial(map ? { map } : { color: 0x484848 })));
+  mesh.frustumCulled = false;
+  return mesh;
+}

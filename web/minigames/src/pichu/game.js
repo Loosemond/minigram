@@ -5,8 +5,12 @@
 // lamps (object 57) pointing in at it from the ceiling, the floor and the
 // walls, and the B/A sign in the middle. In the game's units (y up).
 //
-// Who plays each seat: "local" (this device's player), "cpu" or "remote"
-// (someone on another device, online). The CPUs' presses come from the
+// Who plays each seat: "local" (this device's player), "cpu", "remote"
+// (someone on another device, online) or "none": online with the CPUs off, a
+// seat no one plays is empty, with no Pichu at all; its room stays, as the
+// power plant has it, but switched off: its lamps put in, red, as the game
+// leaves them all after the finish (the Electrodes are the same for every
+// room: nothing's lost). It's no one's to beat, and isn't zapped. The CPUs' presses come from the
 // round's seed (rules.js cpuPresses()), so every device runs them the same.
 // This device's player's presses emit "send" for sending on; online, the
 // others' come in told("press"), and the server says who finished first
@@ -175,14 +179,15 @@ export class Game {
   emit(name, ...args) { for (const fn of this.listeners[name] || []) fn(...args); }
 
   // A game. level: easy / normal / hard; setup: { me, control, cpus (which
-  // seats are CPUs), told (online, the server's word so far: to rejoin it
+  // seats are CPUs), empty (the seats no one plays: their control "none"), told (online, the server's word so far: to rejoin it
   // midway; w, the CPUs' margins' W in a "play again"), w (solo, the same) }
   reset(level, seed = (Math.random() * 2 ** 31) | 0, setup = {}) {
     this.levelName = level;
     this.seed = seed;
     this.me = setup.me ?? 0;
     this.control = setup.control || [0, 1, 2, 3].map((z) => (z === this.me ? "local" : "cpu"));
-    this.cpus = setup.cpus || this.control.map((c) => c === "cpu");
+    this.empty = [0, 1, 2, 3].map((z) => !!setup.empty?.[z] || this.control[z] === "none");
+    this.cpus = (setup.cpus || this.control.map((c) => c === "cpu")).map((c, z) => !!c && !this.empty[z]);
     this.c = R.levelCode(level, this.cpus.some(Boolean));
     this.P = R.pattern(seed, this.c);
     this.cpu = R.cpuPresses(seed, this.c, this.cpus, this.P, setup.told?.w ?? setup.w ?? 30);
@@ -204,6 +209,7 @@ export class Game {
       });
       p.model.play(CLIP.idle, { from: Math.random() * 24, restart: true, fade: 0 }); // (rand2 % 25)
       p.spark.visible = p.bolt.visible = p.stars.root.visible = false;
+      p.model.root.visible = !this.empty[p.i];
     }
     for (const f of this.fx) this.retire(f);
     this.fx = [];
@@ -245,7 +251,7 @@ export class Game {
   // ---- input ----
   // this device's player pressed A or B (R.A, R.B) with the stick held to dir (0: none)
   press(dir, btn, z = this.me) {
-    if (this.state !== "play" || this.control[z] === "remote" || this.cpus[z]) return null;
+    if (this.state !== "play" || this.control[z] === "remote" || this.cpus[z] || this.empty[z]) return null;
     const t = this.frame, f = this.fin();
     if (f && t > f.at) return null;
     const r = this.runners[z], res = r.press(t, dir, btn);
@@ -322,7 +328,7 @@ export class Game {
   // finish ("won": { f, w (the winners, 1 or 0), e (the charges then) })
   told(type, m) {
     if (type === "press") {
-      const z = m.s, r = this.runners[z];
+      const z = m.s, r = this.empty[z] ? null : this.runners[z];
       if (!r || !Number.isInteger(m.f) || ![0, 1, 2, 3, 4].includes(m.d) || ![R.A, R.B].includes(m.b)) return;
       if (this.control[z] === "local") { // one of this device's own, as the server has it: the charge again from them all
         // (matched among the last 2 s of them: the server answers about now; one
@@ -381,9 +387,9 @@ export class Game {
     }
   }
 
-  // n frames after the finish
+  // n frames after the finish (all of them winners: all those there; an empty seat's no loser)
   ending(n, f) {
-    const all = f.winners.every(Boolean), losers = this.players.filter((p) => !f.winners[p.i]);
+    const all = f.winners.every((w, z) => w || this.empty[z]), losers = this.players.filter((p) => !f.winners[p.i] && !this.empty[p.i]);
     if (n === 0) {
       this.emit("full", f.winners);
       // (no one turns or charges on: what's playing plays out, then they wait)
@@ -445,6 +451,7 @@ export class Game {
     this.drawLamps(live ? c : -1, f && t >= f.at ? f.at : null);
     for (const p of this.players) {
       const m = p.model;
+      if (this.empty[p.i]) continue; // (no one there: nothing of it)
       if (live && !p.end) {
         // a miss: shocked from the frame after it, for its clip (clip 10)
         if (p.shockAt !== null && t > p.shockAt) {
@@ -504,9 +511,9 @@ export class Game {
       // (part of the way to the next frame's clip frame, if it's the next or the same)
       const f = Math.abs(b.f - a.f) <= 1 ? a.f + (b.f - a.f) * k : a.f;
       for (let z = 0; z < 4; z++) {
-        const m = this.lamps[z][d - 1];
-        m.pose(0, f);
-        m.face(0, a.face);
+        const m = this.lamps[z][d - 1], off = this.empty[z]; // (an empty room's: put in, red)
+        m.pose(0, off ? IN : f);
+        m.face(0, off ? RED : a.face);
         m.update(0, false);
       }
     }
@@ -561,9 +568,10 @@ export class Game {
   }
 
   // ---- the end ----
+  // the seats there ranked, by charge (an empty seat isn't: tools/pichu_rules.py places())
   results() {
-    const sc = [0, 1, 2, 3].map((z) => this.charge(z));
-    return sc.map((score, i) => ({ i, score, place: 1 + sc.filter((x) => x > score).length }));
+    const sc = [0, 1, 2, 3].map((z) => this.charge(z)), there = [0, 1, 2, 3].filter((z) => !this.empty[z]);
+    return there.map((i) => ({ i, score: sc[i], place: 1 + there.filter((j) => sc[j] > sc[i]).length }));
   }
   celebrate() { return this.results(); }
 }

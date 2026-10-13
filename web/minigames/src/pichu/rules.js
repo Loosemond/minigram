@@ -17,6 +17,9 @@
 // the CPUs and the sparks draw from the same ones), so it's the same for
 // every device and the server whoever plays; the CPUs have theirs.
 // Tools/pichu_rules.py is the rooms server's copy: keep the two the same.
+// Online with the CPUs off, the seats no one plays are empty: no Pichu there,
+// so no presses (never full: never a winner) and no place (game.js leaves
+// them out); the Electrodes and the CPUs' random numbers are the same.
 
 export const FPS = 30;
 export const FULL = 80; // charge to win (0x86606720)

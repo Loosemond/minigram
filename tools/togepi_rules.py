@@ -668,19 +668,25 @@ def rank_cpus(lanes):
         l.finishers = done
 
 
-def places(fin, prior, prog):
+def places(fin, prior, prog, empty=None):
     """rules.js placesOf(): by the finish frame, the same frame's by the progress the
-    frame before, then by how far each got; ties share a place."""
+    frame before, then by how far each got; ties share a place. empty: the seats no
+    one's in: None, and not counted."""
+    empty = empty or [False] * SEATS
+
     def key(z):
         return (0, fin[z], -(prior[z] or 0)) if fin[z] is not None else (1, -prog[z], 0)
-    return [1 + sum(1 for y in range(SEATS) if key(y) < key(z)) for z in range(SEATS)]
+    return [None if empty[z] else 1 + sum(1 for y in range(SEATS) if not empty[y] and key(y) < key(z)) for z in range(SEATS)]
 
 
 class Round:
-    """One round's lanes and how it ended, on the server."""
+    """One round's lanes and how it ended, on the server. empty: [bool x4], the
+    seats no one plays (online with the CPUs off): their lanes never run (no
+    stick changes taken), they don't hold up the end, and they have no place."""
 
-    def __init__(self, seed, level="normal", cpus=(False, True, True, True)):
-        self.cpus = list(cpus)
+    def __init__(self, seed, level="normal", cpus=(False, True, True, True), empty=None):
+        self.empty = [bool(e) for e in empty] if empty else [False] * SEATS
+        self.cpus = [bool(c) and not e for c, e in zip(cpus, self.empty)]
         self.seed = seed
         self.course = course(seed)
         lv = level_code(level)
@@ -709,7 +715,7 @@ class Round:
                 rank_cpus(self.lanes)
             for z in range(SEATS):
                 if self.at[z] < f:
-                    if not self.cpus[z]:
+                    if not self.cpus[z] and not self.empty[z]:
                         x, y = self.stick_at(z, f)
                         self.lanes[z].step(f, x, y)
                     self.at[z] = f
@@ -718,7 +724,7 @@ class Round:
         """Seat s's stick went to x, y on frame f (its device's word); it came
         in at round time now, and may be at most allow s old. Returns the frame
         it counts from, or None."""
-        if self.cpus[s] or self.done or type(f) is not int or type(x) is not int or type(y) is not int:
+        if self.cpus[s] or self.empty[s] or self.done or type(f) is not int or type(x) is not int or type(y) is not int:
             return None
         if not (-60 <= x <= 60 and -60 <= y <= 60):
             return None
@@ -730,10 +736,19 @@ class Round:
 
     def wire(self):
         """What a device needs to rejoin the round: how it ended (once decided) and the people's sticks so far."""
-        return dict(tg=dict(done=self.done, sticks=[None if self.cpus[s] else [list(e) for e in self.sticks[s]] for s in range(SEATS)]))
+        return dict(tg=dict(done=self.done, sticks=[None if self.cpus[s] or self.empty[s] else [list(e) for e in self.sticks[s]] for s in range(SEATS)]))
 
     def result(self):
         return self.done
+
+    def places(self):
+        """Each seat's place (1 the best; tied, the better one), as the devices'
+        game.js places() has them (by the finishes, then how far each got);
+        None for an empty seat."""
+        d = self.done
+        if d:
+            return places(d["fin"], d["prior"], [p / 10 for p in d["p"]], self.empty)
+        return places([l.finish for l in self.lanes], [l.prior for l in self.lanes], [l.progress for l in self.lanes], self.empty)
 
     @property
     def scores(self):
@@ -753,14 +768,15 @@ class Round:
         if safe < 0:
             return None
         fin = [l.finish for l in self.lanes]
+        here = [z for z in range(SEATS) if not self.empty[z]]  # (the empty seats' lanes never get there)
         while min(self.at) < safe:
             self.run_to(min(self.at) + 1)
             f = min(self.at)
             fin = [l.finish for l in self.lanes]
             first = min([x for x in fin if x is not None], default=None)
             called = f >= LONGEST or (first is not None and f >= first + CALL)
-            if all(x is not None for x in fin) and f >= max(fin) + END_AFTER or called:
-                end = f if called else max(fin) + END_AFTER
+            if all(fin[z] is not None for z in here) and f >= max(fin[z] for z in here) + END_AFTER or called:
+                end = f if called else max(fin[z] for z in here) + END_AFTER
                 self.done = dict(f=end, fin=fin, p=[round(l.progress * 10) for l in self.lanes],
                                  prior=[l.prior if l.finish is not None else None for l in self.lanes])
                 self.end = (end + END_AFTER) / FPS
@@ -771,7 +787,7 @@ class Round:
         """When (round time, s) the end there is now could be decided."""
         if self.done:
             return None
-        fin = [l.finish for l in self.lanes]
+        fin = [l.finish for z, l in enumerate(self.lanes) if not self.empty[z]]
         if all(x is not None for x in fin):
             return (max(fin) + END_AFTER + 2) / FPS + allow
         first = min([x for x in fin if x is not None], default=None)

@@ -241,17 +241,19 @@ export class Game {
   emit(name, ...args) { for (const fn of this.listeners[name] || []) fn(...args); }
 
   // A round. level: easy / normal / hard; setup: { me, control, cpus (which
-  // seats are CPUs), told (online, the server's word so far: to rejoin it
-  // midway), delay (each seat's, src/lag.js) }
+  // seats are CPUs), empty (which have no one: no Hitmontop there at all),
+  // told (online, the server's word so far: to rejoin it midway), delay (each
+  // seat's, src/lag.js) }
   reset(level, seed = (Math.random() * 2 ** 31) | 0, setup = {}) {
     this.levelName = level;
     this.seed = seed;
     this.me = setup.me ?? 0;
     this.control = setup.control || [0, 1, 2, 3].map((z) => (z === this.me ? "local" : "cpu"));
-    this.cpus = setup.cpus || this.control.map((c) => c === "cpu");
+    this.empty = [0, 1, 2, 3].map((z) => !!setup.empty?.[z] || this.control[z] === "none");
+    this.cpus = (setup.cpus || this.control.map((c) => c === "cpu")).map((c, z) => c && !this.empty[z]);
     // (online, with other people: this device's player's pads count this many frames on, src/lag.js)
     this.lead = leadFor(this.control.map((c, z) => c === "remote" && !this.cpus[z]), setup.delay, R.FPS);
-    this.world = new R.World(seed, level, this.cpus);
+    this.world = new R.World(seed, level, this.cpus, this.empty);
     this.inputs = [[], [], [], []]; // each person's pad: [frame, stick (packed), A 0/1]
     this.snaps = [[0, this.world.save()]]; // the world as it was before a frame
     this.simT = -1; // the last frame the world has run
@@ -277,7 +279,7 @@ export class Game {
     for (const s of this.sparks) { s.t = 0; s.flashT = 0; }
     for (const v of this.tops) { v.trail = []; v.state = -1; v.landed = false; v.stretch = 1; v.posture.identity(); }
     const told = setup.told;
-    if (told?.pads) told.pads.forEach((list, z) => { if (list && !this.cpus[z]) this.inputs[z] = list.map((e) => [...e]); });
+    if (told?.pads) told.pads.forEach((list, z) => { if (list && !this.cpus[z] && !this.empty[z]) this.inputs[z] = list.map((e) => [...e]); });
     if (told?.done) this.told("won", told.done);
     this.draw(1);
   }
@@ -285,7 +287,7 @@ export class Game {
   // the round's over: the show goes on (the winners to their spots, cheering), its hums too
   stop() { this.state = "over"; if (!this.world.over) this.quiet(); }
   setControl(z, c) {
-    if (c === "cpu" && !this.cpus[z]) return; // (a person who left: their Hitmontop spins on, unsteered)
+    if (this.empty[z] || (c === "cpu" && !this.cpus[z])) return; // (a person who left: their Hitmontop spins on, unsteered)
     this.control[z] = c;
   }
 
@@ -315,7 +317,7 @@ export class Game {
   told(type, m) {
     if (type === "pad") {
       const z = m.s;
-      if (!(z >= 0 && z < 4) || this.cpus[z] || !Number.isInteger(m.f) || !validPad(m.x) || (m.a !== 0 && m.a !== 1)) return;
+      if (!(z >= 0 && z < 4) || this.cpus[z] || this.empty[z] || !Number.isInteger(m.f) || !validPad(m.x) || (m.a !== 0 && m.a !== 1)) return;
       const list = this.inputs[z];
       let k = list.length;
       if (this.control[z] === "local") { // one of this device's own, as the server has it (on another frame)
@@ -361,7 +363,7 @@ export class Game {
         while (this.snaps.length > 2 && this.snaps[1][0] < f - KEEP) this.snaps.shift();
       }
       if (f === t) this.before = this.poses();
-      w.step(f, [0, 1, 2, 3].map((z) => (this.cpus[z] ? null : this.padAt(z, f))));
+      w.step(f, [0, 1, 2, 3].map((z) => (this.cpus[z] || this.empty[z] ? null : this.padAt(z, f))));
       this.simT = f;
       if (f > this.shownT) { this.sounds(f); this.shownT = f; }
       w.events = [];
@@ -478,16 +480,16 @@ export class Game {
 
   // each one's points: the server's once it's said, else the world's
   points() { return this.result ? this.result.s : this.world.scores; }
-  // the places (1-4) by points
-  places() { const s = this.points(); return s.map((x) => 1 + s.filter((y) => y > x).length); }
+  // the places (1-4) by points, among those there (an empty seat's: null)
+  places() { const s = this.points(); return s.map((x, z) => (this.empty[z] ? null : 1 + s.filter((y, o) => y > x && !this.empty[o]).length)); }
   // the seconds left on the clock (the game's: whole ones, down to 0 a second before the end)
   secondsLeft() { return Math.floor(this.world.left / R.FPS); }
 
   // ---- the end: the winners go to their spots and cheer, the others fall over ----
   ending() {
     this.endAt = this.time;
-    const p = this.places(), s = this.points();
-    this.winners = p.map((x) => x === 1 && !s.every((y) => y === s[0])); // (a draw: nobody)
+    const p = this.places(), s = this.points().filter((x, z) => !this.empty[z]);
+    this.winners = p.map((x) => x === 1 && !s.every((y) => y === s[0])); // (a draw: nobody; of those there)
     this.emit("end", this.winners);
   }
 
@@ -507,6 +509,13 @@ export class Game {
     const up = new THREE.Vector3(), q = new THREE.Quaternion(), spinQ = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0);
     w.p.forEach((p, z) => {
       const v = this.tops[z];
+      // (an empty seat: no Hitmontop, nor its shadow, ring or glow)
+      v.model.root.visible = v.shadow.root.visible = !p.empty;
+      if (p.empty) {
+        v.ring.root.visible = false;
+        for (const s of [...v.glows, ...v.middles]) s.visible = false;
+        return;
+      }
       const was = before?.[z] || { pos: p.pos, heading: p.heading, state: p.state, spin: p.spin, cool: p.cool };
       const x = lerp(was.pos[0], p.pos[0]) + this.offsets[z][0];
       const y = lerp(was.pos[1], p.pos[1]) + this.offsets[z][1];
@@ -612,9 +621,10 @@ export class Game {
   }
 
   // ---- the end ----
+  // (the seats there are: an empty one isn't ranked)
   results() {
     const places = this.places(), s = this.points();
-    return [0, 1, 2, 3].map((i) => ({ i, score: this.scores ? this.scores[i] : s[i], place: places[i] }))
+    return [0, 1, 2, 3].filter((i) => !this.empty[i]).map((i) => ({ i, score: this.scores ? this.scores[i] : s[i], place: places[i] }))
       .sort((a, b) => a.place - b.place || a.i - b.i);
   }
   celebrate() { return this.results(); }

@@ -3,8 +3,10 @@
 // Eevee walking round it, and what's under the basket. In the game's units
 // (y up, the ground at 0; the ring's angle a at (r cos a, 0, r sin a)).
 //
-// Who plays each seat: "local" (this device's player), "cpu", or "remote"
-// (someone on another device, online). The seats this device plays emit
+// Who plays each seat: "local" (this device's player), "cpu", "remote"
+// (someone on another device, online) or "none" (an empty seat, online with
+// the CPUs off: no Eevee there at all; its place on the ring goes round
+// unused, as the ring's places are the game's). The seats this device plays emit
 // "press" with the frame they pressed on, for sending on; a remote seat's
 // presses come through the server a little later, and are shown as they get
 // here. Online, who gets the prize is the server's word (told "got"): an
@@ -102,6 +104,7 @@ export class Game {
     this.spare = [];
     this.rounds = R.deal(1, 2);
     this.times = R.timeline(this.rounds);
+    this.empty = [false, false, false, false];
     this.players = [0, 1, 2, 3].map(() => ({ total: 0, shown: 0, prizes: [], runner: new R.Runner(this.times, this.rounds) }));
     this.verdict = [];
     this.blasted = [];
@@ -117,6 +120,7 @@ export class Game {
     this.seed = seed;
     this.me = setup.me ?? 0;
     this.control = setup.control || [0, 1, 2, 3].map((z) => (z === this.me ? "local" : "cpu"));
+    this.empty = this.control.map((c) => c === "none");
     this.level = setup.level ?? R.levelCode(level, this.control.includes("cpu"));
     // who's outside the ring as each round starts (its open hangs on it: rules.js
     // deal): null till it has (round 1's: no one); online the server's word
@@ -159,6 +163,7 @@ export class Game {
       Object.assign(e, { round: -1, slotted: -1, in: false, heard: false, eats: false, dust: false });
       this.setClip(e, CLIP.wait);
       this.place(e, e.r, R.HOME[e.z], true);
+      e.m.root.visible = e.shadow.visible = !this.empty[e.z]; // (an empty seat's: none)
     }
     // the basket's up to begin with (G+0x44 starts at 1: 0x86B0D3C8), and the
     // first round's call brings it down
@@ -184,7 +189,7 @@ export class Game {
   // ---- input ----
   // this device's player pressed A ("a", the dash) or B ("b", the feint)
   press(k, z = this.me) {
-    if (this.state !== "play" || this.control[z] === "remote") return false;
+    if (this.state !== "play" || this.control[z] === "remote" || this.empty[z]) return false;
     return this.act(z, k, this.frame);
   }
   // seat z presses k on frame t, if it works then: a seat this device plays
@@ -759,17 +764,18 @@ export class Game {
   }
 
   // ---- the end ----
+  // the seats there ranked (an empty seat isn't: tools/eevee_rules.py places())
   results() {
-    const order = this.players.map((p, i) => ({ i, score: p.total })).sort((a, b) => b.score - a.score);
+    const order = this.players.map((p, i) => ({ i, score: p.total })).filter((r) => !this.empty[r.i]).sort((a, b) => b.score - a.score);
     return order.map((r) => ({ ...r, place: 1 + order.filter((q) => q.score > r.score).length }));
   }
   // The hand-over (0x86B09158-0x86B091DC): the top scorers eat (state 13; no one
-  // if all four are: 0x86B0B5A8), the others sulk (19), wherever they are,
-  // the one outside the ring too
+  // if all four are: 0x86B0B5A8, here all those there), the others sulk (19),
+  // wherever they are, the one outside the ring too
   celebrate() {
     const r = this.results();
     const all = r.every((x) => x.place === 1);
-    this.winners = [0, 1, 2, 3].map((z) => !all && r.find((x) => x.i === z).place === 1);
+    this.winners = [0, 1, 2, 3].map((z) => !all && r.find((x) => x.i === z)?.place === 1);
     for (const x of r) {
       this.players[x.i].shown = this.players[x.i].total;
       const e = this.eevees[x.i];

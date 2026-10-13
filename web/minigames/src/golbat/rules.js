@@ -21,6 +21,12 @@
 // the like, whose last bits can differ between browsers and Python, only + - *
 // / and sqrt in the same order. Tools/golbat_rules.py is the rooms server's
 // copy: keep the two the same.
+//
+// Online with the CPUs off, the seats no one plays are empty: no Golbat there
+// at all (it stays in the world's list, as the game's four records are, but
+// it never runs: nothing bumps it, no Magnemite or heart touches it, it has
+// no hearts and isn't a CPU). The course, the clock and the random numbers
+// go on as they do.
 
 export const FPS = 30;
 export const LEVELS = { easy: 1, normal: 2, hard: 3 };
@@ -175,10 +181,11 @@ function along(ax, ay, bx, by, px, py) {
   return [Math.sqrt(cx * cx + cy * cy), t];
 }
 
-// One round's world. seats: which are people (the others are CPUs); step()
-// runs a frame from the people's pads. The scene reads it all.
+// One round's world. cpus: which seats are CPUs (the others people); empty:
+// which are no one's (no Golbat there); step() runs a frame from the people's
+// pads. The scene reads it all.
 export class World {
-  constructor(seed, level = "normal", cpus = [false, true, true, true]) {
+  constructor(seed, level = "normal", cpus = [false, true, true, true], empty = [false, false, false, false]) {
     this.level = levelCode(level, cpus);
     this.seed = seed >>> 0; // the game's random numbers' state (rnd())
     this.t = -1; // the last frame run
@@ -187,7 +194,7 @@ export class World {
     this.events = [];
     // the Golbat, and what the game keeps for each player (0x8610AD20 + 0x8DE0): its hearts, a CPU's ways
     this.g = [0, 1, 2, 3].map((z) => ({
-      z, human: !cpus[z], x: START[z][0], y: START[z][1], vx: 0, vy: 0,
+      z, human: !cpus[z], empty: !!empty[z], x: START[z][0], y: START[z][1], vx: 0, vy: 0,
       dash: false, flap: false, hurt: false, hit: false, timer: 0, hitT: HIT_FOR, glow: true,
       yaw: 0x3fff, face: 0, last: 0, hearts: 0, ai: cpus[z] ? 0x1000 : 0,
       dx: 1, dy: 0, tx: START[z][0], ty: START[z][1], ox: START[z][0], oy: START[z][1],
@@ -221,7 +228,7 @@ export class World {
     this.t = t;
     this.cpus();
     if (this.spawning) this.course();
-    for (const g of this.g) { this.golbat(g, pads[g.z]); g.timer++; g.hitT++; }
+    for (const g of this.g) { if (g.empty) continue; this.golbat(g, pads[g.z]); g.timer++; g.hitT++; }
     for (const m of [...this.mags]) { if (this.magnemite(m)) m.timer++; }
     for (const h of [...this.hearts]) { if (this.heart(h)) h.timer++; }
     this.backdrops();
@@ -333,7 +340,7 @@ export class World {
     }
     g.x += g.vx;
     g.y += g.vy;
-    for (const o of this.g) if (o !== g) this.bump(g, o);
+    for (const o of this.g) if (o !== g && !o.empty) this.bump(g, o);
     g.vx = clamp(g.vx, VMAX);
     g.vy = clamp(g.vy, VMAX);
     this.bounds(g);
@@ -417,7 +424,7 @@ export class World {
     m.x += this.scroll;
     m.y = BOB[m.n % 30] * 10 + m.y0;
     for (const g of this.g) {
-      if (g.hurt) continue;
+      if (g.hurt || g.empty) continue;
       let dx = g.x - m.x, dy = g.y - m.y;
       const d = Math.sqrt(dx * dx + dy * dy);
       if (!(d < HIT)) continue;
@@ -461,7 +468,7 @@ export class World {
   // it was knocked out of (nor anyone, if a dash knocked it) for 16 frames
   catch(h) {
     for (const g of this.g) {
-      if (!(((g.z !== h.owner && !h.knocked) || h.timer >= MINE_FOR) && Math.abs(h.x - g.x) < GRAB && Math.abs(h.y - g.y) < GRAB)) continue;
+      if (g.empty || !(((g.z !== h.owner && !h.knocked) || h.timer >= MINE_FOR) && Math.abs(h.x - g.x) < GRAB && Math.abs(h.y - g.y) < GRAB)) continue;
       g.hearts = Math.min(HEARTS_MAX, g.hearts + 1);
       this.events.push(["got", g.z, h.id]); // (0xF04)
       return true;

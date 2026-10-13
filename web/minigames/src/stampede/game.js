@@ -13,8 +13,11 @@
 // The rules tick at the game's 30 frames a second; everything is drawn a frame
 // behind, between the last two (the stream, the turns, the booths, "Stop!").
 //
-// Who plays each seat: "local" (this device's player), "cpu" or "remote"
-// (someone on another device, online). The CPUs' presses come from the
+// Who plays each seat: "local" (this device's player), "cpu", "remote"
+// (someone on another device, online) or "none": online with the CPUs off, a
+// seat no one plays is empty, with no one in its booth (no Cleffa or
+// Igglybuff); the booth stays, as the studio has it, its lamp unlit and its
+// screen blank, and it doesn't move at the end. The CPUs' presses come from the
 // round's seed, so every device runs them the same. The seats this device
 // plays emit "press" with the question and the frame, for sending on; online,
 // each answer's counts and points are the server's word (told "ans").
@@ -120,13 +123,14 @@ export class Game {
   lifted(b, u) { return lerp(b.liftFrom, b.height, Math.max(0, Math.min(1, (u - b.liftAt) / 2))); }
 
   // A game. level: easy / normal / hard; setup: { me, control, cpus (which
-  // seats are CPUs), told (online, the server's answers so far: to rejoin it midway) }
+  // seats are CPUs), empty (the seats no one plays: their control "none"), told (online, the server's answers so far: to rejoin it midway) }
   reset(level, seed = (Math.random() * 2 ** 31) | 0, setup = {}) {
     this.levelName = level;
     this.seed = seed;
     this.me = setup.me ?? 0;
     this.control = setup.control || [0, 1, 2, 3].map((z) => (z === this.me ? "local" : "cpu"));
-    this.cpus = setup.cpus || this.control.map((c) => c === "cpu");
+    this.empty = [0, 1, 2, 3].map((z) => !!setup.empty?.[z] || this.control[z] === "none");
+    this.cpus = (setup.cpus || this.control.map((c) => c === "cpu")).map((c, z) => !!c && !this.empty[z]);
     this.people = !this.cpus.some(Boolean); // four people: the game's level 1, going up as they're all perfect
     this.comLevel = R.LEVELS[level] || 2;
     this.online = this.control.includes("remote");
@@ -149,6 +153,7 @@ export class Game {
       this.still(b);
       this.setLamp(b, false);
       this.setClip(b, CLIP.idle, { from: (Math.random() * 20) | 0 });
+      b.holder.visible = !this.empty[b.i]; // (no one in an empty seat's booth)
     }
     (setup.told || []).forEach((v, q) => { if (v) this.told("ans", { n: q, ...v }); });
     this.prepare(0);
@@ -165,7 +170,7 @@ export class Game {
     if (this.qs[q] || q >= R.QUESTIONS) return this.qs[q];
     if (q > 0) {
       const P = this.qs[q - 1];
-      this.states[q] = R.after(P.state, q - 1, this.totals(q - 1), this.people);
+      this.states[q] = R.after(P.state, q - 1, this.totals(q - 1), this.people, this.empty);
       this.sinces[q] = P.cpuPresses.map((p, z) => (p ? R.sinceAfter(P, p, this.sinces[q - 1][z]) : 3));
     }
     const Q = R.question(this.seed, q, this.states[q], this.totals(q - 1), this.comLevel);
@@ -230,7 +235,7 @@ export class Game {
   // ---- input ----
   // this device's player pressed A (or tapped): one more, while the counting's on
   press(z = this.me) {
-    if (this.state !== "play" || this.control[z] === "remote" || this.cpus[z]) return false;
+    if (this.state !== "play" || this.control[z] === "remote" || this.cpus[z] || this.empty[z]) return false;
     const t = this.frame, q = this.qAt(t), T = this.at[q], f = t - T.count;
     if (f < 0 || t >= T.answer) return false;
     const p = this.players[z];
@@ -251,7 +256,7 @@ export class Game {
   told(type, m) {
     if (type === "count") {
       const z = m.s, q = m.n, p = this.players[z];
-      if (!p || this.cpus[z] || this.control[z] === "local" || !(q >= 0 && q < R.QUESTIONS) || !Number.isInteger(m.f)) return;
+      if (!p || this.cpus[z] || this.empty[z] || this.control[z] === "local" || !(q >= 0 && q < R.QUESTIONS) || !Number.isInteger(m.f)) return;
       if (p.presses[q].includes(m.f) || p.presses[q].length >= R.MAX_COUNT) return;
       p.presses[q].push(m.f);
       const T = this.at[q];
@@ -279,7 +284,7 @@ export class Game {
       // another time, and hasn't begun counting
       const next = this.qs[q + 1];
       if (next && this.lastFrame < this.at[q + 1].count &&
-          (moved || JSON.stringify(R.after(this.qs[q].state, q, after, this.people)) !== JSON.stringify(this.states[q + 1]))) {
+          (moved || JSON.stringify(R.after(this.qs[q].state, q, after, this.people, this.empty)) !== JSON.stringify(this.states[q + 1]))) {
         this.qs.length = this.at.length = this.states.length = this.sinces.length = q + 1;
         if (q + 1 === R.QUESTIONS - 1) this.endFrame = Infinity;
         this.prepare(q + 1);
@@ -343,7 +348,7 @@ export class Game {
         if (k >= R.JUDGED && k < R.JUDGED + 6) {
           const v = this.verdict(q);
           for (let z = 0; z < 4; z++) {
-            if (k !== R.JUDGED + R.reactDelay(this.seed, q, z)) continue;
+            if (this.empty[z] || k !== R.JUDGED + R.reactDelay(this.seed, q, z)) continue;
             const d = Math.abs(v.counts[z] - Q.answer);
             if (d === 0) this.setClip(this.booths[z], CLIP.cheer, { from: 11, loop: false });
             else if (d >= 3) this.setClip(this.booths[z], CLIP.off, { loop: false });
@@ -553,6 +558,7 @@ export class Game {
     for (const b of this.booths) {
       const p = this.players[b.i];
       const v = counts ? this.count(b.i, q) : p.shown;
+      if (this.empty[b.i]) { for (const m of b.digits) m.visible = false; continue; } // (an empty booth's screen: blank)
       const ds = [v >= 100 ? Math.floor(v / 100) % 10 : null, v >= 10 ? Math.floor(v / 10) % 10 : null, v % 10];
       b.digits.forEach((m, n) => {
         m.visible = ds[n] !== null;
@@ -572,8 +578,9 @@ export class Game {
   }
 
   // ---- the end ----
+  // the seats there ranked (an empty seat isn't: tools/stampede_rules.py places())
   results() {
-    const order = this.players.map((p, i) => ({ i, score: p.total })).sort((a, b) => b.score - a.score);
+    const order = this.players.map((p, i) => ({ i, score: p.total })).filter((r) => !this.empty[r.i]).sort((a, b) => b.score - a.score);
     return order.map((r) => ({ ...r, place: 1 + order.filter((x) => x.score > r.score).length }));
   }
   // The hand-over (0x8690B89C: everyone on the top total wins), then the
@@ -582,7 +589,7 @@ export class Game {
   // 100 (0x3209 each frame), their lamps flashing every 3 frames, cheering;
   // the others' sink back to where they started, 1, 2, 3... points a frame,
   // turning 8 degrees a frame, let down (0x8690A7F0, 0x869004AC); and once
-  // they're all still, PERFECT over a booth on 100
+  // they're all still, PERFECT over a booth on 100 (an empty booth stays as it is)
   celebrate() {
     const r = this.results();
     for (const x of r) {
@@ -606,6 +613,7 @@ export class Game {
     const m = n - CELEBRATE + 1; // (the losers sink this many points this frame, 0x8691AD98)
     if (n === CELEBRATE) {
       for (const b of this.booths) {
+        if (this.empty[b.i]) continue;
         const total = this.players[b.i].total;
         b.left = b.win ? 100 - total : total;
         this.setClip(b, b.win ? CLIP.cheer : CLIP.lost, { loop: false });
@@ -613,6 +621,7 @@ export class Game {
     }
     let rose = false;
     for (const b of this.booths) {
+      if (this.empty[b.i]) continue;
       if (b.win) {
         if (b.left > 0) { b.left--; b.height++; rose = true; }
       } else {

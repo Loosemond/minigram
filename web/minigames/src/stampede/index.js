@@ -259,10 +259,11 @@ export async function create(shell, onProgress) {
     reset(round) {
       const m = round.start;
       // (online: the seats nobody was dealt are CPUs, as the server has them; one
-      // whose player is away, rejoining midway, is still theirs)
-      const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me)
-        : [0, 1, 2, 3].map((z) => !(round.lineup || []).some((p) => p.seat === z));
-      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, told: m?.ss?.told });
+      // whose player is away, rejoining midway, is still theirs; the empty ones,
+      // no one plays, not even a CPU)
+      const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me && !round.empty?.[z])
+        : [0, 1, 2, 3].map((z) => !round.empty?.[z] && !(round.lineup || []).some((p) => p.seat === z));
+      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, empty: round.empty, told: m?.ss?.told });
       shell.stopSound();
       ask.hidden = tell.hidden = lets.hidden = stop.hidden = true;
       // (song 29, the game's opening, comes 26 frames into the countdown: games.js)
@@ -347,7 +348,7 @@ export async function create(shell, onProgress) {
     const counts = last ? k >= R.LAST_STATE8 + 120 && k < R.LAST_JUDGED : k >= 0 && k < R.JUDGED;
     for (let z = 0; z < 4; z++) {
       const d = countBoxes[z];
-      d.hidden = !counts || !portrait || !view;
+      d.hidden = !counts || !portrait || !view || game.empty[z];
       if (d.hidden) continue;
       const html = String(game.count(z, q)).split("").map((c) => `<img src="${A}g${c}.png" alt="${c}">`).join("");
       if (d.dataset.html !== html) { d.innerHTML = html; d.dataset.html = html; }

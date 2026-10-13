@@ -118,7 +118,7 @@ export async function create(shell, onProgress) {
   const query = new URLSearchParams(location.search);
   const species = query.has("debug") && query.get("species") ? query.get("species").split(",").map(Number) : undefined;
 
-  let views = [];
+  let views = [], portraitCams = null;
   let portrait = false;
   const api = {
     game, scene, assets,
@@ -139,9 +139,10 @@ export async function create(shell, onProgress) {
         }
       } else {
         // your lane big (and what's in the picture of the lanes by it), the others in small boxes along the top
+        // (the seats there: an empty seat's lane, online with the CPUs off, gets none)
         const LANE_VIEW = { width: 330, bottom: -200, top: 440 };
         const MINI = { width: 250, bottom: -90, top: 400 };
-        const cams = views.length === 4 ? views.map((v) => v.cam) : [0, 1, 2, 3].map(() => new THREE.PerspectiveCamera(CAM.fov, 1, 100, 12800));
+        const cams = (portraitCams ||= [0, 1, 2, 3].map(() => new THREE.PerspectiveCamera(CAM.fov, 1, 100, 12800)));
         views = shell.miniViews(W, H, safe, me, cams, MINI.width / (MINI.top - MINI.bottom), LANE_VIEW, MINI);
         for (const v of views) laneCamera(v);
         shell.frameMinis(views, cards, frames);
@@ -157,7 +158,7 @@ export async function create(shell, onProgress) {
 
     reset(round) {
       const m = round.start;
-      game.reset(round.level, round.seed, { me: round.me, control: round.control,
+      game.reset(round.level, round.seed, { me: round.me, control: round.control, empty: round.empty,
                                             c: m?.c, scores: m?.scores, cuts: m?.cuts, species: round.species ?? species });
       lastLogSound = lastVerdict = lastShow = -1;
       quiet();

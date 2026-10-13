@@ -151,9 +151,12 @@ def is_open(fall, pts, f):
 
 
 class Round:
-    """One round's logs, cuts and scores, on the server."""
+    """One round's logs, cuts and scores, on the server. empty: [bool x4], the
+    seats no one plays (online with the CPUs off): no Scyther there, so no
+    cuts, no misses, no points and no place."""
 
-    def __init__(self, seed, level="normal", cpus=True):
+    def __init__(self, seed, level="normal", cpus=True, empty=None):
+        self.empty = [bool(e) for e in empty] if empty else [False] * SEATS
         self.c = level_code(level, cpus)
         self.fall = Fall(self.c)
         self.logs = deal(seed, self.c)
@@ -178,7 +181,7 @@ class Round:
         in order; open: a miss that doesn't count yet, as the seat may swing
         again), or None if it doesn't count: a swing when A doesn't work (after
         a cut, or too soon after a miss), or one out of time."""
-        if not 0 <= n < LOGS or self.cuts[s][n] is not None:
+        if not 0 <= n < LOGS or self.empty[s] or self.cuts[s][n] is not None:
             return None
         t = self.times[n]
         if now < t["ready"] / FPS - 2 or now > t["judged"] / FPS + 2:
@@ -200,11 +203,20 @@ class Round:
 
     def settle(self, s, upto):
         """Seat s's logs judged by round time upto: those it didn't cut are
-        misses, and so are its open ones. Returns [(n, f, points, total, False)]."""
+        misses, and so are its open ones (an empty seat's: none, there's no one
+        there). Returns [(n, f, points, total, False)]."""
+        if self.empty[s]:
+            return []
         n = 0
         while n < LOGS and self.times[n]["judged"] / FPS <= upto:
             n += 1
         return self._upto(s, n)
+
+    def places(self):
+        """Each seat's place (1 the best; a tie shares the better one) as the
+        game's results() ranks them, by points; None for an empty seat."""
+        here = [s for s in range(SEATS) if not self.empty[s]]
+        return [None if self.empty[s] else 1 + sum(self.scores[o] > self.scores[s] for o in here) for s in range(SEATS)]
 
     def _upto(self, s, n):
         return [self._score(s, m, None if self.open[s][m] is None else self.open[s][m][0])

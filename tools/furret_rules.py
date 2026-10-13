@@ -296,7 +296,7 @@ class Furret:
 
 
 class Player:
-    __slots__ = ("z", "cpu", "goal", "score", "won", "arrived", "cheer", "skill", "state", "timer", "held", "f")
+    __slots__ = ("z", "cpu", "goal", "score", "won", "arrived", "cheer", "skill", "state", "timer", "held", "f", "empty")
 
     def copy(self):
         p = Player()
@@ -307,7 +307,8 @@ class Player:
 
 
 class World:
-    def __init__(self, seed, level="normal", cpus=(False, True, True, True)):
+    def __init__(self, seed, level="normal", cpus=(False, True, True, True), empty=None):
+        empty = [bool(e) for e in empty] if empty else [False] * SEATS  # (no one at all: rules.js World)
         self.level = level_code(level, cpus)
         self.seed = seed & 0xFFFFFFFF
         self.t = -1
@@ -326,7 +327,7 @@ class World:
         for z in range(SEATS):
             p = Player()
             p.z, p.cpu, p.goal, p.score, p.won, p.arrived, p.cheer, p.skill = z, bool(cpus[z]), GOALS[z], 0, False, False, False, 0
-            p.state, p.timer, p.held = 0, 0, 0
+            p.state, p.timer, p.held, p.empty = 0, 0, 0, empty[z]
             f = p.f = Furret()
             f.spot, f.target, f.pos, f.tail, f.clip, f.frame, f.counter = 0, 0, [0, 30, 0], [0, 0, 0], UP, COUNTDOWN % CLIP_LEN[UP], 0
             f.frozen, f.swing, f.redirect, f.hit, f.layout, f.cry = True, False, False, False, 0, 0
@@ -372,6 +373,8 @@ class World:
             if (TIME // 3) * self.most < TIME - self.left:
                 self.most += 1
             for p in self.p:
+                if p.empty:
+                    continue
                 if p.cpu:
                     v = self.think(p)
                 else:
@@ -400,10 +403,13 @@ class World:
                 self.left = 0
                 self.finish()
         for p in self.p:
-            _advance(p.f)
+            if not p.empty:
+                _advance(p.f)
 
     def sub(self):
         for p in self.p:
+            if p.empty:
+                continue
             self.furret(p)
             p.f.counter += 1
         for b in list(self.balls):
@@ -489,6 +495,8 @@ class World:
             return
         p = next(q for q in self.p if q.goal == g)
         b.scored = True
+        if p.empty:
+            return
         p.score += b.kind
         self.events.append(["goal", p.z, b.id, b.kind])
 
@@ -757,14 +765,15 @@ class World:
 
     # ---- the end ----
     def finish(self):
-        best = self.p[0].score
-        for p in self.p:
+        here = [p for p in self.p if not p.empty]
+        best = here[0].score
+        for p in here:
             if best < p.score:
                 best = p.score
-        for p in self.p:
+        for p in here:
             p.won = p.score == best
-        if all(p.won for p in self.p):
-            for p in self.p:
+        if all(p.won for p in here):
+            for p in here:
                 p.won = False
         self.end = self.t
         self.over = True
@@ -821,7 +830,7 @@ class World:
 
     @property
     def places(self):
-        return [1 + sum(1 for q in self.p if q.score > p.score) for p in self.p]
+        return [None if p.empty else 1 + sum(1 for q in self.p if q.score > p.score and not q.empty) for p in self.p]
 
     def digest(self):
         parts = [self.t, self.seed, -1 if self.end is None else self.end, int(self.over), self.left, self.most, self.wait,
@@ -847,9 +856,10 @@ class Round:
     """One round's world on the server, run as far as the pads that can still
     come in allow."""
 
-    def __init__(self, seed, level="normal", cpus=(False, True, True, True)):
+    def __init__(self, seed, level="normal", cpus=(False, True, True, True), empty=None):
         self.cpus = list(cpus)
-        self.world = World(seed, level, self.cpus)
+        self.empty = [bool(e) for e in empty] if empty else [False] * SEATS  # (no one at all: online, the CPUs off)
+        self.world = World(seed, level, self.cpus, self.empty)
         self.pads = [[] for _ in range(SEATS)]  # each person's pad changes: [frame, spot, A]
         self.at = [0] * SEATS  # where each one's list has been read to
         self.done = None  # how it ended, once decided: dict(f, s)
@@ -870,14 +880,14 @@ class Round:
         w = self.world
         while w.end is None and w.t < t:
             f = w.t + 1
-            w.step(f, [None if self.cpus[s] else self.pad_at(s, f) for s in range(SEATS)])
+            w.step(f, [None if self.cpus[s] or self.empty[s] else self.pad_at(s, f) for s in range(SEATS)])
             w.events = []
 
     def pad(self, s, f, x, a, now, allow):
         """Seat s's D-pad went to spot x (0 the middle, 1-4 right, down, up,
         left) and A if a, on frame f (its device's word); it came in at round
         time now, and may be at most allow s old. Returns the frame it counts on, or None."""
-        if self.cpus[s] or self.done or type(f) is not int or type(x) is not int or a not in (0, 1):
+        if self.cpus[s] or self.empty[s] or self.done or type(f) is not int or type(x) is not int or a not in (0, 1):
             return None
         if not 0 <= x <= 4:
             return None
@@ -892,7 +902,7 @@ class Round:
 
     def wire(self):
         """What a device needs to rejoin the round: how it ended (once decided) and the people's pads so far."""
-        return dict(fu=dict(done=self.done, pads=[None if self.cpus[s] else [list(e) for e in self.pads[s]]
+        return dict(fu=dict(done=self.done, pads=[None if self.cpus[s] or self.empty[s] else [list(e) for e in self.pads[s]]
                                                   for s in range(SEATS)]))
 
     def result(self):
@@ -902,6 +912,13 @@ class Round:
     def scores(self):
         """Each seat's points (as far as the world's been run)."""
         return list(self.done["s"]) if self.done else self.world.scores
+
+    def places(self):
+        """Each seat's place, as the devices rank them (game.js places()): by points, the most first,
+        ties sharing the better place; None for an empty seat."""
+        p = self.scores
+        here = [s for s in range(SEATS) if not self.empty[s]]
+        return [None if self.empty[s] else 1 + sum(1 for o in here if p[o] > p[s]) for s in range(SEATS)]
 
     def settle(self, now, allow):
         """Run the world as far as no pad still on its way could change; once

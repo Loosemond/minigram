@@ -179,10 +179,11 @@ export async function create(shell, onProgress) {
 
     reset(round) {
       const m = round.start;
-      // (online: the seats nobody was dealt are CPUs, as the server has them)
-      const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me)
-        : [0, 1, 2, 3].map((z) => !(round.lineup || []).some((p) => p.seat === z));
-      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, told: m?.gb, delay: round.delay });
+      // (online: the seats nobody was dealt are CPUs, as the server has them; but
+      // for the empty ones (the CPUs off): no one plays those, not even a CPU)
+      const cpus = !round.online ? [0, 1, 2, 3].map((z) => z !== round.me && !round.empty?.[z])
+        : [0, 1, 2, 3].map((z) => !round.empty?.[z] && !(round.lineup || []).some((p) => p.seat === z));
+      game.reset(round.level, round.seed, { me: round.me, control: round.control, cpus, empty: round.empty, told: m?.gb, delay: round.delay });
       shell.stopSound();
       keys.clear();
       stickTouch = null;
@@ -257,6 +258,7 @@ export async function create(shell, onProgress) {
     hint.textContent = coarse?.matches ? "Slide on the left to fly ← → · tap the right to flap" : "← → to fly · Space to flap";
     // each one's hearts, in its colours (over the shell's plain digits)
     cardEls.forEach((c, z) => {
+      if (game.empty[z]) return; // (its card's hidden)
       const el = c.querySelector(".num"), n = Math.max(0, game.heartsOf(z));
       if (el.dataset.gb === String(n) && el.firstElementChild?.classList.contains("gb-big")) return;
       const urls = String(n).split("").map((d) => digitPics[z][d]);

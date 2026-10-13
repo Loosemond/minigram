@@ -219,12 +219,12 @@ def facing(p, x, z):
 
 
 class Player:
-    __slots__ = ("z", "cpu", "x", "zz", "vx", "vz", "state", "since", "busy", "grace", "spin", "yaw", "aim", "sack_yaw",
+    __slots__ = ("z", "cpu", "empty", "x", "zz", "vx", "vz", "state", "since", "busy", "grace", "spin", "yaw", "aim", "sack_yaw",
                  "sack", "load", "weight", "last", "score", "shown", "got", "combo", "combo_show", "combo_at", "mode",
                  "wait", "push_a", "push_b", "pushed", "won")
 
-    def __init__(self, z, cpu):
-        self.z, self.cpu = z, cpu
+    def __init__(self, z, cpu, empty=False):
+        self.z, self.cpu, self.empty = z, cpu, empty
         self.x, self.zz, self.vx, self.vz = START[z][0], START[z][1], 0, 0
         self.state, self.since = STAND, 0
         self.busy, self.grace, self.spin = 0, 0, 0
@@ -297,7 +297,10 @@ class Spot:
 
 
 class World:
-    def __init__(self, seed, level="normal", cpus=(False, True, True, True)):
+    """One round's world (rules.js's World). empty: the seats no one's in (no
+    Delibird there: it never moves, blocks, picks up, is hit or scores)."""
+
+    def __init__(self, seed, level="normal", cpus=(False, True, True, True), empty=None):
         self.level = level_code(level, cpus)
         self.everyone = not any(cpus)
         self.cpu_level = LEVELS.get(level, 2)
@@ -319,7 +322,7 @@ class World:
         self.on_belt = []
         self.running = []
         self.events = []
-        self.p = [Player(z, bool(cpus[z])) for z in range(SEATS)]
+        self.p = [Player(z, bool(cpus[z]), bool(empty and empty[z])) for z in range(SEATS)]
 
     def rnd(self):
         """The game's random numbers (0x8007B100: x = (4x + 2)(4x + 3) >> 2, in 32 bits)."""
@@ -378,16 +381,17 @@ class World:
         self.events.append(["end"])
 
     def cheer(self):
+        here = [p for p in self.p if not p.empty]
         best = -1
-        for p in self.p:
+        for p in here:
             if best < p.score:
                 best = p.score
-        for p in self.p:
+        for p in here:
             p.won = p.score == best
-        if all(p.won for p in self.p):
-            for p in self.p:
+        if all(p.won for p in here):
+            for p in here:
                 p.won = False
-        for p in self.p:
+        for p in here:
             p.yaw = 0
             p.sack_yaw = 0
             self.set_state(p, CHEER if p.won else SULK)
@@ -403,6 +407,8 @@ class World:
     def players(self, pads):
         order = ORDERS[self.rnd() % 24]
         for p in self.p:
+            if p.empty:
+                continue
             left = p.busy
             if left > 0:
                 if p.spin != 0:
@@ -427,6 +433,8 @@ class World:
                     s = math.sqrt(v[0] * v[0] + v[1] * v[1])
                     self.set_state(p, 5 if s <= 3 else 4 if s <= 4 else 3 if s <= 5 else 2 if s <= 6 else 1)
         for p in self.p:
+            if p.empty:
+                continue
             if p.busy == 0:
                 p.spin = 0
             if p.state >= PICK:
@@ -438,23 +446,23 @@ class World:
             p.push_b = [0, 0]
         for z in order:
             p = self.p[z]
-            if p.state <= WALK5 and p.spin == 0:
+            if not p.empty and p.state <= WALK5 and p.spin == 0:
                 self.shove(p)
         for z in order:
             p = self.p[z]
-            if p.state <= WALK5 and p.spin == 0 and p.pushed:
+            if not p.empty and p.state <= WALK5 and p.spin == 0 and p.pushed:
                 p.vx = p.vx + (p.push_a[0] + p.push_b[0])
                 p.vz = p.vz + (p.push_a[1] + p.push_b[1])
                 p.pushed = False
         for z in order:
             p = self.p[z]
-            if p.state <= WALK5 or p.state == KNOCKED:
+            if not p.empty and (p.state <= WALK5 or p.state == KNOCKED):
                 self.move(p, p.vx, p.vz)
         for p in self.p:
-            if p.spin == 0:
+            if p.spin == 0 and not p.empty:
                 self.face(p)
         for p in self.p:
-            if trunc(p.zz) < TOP and p.state != HAND and p.load != 0:
+            if not p.empty and trunc(p.zz) < TOP and p.state != HAND and p.load != 0:
                 self.set_state(p, HAND)
                 p.busy = HAND_TIME
 
@@ -467,7 +475,7 @@ class World:
 
     def shove(self, p):
         for q in self.p:
-            if q is p:
+            if q is p or q.empty:
                 continue
             dx, dz, r = q.x - p.x, q.zz - p.zz, SQRT2 * APART
             if q.x - r < p.x < r + q.x and q.zz - r < p.zz < r + q.zz:
@@ -500,7 +508,7 @@ class World:
 
     def against(self, p, x, z):
         for q in self.p:
-            if q is not p and q.x - APART < x < q.x + APART and q.zz - APART < z < q.zz + APART:
+            if q is not p and not q.empty and q.x - APART < x < q.x + APART and q.zz - APART < z < q.zz + APART:
                 return True
         return False
 
@@ -781,7 +789,7 @@ class World:
             nxt = lo if BELT_Z < lo else z0 + 3 if z0 + 3 < BELT_Z else BELT_Z
             stop = False
             for p in self.p:
-                if not reaches(p, g, g.x, nxt):
+                if p.empty or not reaches(p, g, g.x, nxt):
                     continue
                 if p.state == PICK or p.state == KNOCKED or 1 + p.load >= 6 or not facing(p, g.x, nxt):
                     stop = True
@@ -790,7 +798,7 @@ class World:
                 g.z = nxt
             for z in order:
                 p = self.p[z]
-                if reaches(p, g, g.x, z0) and facing(p, g.x, z0) and 1 + p.load < 6 and p.busy == 0:
+                if not p.empty and reaches(p, g, g.x, z0) and facing(p, g.x, z0) and 1 + p.load < 6 and p.busy == 0:
                     self.set_state(p, PICK)
                     p.busy = PICK_TIME
                     g.timer = 0
@@ -856,7 +864,7 @@ class World:
         s.x = s.x + s.vx
         x, z = s.x, s.z
         for p in self.p:
-            if not (p.x < x + SWINUB and x - SWINUB < p.x and p.zz < z + SWINUB and z - SWINUB < p.zz):
+            if p.empty or not (p.x < x + SWINUB and x - SWINUB < p.x and p.zz < z + SWINUB and z - SWINUB < p.zz):
                 continue
             if p.grace != 0 or p.state == HAND or p.state == PICK:
                 continue
@@ -879,7 +887,7 @@ class World:
             p.busy = KNOCK_TIME
             p.grace = KNOCK_GRACE
         for p in self.p:
-            if p.state in (KNOCKED, PICK, HAND):
+            if p.empty or p.state in (KNOCKED, PICK, HAND):
                 continue
             if not self.sack_hit(p, x, z) or p.busy != 0:
                 continue
@@ -916,7 +924,8 @@ class World:
 
     @property
     def places(self):
-        return [1 + sum(1 for q in self.p if q.score > p.score) for p in self.p]
+        """By points, among those there (None for an empty seat)."""
+        return [None if p.empty else 1 + sum(1 for q in self.p if not q.empty and q.score > p.score) for p in self.p]
 
     def digest(self):
         parts = [self.t, self.seed, self.clock, self.phase, -1 if self.end is None else self.end,
@@ -961,11 +970,13 @@ def tally_frames(scores):
 
 class Round:
     """One round's world on the server, run as far as the sticks that can still
-    come in allow."""
+    come in allow. empty: [bool x4], the seats no one plays (online with the
+    CPUs off): no Delibird there, no sticks taken, no place."""
 
-    def __init__(self, seed, level="normal", cpus=(False, True, True, True)):
-        self.cpus = list(cpus)
-        self.world = World(seed, level, self.cpus)
+    def __init__(self, seed, level="normal", cpus=(False, True, True, True), empty=None):
+        self.empty = [bool(e) for e in empty] if empty else [False] * SEATS
+        self.cpus = [bool(c) and not e for c, e in zip(cpus, self.empty)]
+        self.world = World(seed, level, self.cpus, self.empty)
         self.pads = [[] for _ in range(SEATS)]  # each person's stick changes: [frame, stick, 0]
         self.at = [0] * SEATS  # where each one's list has been read to
         self.done = None  # how it ended, once decided: dict(f, s)
@@ -985,14 +996,14 @@ class Round:
         w = self.world
         while w.end is None and w.t < t:
             f = w.t + 1
-            w.step(f, [None if self.cpus[s] else self.pad_at(s, f) for s in range(SEATS)])
+            w.step(f, [None if self.cpus[s] or self.empty[s] else self.pad_at(s, f) for s in range(SEATS)])
             w.events = []
 
     def pad(self, s, f, x, a, now, allow):
         """Seat s's stick went to x ((sx + 64) | (sy + 64) << 8, each -64 to 64)
         on frame f (its device's word); it came in at round time now, and may be
         at most allow s old. Returns the frame it counts on, or None."""
-        if self.cpus[s] or self.done or type(f) is not int or type(x) is not int or a not in (0, 1):
+        if self.cpus[s] or self.empty[s] or self.done or type(f) is not int or type(x) is not int or a not in (0, 1):
             return None
         if not 0 <= x <= 0x8080 or (x & 0xFF) > 128:
             return None
@@ -1006,11 +1017,17 @@ class Round:
 
     def wire(self):
         """What a device needs to rejoin the round: how it ended (once decided) and the people's sticks so far."""
-        return dict(dd=dict(done=self.done, pads=[None if self.cpus[s] else [list(e) for e in self.pads[s]]
+        return dict(dd=dict(done=self.done, pads=[None if self.cpus[s] or self.empty[s] else [list(e) for e in self.pads[s]]
                                                   for s in range(SEATS)]))
 
     def result(self):
         return self.done
+
+    def places(self):
+        """Each seat's place (1 the best; tied, the better one), as game.js
+        results() has them: by points; None for an empty seat."""
+        sc, here = self.scores, [s for s in range(SEATS) if not self.empty[s]]
+        return [None if self.empty[s] else 1 + sum(sc[o] > sc[s] for o in here) for s in range(SEATS)]
 
     @property
     def scores(self):

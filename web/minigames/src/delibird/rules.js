@@ -23,6 +23,12 @@
 // single, but each side's sums come out the same; a Swinub's speed is rounded
 // to a single, as its spin's length depends on it). tools/delibird_rules.py
 // is the rooms server's copy: keep the two the same.
+//
+// Online with the CPUs off, the seats no one plays are empty: no Delibird
+// there at all (its record stays, as the game's four do, but it never moves,
+// pushes, blocks, picks a gift up, gets knocked over or spun, scores or
+// cheers). Its door stays, unused. The gifts, the Swinub, the clock and the
+// random numbers go on as they do.
 
 export const FPS = 30;
 export const LEVELS = { easy: 1, normal: 2, hard: 3 };
@@ -186,10 +192,11 @@ function stickFor(x, z) {
   return [(x * 64) / l, -((z * 64) / l)];
 }
 
-// One round's world. cpus: which seats are CPUs; step() runs a frame from the
-// people's sticks. The scene reads it all.
+// One round's world. cpus: which seats are CPUs; empty: which are no one's
+// (no Delibird there); step() runs a frame from the people's sticks. The
+// scene reads it all.
 export class World {
-  constructor(seed, level = "normal", cpus = [false, true, true, true]) {
+  constructor(seed, level = "normal", cpus = [false, true, true, true], empty = [false, false, false, false]) {
     this.level = levelCode(level, cpus); // 1-3 (0x86A001B0)
     this.everyone = !cpus.some((c) => c); // four people: Easy, with a third Swinub
     this.cpuLevel = LEVELS[level] || 2; // (the CPUs' own: 0x86A0BD34)
@@ -211,7 +218,7 @@ export class World {
     this.running = []; // and the Swinub (W + 0xE84)
     this.events = [];
     this.p = [0, 1, 2, 3].map((z) => ({
-      z, cpu: !!cpus[z],
+      z, cpu: !!cpus[z], empty: !!empty[z],
       x: START[z][0], zz: START[z][1], vx: 0, vz: 0,
       state: ST.stand, since: 0, // (since: the frame it went into its state: the scene's clips)
       busy: 0, grace: 0, spin: 0, // frames it can't move for; can't be knocked over for; spinning (+1/-1)
@@ -275,13 +282,15 @@ export class World {
     this.step_ = 0;
     this.events.push(["end"]);
   }
-  // the most points win (all four level: nobody); the winners cheer, the others sulk (0x86A0B49C)
+  // the most points win (all four level: nobody; here all those there); the
+  // winners cheer, the others sulk (0x86A0B49C)
   cheer() {
+    const here = this.p.filter((p) => !p.empty);
     let best = -1;
-    for (const p of this.p) if (best < p.score) best = p.score;
-    for (const p of this.p) p.won = p.score === best;
-    if (this.p.every((p) => p.won)) for (const p of this.p) p.won = false;
-    for (const p of this.p) {
+    for (const p of here) if (best < p.score) best = p.score;
+    for (const p of here) p.won = p.score === best;
+    if (here.every((p) => p.won)) for (const p of here) p.won = false;
+    for (const p of here) {
       p.yaw = 0;
       p.sackYaw = 0;
       this.setState(p, p.won ? ST.cheer : ST.sulk);
@@ -295,6 +304,7 @@ export class World {
   players(pads) {
     const order = ORDERS[this.rnd() % 24];
     for (const p of this.p) {
+      if (p.empty) continue;
       let left = p.busy;
       if (left > 0) {
         if (p.spin !== 0) {
@@ -320,6 +330,7 @@ export class World {
       }
     }
     for (const p of this.p) {
+      if (p.empty) continue;
       if (p.busy === 0) p.spin = 0;
       if (p.state >= ST.pick) p.spin = 0;
       if (p.state === ST.knocked && p.busy < KNOCK_SLIDE) { p.vx = 0; p.vz = 0; }
@@ -327,7 +338,7 @@ export class World {
       p.pushA = [0, 0];
       p.pushB = [0, 0];
     }
-    const free = (p) => p.state <= ST.walk5 && p.spin === 0;
+    const free = (p) => !p.empty && p.state <= ST.walk5 && p.spin === 0;
     for (const z of order) if (free(this.p[z])) this.shove(this.p[z]);
     for (const z of order) {
       const p = this.p[z];
@@ -339,12 +350,12 @@ export class World {
     }
     for (const z of order) {
       const p = this.p[z];
-      if (p.state <= ST.walk5 || p.state === ST.knocked) this.move(p, p.vx, p.vz);
+      if (!p.empty && (p.state <= ST.walk5 || p.state === ST.knocked)) this.move(p, p.vx, p.vz);
     }
-    for (const p of this.p) if (p.spin === 0) this.face(p);
+    for (const p of this.p) if (p.spin === 0 && !p.empty) this.face(p);
     // at the top with gifts: hand them over (0x86A06C3C)
     for (const p of this.p) {
-      if (Math.trunc(p.zz) < TOP && p.state !== ST.hand && p.load !== 0) {
+      if (!p.empty && Math.trunc(p.zz) < TOP && p.state !== ST.hand && p.load !== 0) {
         this.setState(p, ST.hand);
         p.busy = HAND_TIME;
       }
@@ -361,7 +372,7 @@ export class World {
   // pushed apart from the others it's against (0x86A06A1C)
   shove(p) {
     for (const q of this.p) {
-      if (q === p) continue;
+      if (q === p || q.empty) continue;
       const dx = q.x - p.x, dz = q.zz - p.zz, r = SQRT2 * APART;
       if (q.x - r < p.x && p.x < r + q.x && q.zz - r < p.zz && p.zz < r + q.zz) {
         const d = Math.sqrt(dx * dx + dz * dz);
@@ -394,7 +405,7 @@ export class World {
   }
   // another Delibird right there (0x86A05678)
   against(p, x, z) {
-    return this.p.some((q) => q !== p && q.x - APART < x && x < q.x + APART && q.zz - APART < z && z < q.zz + APART);
+    return this.p.some((q) => q !== p && !q.empty && q.x - APART < x && x < q.x + APART && q.zz - APART < z && z < q.zz + APART);
   }
   // gifts on the front belt in the way at (x, z): how many places they'd take (0x86A05B4C), any (0x86A05C94)
   inWay(x, z) {
@@ -631,13 +642,13 @@ export class World {
       const next = BELT_Z < lo ? lo : z0 + 3 < BELT_Z ? z0 + 3 : BELT_Z;
       let stop = false;
       for (const p of this.p) {
-        if (!reaches(p, g, g.x, next)) continue;
+        if (p.empty || !reaches(p, g, g.x, next)) continue;
         if (p.state === ST.pick || p.state === ST.knocked || 1 + p.load >= 6 || !facing(p, g.x, next)) { stop = true; break; }
       }
       if (!stop) g.z = next;
       for (const z of order) {
         const p = this.p[z];
-        if (reaches(p, g, g.x, z0) && facing(p, g.x, z0) && 1 + p.load < 6 && p.busy === 0) {
+        if (!p.empty && reaches(p, g, g.x, z0) && facing(p, g.x, z0) && 1 + p.load < 6 && p.busy === 0) {
           this.setState(p, ST.pick);
           p.busy = PICK_TIME;
           g.timer = 0;
@@ -700,7 +711,7 @@ export class World {
     s.x = s.x + s.vx;
     const x = s.x, z = s.z;
     for (const p of this.p) {
-      if (!(p.x < x + SWINUB && x - SWINUB < p.x && p.zz < z + SWINUB && z - SWINUB < p.zz)) continue;
+      if (p.empty || !(p.x < x + SWINUB && x - SWINUB < p.x && p.zz < z + SWINUB && z - SWINUB < p.zz)) continue;
       if (p.grace !== 0 || p.state === ST.hand || p.state === ST.pick) continue;
       const dz = p.zz - z, dx = p.x - x;
       let d = Math.sqrt(dz * dz + dx * dx);
@@ -720,7 +731,7 @@ export class World {
       p.grace = KNOCK_GRACE;
     }
     for (const p of this.p) {
-      if (p.state === ST.knocked || p.state === ST.pick || p.state === ST.hand) continue;
+      if (p.empty || p.state === ST.knocked || p.state === ST.pick || p.state === ST.hand) continue;
       if (!this.sackHit(p, x, z) || p.busy !== 0) continue;
       this.events.push(["spun", p.z]);
       p.busy = Math.abs(Math.trunc(s.vx));
@@ -754,8 +765,8 @@ export class World {
 
   // each one's points, by seat
   get scores() { return this.p.map((p) => p.score); }
-  // the places (1-4) by points
-  get places() { return this.p.map((p) => 1 + this.p.filter((q) => q.score > p.score).length); }
+  // the places (1-4) by points (among those there: null for an empty seat)
+  get places() { return this.p.map((p) => (p.empty ? null : 1 + this.p.filter((q) => !q.empty && q.score > p.score).length)); }
   // a fingerprint of the world, exact, to check two runs of it agree (the tests;
   // tools/delibird_rules.py's is the same)
   digest() {

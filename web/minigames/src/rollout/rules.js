@@ -147,10 +147,12 @@ export function angle(a, b) {
 }
 const s16 = (v) => (((v & 0xffff) ^ 0x8000) - 0x8000);
 
-// One race's world. cpus: which seats are CPUs; step() runs a frame from the
-// people's pads. The scene reads it all.
+// One race's world. cpus: which seats are CPUs; empty: which have no one in
+// them at all (the remake's, online with the CPUs off: no Donphan there, so it
+// takes no part, and the places, and what goes by them, are among those there);
+// step() runs a frame from the people's pads. The scene reads it all.
 export class World {
-  constructor(seed, level = "normal", cpus = [false, true, true, true]) {
+  constructor(seed, level = "normal", cpus = [false, true, true, true], empty = [false, false, false, false]) {
     this.level = levelCode(level, cpus);
     this.seed = seed >>> 0; // the game's random numbers' state (rnd())
     this.t = -1; // the last frame run
@@ -171,13 +173,17 @@ export class World {
         k++;
       } while (k < (this.rnd() % 101) * 4);
     }
-    // each Donphan, with what the game keeps for each player (0x8641778C)
+    // each Donphan, with what the game keeps for each player (0x8641778C); its
+    // rank at first its seat's (among those there: an empty seat's after them)
+    const n = [0, 1, 2, 3].filter((z) => !empty[z]).length;
+    this.first = [0, 1, 2, 3].find((z) => !empty[z]) ?? 0; // (the seat whose stop moves the camera at the end: 1P's, if there)
     this.d = slots.map((slot, z) => ({
-      z, human: !cpus[z], slot,
+      z, human: !cpus[z], slot, empty: !!empty[z],
       x: slot * 37.12 + 116, h: 0, y: slot * 41.76 + -254.3, // (y: the game's z, down the screen)
       vx: -1, vz: 0, vh: 0, rot: -0x4001, timer: 0,
       start: true, tumble: false, knocked: false, bounce: false, ready: false, drop: false, done: false, won: false, fin: null,
-      corners: 0, seg: 0, laps: LAPS, progress: 0, rank: z, speed: 20, boost: 0, roll: 0, stun: 0, wait: 0,
+      corners: 0, seg: 0, laps: LAPS, progress: 0, speed: 20,
+      rank: empty[z] ? n + empty.slice(0, z).filter((e) => e).length : empty.slice(0, z).filter((e) => !e).length, boost: 0, roll: 0, stun: 0, wait: 0,
       clouds: 0, out: 0, target: -16385, angle: -16385, notice: 0, lane: 0, px: 0, ph: 0, py: 0,
       halt: null, // (the frame it came to a stop once it was over: 0x20000)
     }));
@@ -205,6 +211,7 @@ export class World {
   // in the countdown, before frame 0: slowing to a stop on the grid
   runIn() {
     for (const d of this.d) {
+      if (d.empty) continue;
       d.speed *= 0.8;
       d.x += d.vx * d.speed;
       if (d.speed < 1) d.speed = 0;
@@ -218,6 +225,7 @@ export class World {
     this.t = t;
     if (this.end !== null) { this.coast(); return; }
     for (const d of this.d) {
+      if (d.empty) continue;
       this.segment(d);
       let input;
       if (d.human) {
@@ -231,6 +239,7 @@ export class World {
     this.bumps();
     const lapped = [];
     for (const d of this.d) {
+      if (d.empty) continue;
       d.x += d.px; d.h += d.ph; d.y += d.py;
       d.px = 0; d.ph = 0; d.py = 0;
       // how far round the lap it is: its angle about the middle, a little
@@ -256,7 +265,7 @@ export class World {
       if (d.rank === 0 && d.laps >= 1) this.events.push([d.laps === 1 ? "final" : "lap", d.z]);
     }
     for (const c of [...this.clouds]) { this.cloud(c); c.timer++; }
-    for (const d of this.d) this.walls(d);
+    for (const d of this.d) if (!d.empty) this.walls(d);
     this.finish(t);
   }
 
@@ -429,7 +438,7 @@ export class World {
 
   // ---- two Donphan too close: apart, and one at full tilt knocks the other over (0x86401920) ----
   bumps() {
-    for (let i = 0; i < 3; i++) for (let j = i + 1; j < 4; j++) this.bump(this.d[i], this.d[j]);
+    for (let i = 0; i < 3; i++) for (let j = i + 1; j < 4; j++) if (!this.d[i].empty && !this.d[j].empty) this.bump(this.d[i], this.d[j]);
   }
   bump(a, b) {
     let nx = b.x - a.x, nh = b.h - a.h, ny = b.y - a.y;
@@ -508,24 +517,27 @@ export class World {
   }
 
   // the places, by how far round each is (0x864033AC: in seat order, the
-  // furthest first; once in, by the place they came in)
+  // furthest first; once in, by the place they came in). (The remake's: only
+  // those there, an empty seat after them)
   placings() {
-    const order = [...this.d];
-    for (let k = 0; k < 3; k++) {
-      for (let i = 0; i < 3 - k; i++) {
+    const order = this.d.filter((d) => !d.empty), n = order.length;
+    for (let k = 0; k < n - 1; k++) {
+      for (let i = 0; i < n - 1 - k; i++) {
         if (order[i].progress < order[i + 1].progress) [order[i], order[i + 1]] = [order[i + 1], order[i]];
       }
     }
+    order.push(...this.d.filter((d) => d.empty));
     order.forEach((d, i) => { d.rank = i; });
   }
   // who's in (0x8640633C): the first in wins (together, on the same frame);
-  // once all four are in, the race is over (and if all four won, none did: 0x864067B8)
+  // once all four are in, the race is over (and if all four won, none did: 0x864067B8).
+  // (All four: all there are, an empty seat taking no part)
   finish(t) {
-    const before = this.d.filter((d) => d.done).length;
+    const here = this.d.filter((d) => !d.empty), before = here.filter((d) => d.done).length;
     let over = false;
-    for (const d of this.d) {
+    for (const d of here) {
       if (d.laps > 0) continue;
-      if (before === 4) over = true;
+      if (before === here.length) over = true;
       if (before === 0) d.won = true;
       if (!d.done) {
         d.done = true;
@@ -536,7 +548,7 @@ export class World {
     }
     if (over || t >= LONGEST) {
       this.end = t;
-      if (this.d.every((d) => d.won)) for (const d of this.d) d.won = false;
+      if (here.every((d) => d.won)) for (const d of here) d.won = false;
       for (const c of this.clouds) { c.phase = 2; c.timer = 0; } // (0x86406710)
     }
   }
@@ -547,9 +559,11 @@ export class World {
   // quarter turn from the way it faces and walks off slumped, 0.13 faster a frame
   // for 20 frames, then x0.9. 1P's Donphan stopping moves the camera to the
   // winners (0x86405138: an event). They still bump (0x86401D1C), and the clouds
-  // fade and the walls hold (0x864066B4)
+  // fade and the walls hold (0x864066B4). (An empty seat's not there: the
+  // camera moves as the first seat there stops)
   coast() {
     for (const d of this.d) {
+      if (d.empty) continue;
       this.segment(d);
       d.roll = 0;
       if (d.halt !== null) {
@@ -563,12 +577,13 @@ export class World {
     }
     this.bumps();
     for (const d of this.d) {
+      if (d.empty) continue;
       d.x += d.px; d.h += d.ph; d.y += d.py;
       d.px = 0; d.ph = 0; d.py = 0;
       if (!(d.speed < 1) || d.halt !== null) continue;
       d.halt = this.t;
-      if (d.z === 0) { // (where the winners are, or all four with none; the others not pushed yet this frame)
-        const on = this.d.some((e) => e.won) ? this.d.filter((e) => e.won) : this.d;
+      if (d.z === this.first) { // (where the winners are, or all four with none; the others not pushed yet this frame)
+        const here = this.d.filter((e) => !e.empty), on = here.some((e) => e.won) ? here.filter((e) => e.won) : here;
         let x = 0, h = 0, y = 0;
         for (const e of on) { x += e.x; h += e.h; y += e.y; }
         if (on.length >= 2) { x /= on.length; h /= on.length; y /= on.length; }
@@ -584,7 +599,7 @@ export class World {
       this.events.push(["halt", d.z, +d.won]);
     }
     for (const c of [...this.clouds]) { this.cloud(c); c.timer++; }
-    for (const d of this.d) this.walls(d);
+    for (const d of this.d) if (!d.empty) this.walls(d);
   }
 
   // ---- a CPU (0x86403F5C): its line round the track, round the clouds in the way ----
@@ -684,10 +699,11 @@ export class World {
 
   // the places so far (1-4), by seat: all in on the first frame anyone was are
   // first (the game's winners, or a draw if that's all four); the rest by rank
+  // (an empty seat: none, null)
   get places() {
     let first = null;
     for (const d of this.d) if (d.fin !== null && (first === null || d.fin < first)) first = d.fin;
-    return this.d.map((d) => (d.fin !== null && d.fin === first ? 1 : d.rank + 1));
+    return this.d.map((d) => (d.empty ? null : d.fin !== null && d.fin === first ? 1 : d.rank + 1));
   }
   // a fingerprint of the world, exact, to check two runs of it agree (the tests;
   // tools/rollout_rules.py's is the same)

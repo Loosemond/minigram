@@ -161,7 +161,7 @@ class Donphan:
     __slots__ = ("z", "human", "slot", "x", "h", "y", "vx", "vz", "vh", "rot", "timer", "start", "tumble",
                  "knocked", "bounce", "ready", "drop", "done", "won", "fin", "corners", "seg", "laps", "progress",
                  "rank", "speed", "boost", "roll", "stun", "wait", "clouds", "out", "target", "angle",
-                 "notice", "lane", "px", "ph", "py", "halt")
+                 "notice", "lane", "px", "ph", "py", "halt", "empty")
 
     def copy(self):
         o = Donphan.__new__(Donphan)
@@ -183,7 +183,8 @@ class Cloud:
 class World:
     """One race's world: step() runs a frame from the people's pads."""
 
-    def __init__(self, seed, level="normal", cpus=(False, True, True, True)):
+    def __init__(self, seed, level="normal", cpus=(False, True, True, True), empty=None):
+        empty = [bool(e) for e in empty] if empty else [False] * 4  # (no one at all: rules.js World)
         self.level = level_code(level, cpus)
         self.seed = seed & 0xFFFFFFFF
         self.t = -1
@@ -200,15 +201,18 @@ class World:
                 k += 1
                 if not k < (self.rnd() % 101) * 4:
                     break
+        n = empty.count(False)
+        self.first = next((z for z in range(4) if not empty[z]), 0)
         self.d = []
         for z, slot in enumerate(slots):
             d = Donphan()
-            d.z, d.human, d.slot = z, not cpus[z], slot
+            d.z, d.human, d.slot, d.empty = z, not cpus[z], slot, empty[z]
             d.x, d.h, d.y = slot * 37.12 + 116, 0, slot * 41.76 + -254.3
             d.vx, d.vz, d.vh, d.rot, d.timer = -1, 0, 0, -0x4001, 0
             d.start, d.tumble, d.knocked, d.bounce, d.ready, d.drop, d.done, d.won, d.fin = (
                 True, False, False, False, False, False, False, False, None)
-            d.corners, d.seg, d.laps, d.progress, d.rank = 0, 0, LAPS, 0, z
+            d.corners, d.seg, d.laps, d.progress = 0, 0, LAPS, 0
+            d.rank = n + empty[:z].count(True) if empty[z] else empty[:z].count(False)
             d.speed, d.boost, d.roll, d.stun, d.wait, d.clouds, d.out = 20, 0, 0, 0, 0, 0, 0
             d.target, d.angle, d.notice, d.lane = -16385, -16385, 0, 0
             d.px, d.ph, d.py = 0, 0, 0
@@ -240,6 +244,8 @@ class World:
 
     def run_in(self):
         for d in self.d:
+            if d.empty:
+                continue
             d.speed *= 0.8
             d.x += d.vx * d.speed
             if d.speed < 1:
@@ -251,6 +257,8 @@ class World:
             self.coast()
             return
         for d in self.d:
+            if d.empty:
+                continue
             self.segment(d)
             if d.human:
                 p = pads[d.z] if d.z < len(pads) and pads[d.z] is not None else (0, False)
@@ -265,6 +273,8 @@ class World:
         self.bumps()
         lapped = []
         for d in self.d:
+            if d.empty:
+                continue
             d.x += d.px
             d.h += d.ph
             d.y += d.py
@@ -295,7 +305,8 @@ class World:
             self.cloud(c)
             c.timer += 1
         for d in self.d:
-            self.walls(d)
+            if not d.empty:
+                self.walls(d)
         self.finish(t)
 
     def segment(self, d):
@@ -502,7 +513,8 @@ class World:
     def bumps(self):
         for i in range(3):
             for j in range(i + 1, 4):
-                self.bump(self.d[i], self.d[j])
+                if not self.d[i].empty and not self.d[j].empty:
+                    self.bump(self.d[i], self.d[j])
 
     def bump(self, a, b):
         nx, nh, ny = b.x - a.x, b.h - a.h, b.y - a.y
@@ -605,21 +617,24 @@ class World:
         d.vz = w[2]
 
     def placings(self):
-        order = list(self.d)
-        for k in range(3):
-            for i in range(3 - k):
+        order = [d for d in self.d if not d.empty]
+        n = len(order)
+        for k in range(n - 1):
+            for i in range(n - 1 - k):
                 if order[i].progress < order[i + 1].progress:
                     order[i], order[i + 1] = order[i + 1], order[i]
+        order += [d for d in self.d if d.empty]
         for i, d in enumerate(order):
             d.rank = i
 
     def finish(self, t):
-        before = sum(1 for d in self.d if d.done)
+        here = [d for d in self.d if not d.empty]
+        before = sum(1 for d in here if d.done)
         over = False
-        for d in self.d:
+        for d in here:
             if d.laps > 0:
                 continue
-            if before == 4:
+            if before == len(here):
                 over = True
             if before == 0:
                 d.won = True
@@ -630,8 +645,8 @@ class World:
                 self.events.append(["in", d.z, int(d.won)])
         if over or t >= LONGEST:
             self.end = t
-            if all(d.won for d in self.d):
-                for d in self.d:
+            if all(d.won for d in here):
+                for d in here:
                     d.won = False
             for c in self.clouds:
                 c.phase = 2
@@ -639,6 +654,8 @@ class World:
 
     def coast(self):
         for d in self.d:
+            if d.empty:
+                continue
             self.segment(d)
             d.roll = 0
             if d.halt is not None:
@@ -654,6 +671,8 @@ class World:
             self.height(d)
         self.bumps()
         for d in self.d:
+            if d.empty:
+                continue
             d.x += d.px
             d.h += d.ph
             d.y += d.py
@@ -661,8 +680,9 @@ class World:
             if not d.speed < 1 or d.halt is not None:
                 continue
             d.halt = self.t
-            if d.z == 0:
-                on = [e for e in self.d if e.won] or self.d
+            if d.z == self.first:
+                here = [e for e in self.d if not e.empty]
+                on = [e for e in here if e.won] or here
                 x = h = y = 0
                 for e in on:
                     x += e.x
@@ -682,7 +702,8 @@ class World:
             self.cloud(c)
             c.timer += 1
         for d in self.d:
-            self.walls(d)
+            if not d.empty:
+                self.walls(d)
 
     def cpu(self, d):
         s = d.seg
@@ -791,7 +812,7 @@ class World:
     def places(self):
         fins = [d.fin for d in self.d if d.fin is not None]
         first = min(fins) if fins else None
-        return [1 if d.fin is not None and d.fin == first else d.rank + 1 for d in self.d]
+        return [None if d.empty else 1 if d.fin is not None and d.fin == first else d.rank + 1 for d in self.d]
 
     def digest(self):
         parts = [self.t, self.seed, self.ids, -1 if self.end is None else self.end]
@@ -814,9 +835,10 @@ class Round:
     """One race's world on the server, run as far as the pads that can still
     come in allow."""
 
-    def __init__(self, seed, level="normal", cpus=(False, True, True, True)):
+    def __init__(self, seed, level="normal", cpus=(False, True, True, True), empty=None):
         self.cpus = list(cpus)
-        self.world = World(seed, level, self.cpus)
+        self.empty = [bool(e) for e in empty] if empty else [False] * SEATS  # (no one at all: online, the CPUs off)
+        self.world = World(seed, level, self.cpus, self.empty)
         self.pads = [[] for _ in range(SEATS)]  # each person's pad changes: [frame, D-pad, A]
         self.at = [0] * SEATS  # where each one's list has been read to
         self.done = None  # how it ended, once decided: dict(f, fin, p)
@@ -837,7 +859,7 @@ class Round:
         w = self.world
         while w.end is None and w.t < t:
             f = w.t + 1
-            w.step(f, [None if self.cpus[s] else self.pad_at(s, f) for s in range(SEATS)])
+            w.step(f, [None if self.cpus[s] or self.empty[s] else self.pad_at(s, f) for s in range(SEATS)])
             w.events = []
 
     def pad(self, s, f, x, a, now, allow):
@@ -845,7 +867,7 @@ class Round:
         in the countdown) and A if a, on frame f (its device's word); it came in
         at round time now, and may be at most allow s old. Returns the frame it
         counts on, or None."""
-        if self.cpus[s] or self.done or type(f) is not int or type(x) is not int or a not in (0, 1):
+        if self.cpus[s] or self.empty[s] or self.done or type(f) is not int or type(x) is not int or a not in (0, 1):
             return None
         if not 0 <= x <= 31:
             return None
@@ -860,7 +882,7 @@ class Round:
 
     def wire(self):
         """What a device needs to rejoin the race: how it ended (once decided) and the people's pads so far."""
-        return dict(rr=dict(done=self.done, pads=[None if self.cpus[s] else [list(e) for e in self.pads[s]]
+        return dict(rr=dict(done=self.done, pads=[None if self.cpus[s] or self.empty[s] else [list(e) for e in self.pads[s]]
                                                   for s in range(SEATS)]))
 
     def result(self):
@@ -871,6 +893,11 @@ class Round:
         """Each seat's time in hundredths of a second, or -1 (not in when it ended)."""
         fin = self.done["fin"] if self.done else [d.fin for d in self.world.d]
         return [-1 if f is None else round(f * 100 / FPS) for f in fin]
+
+    def places(self):
+        """Each seat's place, as the devices rank them (game.js places(): the world's, rules.js places):
+        all in on the first frame anyone was are first, the rest by rank; None for an empty seat."""
+        return list(self.done["p"] if self.done else self.world.places)
 
     def settle(self, now, allow):
         """Run the world as far as no pad still on its way could change; once
