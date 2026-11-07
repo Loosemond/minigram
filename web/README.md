@@ -1478,7 +1478,7 @@ Each call checks `isVersionAtLeast` first, so older clients skip what they don't
 To put it in Telegram:
 
 1. Telegram opens Mini Apps only over HTTPS, so the page (with its
-   `assets/`) needs an HTTPS address.
+   `assets/`) and the rooms (`serve_web.py`) need an HTTPS address.
 2. In [@BotFather](https://t.me/BotFather): `/newbot` if you don't have a bot,
    then `/mybots` ▸ the bot ▸ Bot Settings ▸ Configure Mini App, and give it
    the URL (`https://…/minigames/`). That's the bot's main Mini App: its

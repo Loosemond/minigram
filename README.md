@@ -5,8 +5,15 @@ animations), arenas, 2D graphics, all game text and the music's sequences and
 samples** out of a Pokémon Stadium 2 ROM, in formats Blender, any image viewer
 and any audio editor open directly.
 
+**Bring your own game.** Nothing from the game is in this repository. You need
+your own dump of the cartridge ([rom/README.md](rom/README.md)), and what the
+tools extract from it stays on your computer (`out/` and `web/*/assets/` are
+kept out of git). This is an unofficial fan project, not affiliated with or
+endorsed by Nintendo, Game Freak, Creatures or The Pokémon Company; Pokémon and
+its names are their trademarks.
+
 ```
-rom/ps2_eu.z64                  your own dump of the game (not included)
+rom/ps2_eu.z64                  your own dump of the game (not included: rom/README.md)
 tools/ps2extract.py             the extractor (Python 3, no dependencies)
 tools/ps2tool/                  format code (ROM/archives/Yay0, FRAGMENT models, glTF,
                                 colour combiner, effects, images, text, audio)
@@ -281,3 +288,11 @@ HarbourMasters' Torch has no Stadium support, so the tools here don't use it.
   (e.g. Chinchou's lures) are exported at their brightest key.
 - The fonts (`0x437AD0`), UI layouts (`0x1E40000`) and a few small data tables
   are not converted.
+
+## Licence
+
+The code and notes here are free software: you can redistribute and/or modify
+them under the terms of the GNU General Public License, version 3 or (at your
+option) any later version ([LICENSE](LICENSE)). That covers this project's own
+work only. The game, and everything the tools extract from it, belong to their
+owners and aren't covered by it, which is why they aren't in this repository.

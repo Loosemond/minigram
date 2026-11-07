@@ -1,8 +1,15 @@
+# the game: bring your own (rom/README.md), and never commit it
+/rom/*
+!/rom/README.md
+*.z64
+*.n64
+*.v64
+
 # extracted assets: re-create with tools/ps2extract.py + tools/make_previews.py
 /out/
+/web/*/assets/
 
 __pycache__/
 *.pyc
 .DS_Store
 *.blend1
-/web/*/assets/
