@@ -1,9 +1,23 @@
-# Pokémon Stadium 2 asset extraction
+# minigram
 
-Tools that pull the **Pokémon, minigame and battle-effect models (with their
-animations), arenas, 2D graphics, all game text and the music's sequences and
-samples** out of a Pokémon Stadium 2 ROM, in formats Blender, any image viewer
-and any audio editor open directly.
+The twelve minigames of **Pokémon Stadium 2**, remade for the browser with
+three.js, and the tools that made them possible: an extractor that pulls the
+game's models (with their animations), arenas, 2D graphics, text and music out
+of the ROM, into files that Blender, any image viewer or any audio editor can
+open.
+
+- **Play** ([web/](web/README.md)): Egg Emergency, Clear Cut Challenge, Eager
+  Eevee, Streaming Stampede, Pichu's Power Plant, Tumbling Togepi, Gutsy
+  Golbat, Barrier Ball, Rampage Rollout, Topsy-Turvy, Furret's Frolic and
+  Delibird's Delivery, with the game's own models, backdrops, sprites, music
+  and sound, and its own rules, read from its code. Alone against CPUs, or
+  online with up to four people in a room. On phones, PCs and in Telegram.
+- **Extract** ([tools/](#extract)): every Pokémon with all its clips, the
+  minigames' characters and props, battle effects, the 30 arenas, 1,800+
+  sprites, all 21,000+ strings, and the music's sequences and samples. A
+  Blender add-on browses and plays them.
+- **Read** ([docs/](docs/README.md)): what's known about how the game stores
+  its data and how its code runs the minigames, with how each fact was found.
 
 **Bring your own game.** Nothing from the game is in this repository. You need
 your own dump of the cartridge ([rom/README.md](rom/README.md)), and what the
@@ -12,25 +26,42 @@ kept out of git). This is an unofficial fan project, not affiliated with or
 endorsed by Nintendo, Game Freak, Creatures or The Pokémon Company; Pokémon and
 its names are their trademarks.
 
+## Quick start
+
+You need Python 3 (standard library only: nothing to install), a browser with
+WebGL, and your own dump of the game.
+
+```sh
+git clone https://github.com/Loosemond/minigram.git
+cd minigram
+cp /path/to/your/dump.z64 rom/ps2_eu.z64           # the EU version (rom/README.md)
+python3 tools/ps2extract.py rom/ps2_eu.z64 all     # extract everything into out/ (1-2 min)
+python3 tools/web_assets.py                        # copy what the minigames use into web/minigames/assets/
+python3 tools/serve_web.py                         # then open http://localhost:8123/
 ```
-rom/ps2_eu.z64                  your own dump of the game (not included: rom/README.md)
-tools/ps2extract.py             the extractor (Python 3, no dependencies)
-tools/ps2tool/                  format code (ROM/archives/Yay0, FRAGMENT models, glTF,
-                                colour combiner, effects, images, text, audio)
-tools/blender/ps2_import.py     Blender add-on: asset browser, face/flipbook animation, shiny toggle,
-                                clip browser, live arena materials
-tools/make_previews.py          thumbnails of every model + labelled sheets (needs Blender + Pillow)
-tools/web_assets.py, serve_web.py   copy assets into the browser minigames (and make their
-                                sound), and serve them (with
-                                rooms.py: the online rooms, egg_rules.py: their scoring, and
-                                test_rooms.py)
-web/                            minigames remade in three.js for the browser / Telegram (web/README.md)
-docs/                           game and ROM notes: formats, tables, what's where, open questions
-out/                            extracted assets (not in git: re-create with the commands below)
-out/catalog.json                every model with its name, category and tags
-out/thumbs/                     one thumbnail per model (used by the add-on's browser)
-out/previews/                   thumbnail sheets
-```
+
+There is no build step: the minigames are plain JavaScript modules, and three.js
+comes from a CDN. `python3 tools/test_rooms.py` tests the online rooms server
+(no ROM needed, about 30 s).
+
+## Play in the browser
+
+`web/minigames/` is one app with all twelve minigames. Pick one on the title
+screen and play against CPUs, or tap **Play with friends** for the online
+lobby: quick play, public and private rooms, invites by link, up to four people
+in a room with CPUs in the empty seats (or none), the next game picked by the
+host, at random or by a vote, and points that add up across rounds. The
+server that serves the page (`tools/serve_web.py`) also runs the rooms
+(`tools/rooms.py`, at `/ws`) and judges every round, so a player can't cheat
+from the browser's console.
+
+It adapts to phones (portrait) and PCs (landscape), and runs as a Telegram
+Mini App as it is. To play with friends over the internet, run `serve_web.py`
+on a server of your own; Telegram opens Mini Apps only over HTTPS, so the page
+and the rooms then need an HTTPS address.
+
+[web/README.md](web/README.md) has the rest: each game's rules and what comes
+from the ROM in it, the debug console, the tests, online play and Telegram.
 
 ## Extract
 
@@ -135,25 +166,6 @@ to its modules.
 What isn't reproduced is the choreography: where, when and how many particles
 spawn during a move is run by the effect engine's bytecode. The assets are
 all here, but not the timeline.
-
-## Play in the browser
-
-`web/minigames/` remakes all twelve minigames in three.js with the game's own
-models, backdrops, sprites, HUD graphics, music and sound: Egg Emergency,
-Clear Cut Challenge, Eager Eevee, Streaming Stampede, Pichu's Power Plant,
-Tumbling Togepi, Gutsy Golbat, Barrier Ball, Rampage Rollout, Topsy-Turvy,
-Furret's Frolic and Delibird's Delivery. All but Egg Emergency play by the
-game's own rules, read from their code modules
-([docs/minigames.md](docs/minigames.md)).
-Pick one on the title screen, or in the lobby when playing online: up to four
-people in a room, invited with a link, with CPUs in the empty spots. It adapts
-to phones (portrait) and PCs (landscape) and runs as a Telegram Mini App.
-[web/README.md](web/README.md) covers running, online play and
-what's from the ROM.
-
-```sh
-python3 tools/web_assets.py && python3 tools/serve_web.py   # http://localhost:8123/
-```
 
 ## Open in Blender (4.2+, tested on 4.5)
 
@@ -263,13 +275,6 @@ arena floor markings). Solid view ignores it, so arena overlays show as dark squ
   (glowing lures, water, effect particles). Animated tracks (pulses) are
   exported at their brightest key.
 
-Format research comes from
-[gen1recomp-mod-stadium2-importer](https://github.com/Deftones565/gen1recomp-mod-stadium2-importer),
-[pret/pokestadiumgs](https://github.com/pret/pokestadiumgs),
-[pret/pokestadium](https://github.com/pret/pokestadium) (old ROM map) and
-[PokemonStadium2Unity](https://github.com/Manurocker95/PokemonStadium2Unity).
-HarbourMasters' Torch has no Stadium support, so the tools here don't use it.
-
 ## Known gaps
 
 - **Audio:** the sequences and samples are extracted, but songs aren't
@@ -288,6 +293,41 @@ HarbourMasters' Torch has no Stadium support, so the tools here don't use it.
   (e.g. Chinchou's lures) are exported at their brightest key.
 - The fonts (`0x437AD0`), UI layouts (`0x1E40000`) and a few small data tables
   are not converted.
+
+## What's where
+
+```
+rom/ps2_eu.z64                  your own dump of the game (not included: rom/README.md)
+tools/ps2extract.py             the extractor (Python 3, no dependencies)
+tools/ps2tool/                  format code (ROM/archives/Yay0, FRAGMENT models, glTF,
+                                colour combiner, effects, images, text, audio)
+tools/blender/ps2_import.py     Blender add-on: asset browser, face/flipbook animation, shiny toggle,
+                                clip browser, live arena materials
+tools/make_previews.py          thumbnails of every model + labelled sheets (needs Blender + Pillow)
+tools/web_assets.py             copy what the browser minigames use into web/minigames/assets/,
+                                and make their sound
+tools/serve_web.py              serve them, with the online rooms (rooms.py; each game's
+                                rules on the server: *_rules.py; tests: test_rooms.py)
+web/                            minigames remade in three.js for the browser / Telegram (web/README.md)
+docs/                           game and ROM notes: formats, tables, what's where, open questions
+out/                            extracted assets (not in git: re-create with the commands above)
+out/catalog.json                every model with its name, category and tags
+out/thumbs/                     one thumbnail per model (used by the add-on's browser)
+out/previews/                   thumbnail sheets
+```
+
+## Credits
+
+Format research comes from
+[gen1recomp-mod-stadium2-importer](https://github.com/Deftones565/gen1recomp-mod-stadium2-importer),
+[pret/pokestadiumgs](https://github.com/pret/pokestadiumgs),
+[pret/pokestadium](https://github.com/pret/pokestadium) (old ROM map) and
+[PokemonStadium2Unity](https://github.com/Manurocker95/PokemonStadium2Unity).
+The audio follows the [zeldaret/oot](https://github.com/zeldaret/oot) and
+[zeldaret/mm](https://github.com/zeldaret/mm) decompilations, and the N64 Sound
+Tool's configs in [jombo23/N64-Tools](https://github.com/jombo23/N64-Tools).
+HarbourMasters' Torch has no Stadium support, so the tools here don't use it.
+[docs/README.md](docs/README.md) says what came from where.
 
 ## Licence
 
